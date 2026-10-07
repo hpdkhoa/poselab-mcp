@@ -39,6 +39,11 @@ class Client:
         data = r.get("structuredContent")
         if isinstance(data, dict) and set(data) == {"result"}:
             data = data["result"]
+        if data is None and texts:
+            try:
+                data = json.loads(texts[0])
+            except ValueError:
+                data = texts[0]
         return data
 
 

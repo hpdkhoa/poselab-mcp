@@ -32,7 +32,7 @@ def find_blender():
     for g in guesses:
         if os.path.exists(g):
             return g
-    raise RuntimeError("Blender not found: set POSELAB_BLENDER to blender's executable (4.2 or newer)")
+    raise RuntimeError("Blender not found: set POSELAB_BLENDER to blender's executable")
 
 
 def out_dir():

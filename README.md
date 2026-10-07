@@ -4,14 +4,18 @@
 
 **Measured spatial answers for posing first-person arms and a rifle in Blender, over MCP.**
 
-Models are weak at judging 3D space from pictures: which side of a rifle faces the eye, whether a finger sits inside
-the receiver, whether any turn of the gun can ever show its ejection port. Pose Lab gives a model numbers instead:
-positions in named frames, how deep anything clips, how squarely a surface faces the eye, what the eye can see, and a
-solver that searches rifle moves against goals and reports which goals no move can meet.
+![The built-in sample rig: four Blender views of first-person arms holding a rifle](https://raw.githubusercontent.com/hpdkhoa/poselab-mcp/main/docs/sample-rig.png)
 
-It came out of hand-making chamber checks for a first-person shooter. One question ("can turning the rifle show the
-port to the eye?") took several full Blender runs by hand. With Pose Lab it is one `solve` call: turning alone meets the
-goal in 0 of 60 samples, which is a fact of the geometry; turning and moving the rifle meets every goal in about 20 s.
+Models are weak at judging 3D space from pictures: which side of a rifle faces the eye, whether a finger sits inside
+the receiver, whether any turn of the gun can ever show its ejection port. Pose Lab gives a model numbers instead. It reports positions in named frames and how deep anything clips. It
+measures how squarely a surface faces the eye and what the eye can see. Its solver searches rifle moves against goals
+and reports which goals no move can meet.
+
+I built it while hand-making chamber checks for my first-person shooter. One question took me several full Blender
+runs: can turning the rifle show its ejection port to the eye? With Pose Lab it is one `solve` call. On my game's AK
+rig, turning alone met the goal in 0 of 60 samples. That is a fact of the geometry: the eye looks along the barrel.
+Turning and moving the rifle met every goal in about 20 s. The built-in sample rig shows the same result: 0 of 60
+samples for turning alone, and every goal met in 9 s for turning and moving.
 
 ## What it gives a model
 
@@ -43,7 +47,8 @@ handguard). Call `clearance` at `pose_idle` for that baseline, and leave those s
 
 ## Install
 
-You need [Blender](https://www.blender.org/download/) 4.2 or newer and Python 3.10 or newer.
+You need [Blender](https://www.blender.org/download/) and Python 3.10 or newer. I tested it on Windows 10 with
+Blender 5.2.2 and Python 3.14. I have not tested macOS, Linux or older Blender versions yet.
 
 ```
 uvx poselab-mcp
@@ -65,7 +70,7 @@ or to any MCP client's configuration:
     "poselab": {
       "command": "uvx",
       "args": ["poselab-mcp"],
-      "env": { "POSELAB_BLENDER": "C:/Program Files/Blender Foundation/Blender 4.5/blender.exe" }
+      "env": { "POSELAB_BLENDER": "C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" }
     }
   }
 }
@@ -81,8 +86,8 @@ or to any MCP client's configuration:
 
 ## Rigs
 
-**The built-in sample** (`load_rig {"rig": "sample"}`) is made in Blender from code: two arms with Unreal mannequin
-bone names holding a simple rifle with a charging handle that slides back. It needs no files.
+**The built-in sample** (`load_rig {"rig": "sample"}`) needs no files. Pose Lab builds it in Blender from code: two
+arms with Unreal mannequin bone names hold an AR-style rifle with a charging handle that slides back.
 
 **Your own rigs** come from FBX files: the arms mesh, an idle pose, the rifle, and clips. Describe them in a
 `rigs.json` (copy `examples/rigs.example.json`) and point `POSELAB_RIGS` at it. Clips can be FBX animations on the same
@@ -96,7 +101,7 @@ it imports it again; bone data avoids that. `describe` reports each FBX clip's s
 * The Blender worker listens on 127.0.0.1 only, on a free port, and answers only requests that carry the session's
   random token. It runs only Pose Lab's own commands.
 
-## How it is built
+## How it works
 
 * `poselab_mcp/server.py`: the MCP server (the official Python SDK, stdio).
 * `poselab_mcp/worker_client.py`: starts one headless Blender on the first call and keeps the rig loaded.
@@ -109,8 +114,8 @@ it imports it again; bone data avoids that. `describe` reports each FBX clip's s
 python examples/selftest.py
 ```
 
-It starts the server as an MCP client does, loads the sample rig, and replays the question above: turning alone
-never shows the port; turning and moving does. The contact sheet lands in `~/.poselab/renders/sheet.png`.
+It starts the server as an MCP client does and loads the sample rig. Then it replays the question above: turning
+alone never shows the port, and turning and moving does. The contact sheet lands in `~/.poselab/renders/sheet.png`.
 
 ## License
 

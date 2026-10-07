@@ -599,11 +599,19 @@ class Lab:
         cam_data.lens_unit = 'FOV'
         self.sc.camera = cam
         self.sc.render.engine = 'BLENDER_WORKBENCH'
-        self.sc.display.shading.light = 'STUDIO'
-        self.sc.display.shading.color_type = 'OBJECT'
-        for m in self.meshes:
-            m.color = (0.55, 0.6, 0.7, 1)
-        self.rifle_mesh.color = (0.12, 0.12, 0.13, 1)
+        sh = self.sc.display.shading
+        sh.light = 'STUDIO'
+        sh.show_cavity, sh.cavity_type = True, 'BOTH'          # edges and creases read at a glance
+        sh.show_shadows, sh.shadow_intensity = True, 0.35
+        sh.show_specular_highlight = True
+        self.sc.display.render_aa = '16'
+        if self.R.get("styled"):
+            sh.color_type = 'MATERIAL'                          # the sample's own colours
+        else:
+            sh.color_type = 'OBJECT'                            # a plain arms-and-rifle look for any rig
+            for m in self.meshes:
+                m.color = (0.55, 0.6, 0.7, 1)
+            self.rifle_mesh.color = (0.12, 0.12, 0.13, 1)
         self.sc.render.resolution_x, self.sc.render.resolution_y = size
         G = self._gun()
         centre = self._point("bore") if "bore" in self.R.get("points", {}) else G.translation

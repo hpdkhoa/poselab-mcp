@@ -1,7 +1,7 @@
 # Publishing Pose Lab
 
-The order matters: the PyPI package must be live before the MCP Registry accepts the listing, and the registry checks
-that the README on PyPI carries `mcp-name: io.github.hpdkhoa/poselab-mcp` (it is in README.md as an HTML comment).
+The order matters. The MCP Registry accepts the listing only after the PyPI package is live. It also checks that the
+README on PyPI carries `mcp-name: io.github.hpdkhoa/poselab-mcp`. README.md holds that line as an HTML comment.
 
 ## 1. GitHub
 

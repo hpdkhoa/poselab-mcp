@@ -19,7 +19,7 @@
       "environmentVariables": [
         {
           "name": "POSELAB_BLENDER",
-          "description": "Blender's executable (4.2 or newer), if it is not on the PATH or in the usual install folder",
+          "description": "Blender's executable, if it is not on the PATH or in the usual install folder",
           "isRequired": false
         },
         {
