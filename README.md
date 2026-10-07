@@ -15,8 +15,9 @@ animation, it scans a clip frame by frame against the same checks and mends what
 I built it while hand-making chamber checks for my first-person shooter. One question took me several full Blender
 runs: can turning the rifle show its ejection port to the eye? With Pose Lab it is one `solve` call. On my game's AK
 rig, turning alone met the goal in 0 of 60 samples. That is a fact of the geometry: the eye looks along the barrel.
-Turning and moving the rifle met every goal in about 20 s. The built-in sample rig shows the same result: 0 of 60
-samples for turning alone, and every goal met in 9 s for turning and moving.
+Turning and moving the rifle met each goal on its own, but no sample of 400 met all four goals together. So that
+check needs a new hand pose, not only a new rifle position. On the built-in sample rig, turning alone also met the port
+goal in 0 of 60 samples, and turning and moving met every goal in 9 s.
 
 ## What it gives a model
 

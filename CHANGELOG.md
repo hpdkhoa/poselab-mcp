@@ -15,7 +15,9 @@ Motion: Pose Lab now checks and mends whole clips, not only poses.
 Fixes:
 
 * Bone scale no longer drifts during long solves. Rounding in the arm IK built up over hundreds of moves and
-  stretched the parts on the bones (seen in 0.1.0 renders after `solve`).
+  stretched the parts on the bones (seen in 0.1.0 renders after `solve`). The drift also changed measurements: the
+  0.1.0 README said a move met every goal on my game's AK rig. With the fix, no sample of 400 meets all four.
+* `solve` reports how many samples met every goal together (`all_met_in_samples`).
 * The sample rig's arms are now adult length (30 cm and 28 cm). The left arm was fully stretched at idle, so any move
   of the rifle pulled its hand off the handguard.
 

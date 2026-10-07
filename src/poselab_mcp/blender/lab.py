@@ -548,6 +548,7 @@ class Lab:
         self.snapshot("save", "_solve_base")
         rng = random.Random(seed)
         met_count = [0] * len(goals)
+        all_count = 0
 
         def evaluate(x):
             self.snapshot("load", "_solve_base")
@@ -566,6 +567,7 @@ class Lab:
             tried += 1
             for k, r in enumerate(res):
                 met_count[k] += 1 if r[0] else 0
+            all_count += 1 if all(r[0] for r in res) else 0
             pool.append((score, x, res))
         # a pattern search from each of the six best samples (goals met in different corners rarely meet in one)
         best = None
@@ -592,7 +594,7 @@ class Lab:
         return {"all_met": all(r[0] for r in best[2]), "best": {n: round(v, 2) for n, v in zip(names, best[1])},
                 "goals": [{"goal": g, "met": bool(r[0]), "value": r[1], "met_in_samples": "%d of %d" % (m, samples)}
                           for g, r, m in zip(goals, best[2], met_count)],
-                "evaluations": tried, "never_met": [g for g, m in zip(goals, met_count) if m == 0]}
+                "evaluations": tried, "all_met_in_samples": "%d of %d" % (all_count, samples), "never_met": [g for g, m in zip(goals, met_count) if m == 0]}
 
     # --- motion: record, load, scan, fix, save --------------------------------------------------------------
     # A clip here is frames of bone data on this rig's armature (each bone's local location and rotation, and the
