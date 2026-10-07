@@ -7,9 +7,10 @@
 ![The built-in sample rig: four Blender views of first-person arms holding a rifle](https://raw.githubusercontent.com/hpdkhoa/poselab-mcp/main/docs/sample-rig.png)
 
 Models are weak at judging 3D space from pictures: which side of a rifle faces the eye, whether a finger sits inside
-the receiver, whether any turn of the gun can ever show its ejection port. Pose Lab gives a model numbers instead. It reports positions in named frames and how deep anything clips. It
-measures how squarely a surface faces the eye and what the eye can see. Its solver searches rifle moves against goals
-and reports which goals no move can meet.
+the receiver, whether any turn of the gun can ever show its ejection port. Pose Lab gives a model numbers instead. It
+reports positions in named frames and how deep anything clips. It measures how squarely a surface faces the eye and
+what the eye can see. Its solver searches rifle moves against goals and reports which goals no move can meet. For
+animation, it scans a clip frame by frame against the same checks and mends what fails.
 
 I built it while hand-making chamber checks for my first-person shooter. One question took me several full Blender
 runs: can turning the rifle show its ejection port to the eye? With Pose Lab it is one `solve` call. On my game's AK
@@ -30,6 +31,10 @@ samples for turning alone, and every goal met in 9 s for turning and moving.
 | `faces_eye`, `visible`, `screen` | how squarely a surface faces the eye, how much of it the eye sees, where it falls on screen |
 | `solve` | searches rifle moves against goals; reports each goal and how often any sample met it |
 | `render` | a contact sheet: the player's eye and outside views, each tile labelled as a Blender view |
+| `record_clip`, `load_clip` | a clip from keyed poses, or from a file: `.pose.json`, FBX or BVH |
+| `scan_clip` | every frame against checks; the worst value, when, and the time spans that fail |
+| `fix_clip` | mends what fails and reports the scan before and after, and what no fix can reach |
+| `save_clip` | writes a clip as `.pose.json` bone data and as FBX for a game engine |
 
 ### Frames and signs
 
@@ -44,6 +49,40 @@ muzzle up. Moves (`right`, `forward`, `up`) are in the view.
 
 A hand round its grip touches the rifle on the idle pose already (a finger on the trigger, fingers round the
 handguard). Call `clearance` at `pose_idle` for that baseline, and leave those segments out with `ignore` wildcards.
+
+## Motion: scan and fix clips
+
+`scan_clip` plays a clip frame by frame and runs checks on each frame. The checks are the solver's goals
+(`clearance`, `faces_eye`, `visible`, `on_screen`, `barrel`) and three more:
+
+* `contact`: a point of the hand on its mark, such as a fingertip on the charging handle (`a`, `b`, `max_cm`)
+* `hold`: how far a hand drifts on the rifle from its grip at `ref_s` (`side`, `max_cm`)
+* `pop`: a sudden jump, as the fastest bone speed between frames (`bones`, `max_cm_per_s`)
+
+Any check takes `during: [from_s, to_s]`. `fix_clip` then mends a copy of the clip:
+
+* a pop: it blends the jumping frames again from the good frames round them
+* a hold: it puts the hand back on its grip by arm IK
+* a contact: it moves the wrist until the point touches its mark
+* clearance: it swings each elbow about the shoulder to wrist line by the least angle that clears, wrist kept, and
+  eases that swing over the neighbouring frames
+
+It reports the scan before and after. It also lists the frames where a hand must be somewhere its arm cannot reach,
+since only a new pose can mend those.
+
+`examples/motion_test.py` records a clip on the sample rig with two common faults. The rifle rolls 75 degrees and
+back, keyed only at its ends, so the hands drift off the rifle between keys. One frame also jumps 15 cm. The scan and
+the fix gave these numbers:
+
+| Check | Before | After |
+|---|---|---|
+| left hand drift on the rifle | 1.76 cm | 0.48 cm |
+| right hand drift on the rifle | 1.14 cm | 0.49 cm |
+| fastest hand speed (the pop) | 450 cm/s | 33 cm/s |
+| clearance | 0.0 cm | 0.0 cm |
+
+The fix changed 26 of 43 frames, and every check passed after it. It also flagged 5 frames where the left arm fell
+0.46 cm short of its grip. That still passed the 0.5 cm limit.
 
 ## Install
 
@@ -82,7 +121,7 @@ or to any MCP client's configuration:
 |---|---|
 | `POSELAB_BLENDER` | Blender's executable, if it is not on the PATH or in the usual install folder |
 | `POSELAB_RIGS` | a `rigs.json` describing your own rigs (see `examples/rigs.example.json`) |
-| `POSELAB_OUT` | the only folder Pose Lab writes to (renders, the worker's log); default `~/.poselab` |
+| `POSELAB_OUT` | the only folder Pose Lab writes to (renders, saved clips, the worker's log); default `~/.poselab` |
 
 ## Rigs
 
@@ -97,7 +136,8 @@ it imports it again; bone data avoids that. `describe` reports each FBX clip's s
 
 ## Safety
 
-* Pose Lab only reads your rig files. It writes nothing but renders and its log, and only inside `POSELAB_OUT`.
+* Pose Lab only reads your rig and clip files. It writes renders, saved clips and its log, and only inside
+  `POSELAB_OUT`.
 * The Blender worker listens on 127.0.0.1 only, on a free port, and answers only requests that carry the session's
   random token. It runs only Pose Lab's own commands.
 
@@ -116,6 +156,13 @@ python examples/selftest.py
 
 It starts the server as an MCP client does and loads the sample rig. Then it replays the question above: turning
 alone never shows the port, and turning and moving does. The contact sheet lands in `~/.poselab/renders/sheet.png`.
+
+```
+python examples/motion_test.py
+```
+
+It records the faulty clip described above, scans it, fixes it, and saves `roll_fixed.pose.json` and `roll_fixed.fbx`
+in `~/.poselab/clips/`.
 
 ## License
 

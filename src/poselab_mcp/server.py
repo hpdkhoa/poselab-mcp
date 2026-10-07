@@ -20,7 +20,8 @@ mcp = MCPServer("poselab", title="Pose Lab", version=__version__, instructions=(
     "cm) and view (from the eye, cm: +X right, +Y forward, +Z up). Turns: roll + turns the gun's right side up, swing + "
     "takes the muzzle left, pitch + the muzzle up. Measure before you pose: clearance, faces_eye, visible, screen; use "
     "solve to search moves against goals; a goal never met in any sample is a fact of the geometry. A hand round its "
-    "grip touches the rifle on the idle pose already: check clearance at pose_idle for that baseline."))
+    "grip touches the rifle on the idle pose already: check clearance at pose_idle for that baseline. For motion: "
+    "record_clip or load_clip a clip, scan_clip it against checks, fix_clip what fails, then save_clip the result."))
 worker = Worker()
 atexit.register(worker.stop)
 
@@ -140,6 +141,51 @@ def solve(dofs: Annotated[dict[str, list[float]], Field(description="roll, swing
     """Searches rifle moves from the current pose for one meeting every goal, and leaves the scene there. Reports each
     goal at the best move and how often it was met across samples: a goal never met is a fact of the geometry."""
     return worker.call("solve", dofs=dofs, goals=goals, keep_hands=keep_hands, pivot=pivot, samples=samples, maximize=maximize)
+
+
+Checks = Annotated[list[dict], Field(description=(
+    "each {type, ...}: clearance (parts, ignore, max_cm), faces_eye / visible (point, min), on_screen (point), "
+    "barrel (max_deg), contact (a, b, max_cm), hold (side l|r, max_cm, ref_s: the hand's drift on the rifle from its "
+    "grip at ref_s), pop (bones, max_cm_per_s). Any check takes during: [from_s, to_s]"))]
+
+
+@mcp.tool()
+def record_clip(action: Literal["start", "key", "stop"], clip: str | None = None, seconds: float = 0.0, fps: float = 30.0,
+                ease: bool = True) -> dict:
+    """Builds a clip from poses you set: start (a name), key (the current pose at a time in seconds), stop (bakes the
+    frames, each bone eased from key to key). Between keys the bones blend by rotation, so hands can drift off the
+    rifle; scan_clip's hold check finds that and fix_clip mends it."""
+    return worker.call("record_clip", action=action, clip=clip, seconds=seconds, fps=fps, ease=ease)
+
+
+@mcp.tool()
+def load_clip(clip: str, path: str, bone_map: Annotated[dict[str, str] | None, Field(description="the file's bone names -> this rig's")] = None) -> dict:
+    """Adds a clip from a file: .pose.json bone data, an FBX animation, or a BVH (for example a text-to-motion
+    model's output). A relative path is taken from the rigs file's folder. Reports how well its skeleton fits."""
+    return worker.call("load_clip", clip=clip, path=path, bone_map=bone_map)
+
+
+@mcp.tool()
+def scan_clip(clip: str, checks: Checks) -> dict:
+    """Plays a clip frame by frame and runs each check. Reports for each check whether it passed, the worst value
+    and when, and the time spans where it fails."""
+    return worker.call("scan_clip", clip=clip, checks=checks)
+
+
+@mcp.tool()
+def fix_clip(clip: str, checks: Checks, out: str | None = None, max_swing_deg: float = 90.0, spread_frames: int = 4) -> dict:
+    """Mends a clip against the checks and stores a new clip (out, default <clip>_fixed): pops are blended again from
+    the good frames round them; a hold puts the hand back on its grip; a contact moves the wrist until the point
+    touches its mark; clearance swings each elbow about its shoulder-wrist line (the wrist kept) by the least angle
+    that clears, spread over neighbouring frames. Reports the scan before and after."""
+    return worker.call("fix_clip", clip=clip, checks=checks, out=out, max_swing_deg=max_swing_deg, spread_frames=spread_frames)
+
+
+@mcp.tool()
+def save_clip(clip: str, formats: list[Literal["pose.json", "fbx"]] = ["pose.json"],
+              root_name: Annotated[str | None, Field(description="the armature's name in the FBX (Unreal reads it as the root bone)")] = None) -> dict:
+    """Writes a clip to the output folder's clips/: pose.json bone data, and fbx for a game engine."""
+    return worker.call("save_clip", clip=clip, formats=formats, root_name=root_name)
 
 
 @mcp.tool(structured_output=False)

@@ -12,7 +12,7 @@ EYE = (0.0, 0.0, 160.0)
 GUN = (-6.0, 22.0, 146.0)                        # the gun bone (the grip), arms space
 SHOULDER = {"r": (-17.0, -6.0, 145.0), "l": (17.0, -6.0, 145.0)}
 POLE = {"r": (-45.0, -20.0, 95.0), "l": (45.0, -20.0, 95.0)}
-UPPER, LOWER = 28.0, 26.0
+UPPER, LOWER = 30.0, 28.0                       # cm: an adult upper arm and forearm (the left reaches the handguard bent)
 # each hand, gun space: the wrist, the way the knuckles point, the way the palm faces, the index finger's side.
 # The right hand holds the pistol grip as a fist round it: the grip runs up through the fist (index on top, pinky
 # below), the palm on its right side, the fingers round its front. The left hand is under the handguard, palm up,

@@ -26,6 +26,7 @@ DEFAULT_BONES = {"gun": "ik_hand_gun", "upperarm": "upperarm_{s}", "lowerarm": "
 VIEW_RIGHT, VIEW_FWD, VIEW_UP = Vector((-1.0, 0.0, 0.0)), Vector((0.0, -1.0, 0.0)), Vector((0.0, 0.0, 1.0))
 H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "snapshot",
+          "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "faces_eye", "visible", "screen", "solve", "render")
 
 
@@ -249,6 +250,10 @@ class Lab:
         return self._from(p, frame)
 
     # --- posing -----------------------------------------------------------------------------------------------
+    def _unit(self):
+        """The scale every posed bone keeps: the armature's own. IK rounding must not build up into a stretch."""
+        return self.arm.matrix_world.to_scale()
+
     def _set_world(self, n, M):
         self.arm.pose.bones[n].matrix = self.arm.matrix_world.inverted() @ M
         bpy.context.view_layer.update()
@@ -256,11 +261,11 @@ class Lab:
     def _turn(self, n, q):
         M = self._bw(n)
         R = Matrix.Translation(M.translation) @ q.to_matrix().to_4x4() @ Matrix.Translation(-M.translation) @ M
-        self._set_world(n, Matrix.LocRotScale(R.translation, R.to_quaternion(), M.to_scale()))
+        self._set_world(n, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
 
-    def _two_bone(self, side, goal, pole=None):
+    def _two_bone(self, side, goal, pole=None, pole_world=None):
         upper, lower, hand = self._n("upperarm", side), self._n("lowerarm", side), self._n("hand", side)
-        pole = ue(pole or self.poles[side])
+        pole = pole_world if pole_world is not None else ue(pole or self.poles[side])
         S, E, W = self._bw(upper).translation, self._bw(lower).translation, self._bw(hand).translation
         l1, l2 = (E - S).length, (W - E).length
         d = min((goal - S).length, l1 + l2 - 1e-4)
@@ -322,6 +327,9 @@ class Lab:
                     (l0, q0), (l1, q1) = act[i][pb.name], act[j][pb.name]
                     pb.location = Vector(l0).lerp(Vector(l1), k)
                     pb.rotation_quaternion = Quaternion(q0).slerp(Quaternion(q1), k)
+            p0, p1 = act[i].get("_parts", {}), act[j].get("_parts", {})
+            if p0 or p1:
+                self.travel = {n: p0.get(n, 0.0) + (p1.get(n, 0.0) - p0.get(n, 0.0)) * k for n in set(p0) | set(p1)}
             bpy.context.view_layer.update()
         else:
             f = act.frame_range[0] + seconds * fps
@@ -368,7 +376,7 @@ class Lab:
             W = G @ H
             miss[s] = round(self._two_bone(s, W.translation), 2)
             hn = self._n("hand", s)
-            self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, W.to_quaternion(), W.to_scale()))
+            self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, W.to_quaternion(), self._unit()))
         return {"hands_off_their_hold_cm": miss, "barrel_off_deg": round(self._barrel_off(), 2)}
 
     def reach(self, side, target, frame="gun", pole=None):
@@ -377,7 +385,7 @@ class Lab:
         hn = self._n("hand", side)
         H = self._bw(hn)
         miss = self._two_bone(side, self._point(target, frame), pole)
-        self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, H.to_quaternion(), H.to_scale()))
+        self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, H.to_quaternion(), self._unit()))
         return {"wrist_off_target_cm": round(miss, 2)}
 
     def snapshot(self, action, name):
@@ -391,6 +399,7 @@ class Lab:
         bones, travel = self.snapshots[name]
         for pb in self.arm.pose.bones:
             pb.location, pb.rotation_quaternion = bones[pb.name]
+            pb.scale = self.idle[pb.name][2]
         self.travel = dict(travel)
         bpy.context.view_layer.update()
         self._place_rifle()
@@ -523,10 +532,10 @@ class Lab:
         if t == "barrel":
             v = self._barrel_off()
             return v <= g.get("max_deg", 2.0), round(v, 2), max(0.0, v - g.get("max_deg", 2.0)) / 30.0
-        if t == "distance":
+        if t in ("distance", "contact"):
             v = self.distance(g["a"], g["b"])["cm"]
             return v <= g.get("max_cm", 0.5), v, max(0.0, v - g.get("max_cm", 0.5)) / 5.0
-        raise ValueError("goal type %r: faces_eye, visible, on_screen, clearance, barrel, distance" % t)
+        raise ValueError("goal type %r: faces_eye, visible, on_screen, clearance, barrel, distance, contact" % t)
 
     def solve(self, dofs, goals, keep_hands=("l", "r"), pivot="stock", samples=120, maximize=None, seed=1):
         """Searches rifle moves (dofs: roll, swing, pitch, right, forward, up -> [min, max]) from the current pose for
@@ -584,6 +593,392 @@ class Lab:
                 "goals": [{"goal": g, "met": bool(r[0]), "value": r[1], "met_in_samples": "%d of %d" % (m, samples)}
                           for g, r, m in zip(goals, best[2], met_count)],
                 "evaluations": tried, "never_met": [g for g, m in zip(goals, met_count) if m == 0]}
+
+    # --- motion: record, load, scan, fix, save --------------------------------------------------------------
+    # A clip here is frames of bone data on this rig's armature (each bone's local location and rotation, and the
+    # rifle's parts), at a frame rate. Scanning plays it frame by frame and runs checks; fixing changes only what a
+    # failing check needs and stores a new clip. Files go only to the output folder.
+    def _capture(self):
+        fr = {pb.name: [list(pb.location), list(pb.rotation_quaternion)] for pb in self.arm.pose.bones}
+        if self.travel:
+            fr["_parts"] = dict(self.travel)
+        return fr
+
+    def _apply(self, fr):
+        for pb in self.arm.pose.bones:
+            if pb.name in fr:
+                pb.location, pb.rotation_quaternion = Vector(fr[pb.name][0]), Quaternion(fr[pb.name][1])
+            pb.scale = self.idle[pb.name][2]
+        self.travel = dict(fr.get("_parts", {}))
+        bpy.context.view_layer.update()
+        self._place_rifle()
+
+    def _frames(self, clip):
+        """The clip as bone data at its own frame rate: (frames, fps)."""
+        if clip not in self.clips:
+            raise ValueError("no clip %r; clips: %s" % (clip, list(self.clips)))
+        o, act, fps, T, C = self.clips[clip]
+        if o == "json":
+            return [dict(f) for f in act], fps
+        n = int(round(self._clip_len(clip) * fps)) + 1
+        out = []
+        for i in range(n):
+            self.pose_clip(clip, i / fps)
+            out.append(self._capture())
+        return out, fps
+
+    def _store(self, clip, frames, fps, source):
+        self.clips[clip] = ("json", frames, float(fps), None, None)
+        self.clip_fit[clip] = {"source": source}
+
+    @staticmethod
+    def _blend(a, b, x):
+        fr = {}
+        for name, (l0, q0) in a.items():
+            if name == "_parts":
+                continue
+            l1, q1 = b.get(name, (l0, q0))
+            fr[name] = [list(Vector(l0).lerp(Vector(l1), x)), list(Quaternion(q0).slerp(Quaternion(q1), x))]
+        p0, p1 = a.get("_parts", {}), b.get("_parts", {})
+        if p0 or p1:
+            fr["_parts"] = {k: p0.get(k, 0.0) + (p1.get(k, 0.0) - p0.get(k, 0.0)) * x for k in set(p0) | set(p1)}
+        return fr
+
+    def record_clip(self, action, clip=None, seconds=0.0, fps=30.0, ease=True):
+        """Builds a clip from poses: start (a name), key (the current pose at a time, s), stop (bakes the frames:
+        each bone eased from key to key). Between keys the bones blend by rotation, so hands may drift off the rifle:
+        scan_clip's hold check finds that and fix_clip mends it."""
+        self._need()
+        if action == "start":
+            if not clip:
+                raise ValueError("start needs a clip name")
+            self._rec = {"clip": clip, "fps": float(fps), "keys": []}
+            return {"recording": clip, "fps": fps}
+        rec = getattr(self, "_rec", None)
+        if not rec:
+            raise RuntimeError("no recording: record_clip start first")
+        if action == "key":
+            rec["keys"] = [k for k in rec["keys"] if abs(k[0] - seconds) > 1e-6] + [(float(seconds), self._capture())]
+            rec["keys"].sort(key=lambda k: k[0])
+            return {"keys": [round(k[0], 3) for k in rec["keys"]]}
+        if action != "stop":
+            raise ValueError("action: start, key or stop")
+        keys = rec["keys"]
+        if not keys:
+            raise ValueError("no keys recorded")
+        fps = rec["fps"]
+        n = int(round(keys[-1][0] * fps)) + 1
+        frames = []
+        for i in range(n):
+            t = i / fps
+            a = max([k for k in keys if k[0] <= t + 1e-9], key=lambda k: k[0], default=keys[0])
+            b = min([k for k in keys if k[0] >= t - 1e-9], key=lambda k: k[0], default=keys[-1])
+            x = 0.0 if b[0] <= a[0] else (t - a[0]) / (b[0] - a[0])
+            frames.append(self._blend(a[1], b[1], x * x * (3 - 2 * x) if ease else x))
+        self._store(rec["clip"], frames, fps, "recorded")
+        self._rec = None
+        return {"clip": rec["clip"], "frames": n, "seconds": round((n - 1) / fps, 3)}
+
+    def load_clip(self, clip, path, bone_map=None):
+        """Adds a clip from a file: <clip>.pose.json bone data, an FBX animation, or a BVH. A relative path is taken
+        from the rigs file's folder. bone_map renames the file's bones to this rig's ({file bone: rig bone})."""
+        self._need()
+        base = os.path.dirname(os.path.abspath(self.rigs_file)) if self.rigs_file else os.getcwd()
+        full = path if os.path.isabs(path) else os.path.join(base, path)
+        if not os.path.exists(full):
+            raise ValueError("no file %s" % full)
+        if full.endswith(".json"):
+            data = json.load(open(full))
+            self._store(clip, data["frames"], data["fps"], "bone data")
+            return {"clip": clip, "seconds": round(self._clip_len(clip), 3), "source": "bone data"}
+        before = set(bpy.data.objects.keys())
+        if full.lower().endswith(".bvh"):
+            bpy.ops.import_anim.bvh(filepath=full, update_scene_fps=False, update_scene_duration=False)
+        elif full.lower().endswith(".fbx"):
+            bpy.ops.import_scene.fbx(filepath=full)
+        else:
+            raise ValueError("clips: .pose.json, .fbx or .bvh")
+        fps = self.sc.render.fps / self.sc.render.fps_base
+        rest = {b.name: self.arm.matrix_world @ b.matrix_local for b in self.arm.data.bones}
+        made = None
+        for o in [o for o in bpy.data.objects if o.name not in before]:
+            if o.type == 'ARMATURE' and o.animation_data and o.animation_data.action and made is None:
+                if bone_map:
+                    for b in o.data.bones:
+                        if b.name in bone_map:
+                            b.name = bone_map[b.name]
+                o.hide_render = True
+                crest = {b.name: o.matrix_world @ b.matrix_local for b in o.data.bones}
+                shared = [b.name for b in self.arm.data.bones if b.name in crest]
+                if len(shared) < 3:
+                    raise ValueError("the file's bones do not match this rig's: give a bone_map")
+                T = fit([crest[b].translation for b in shared], [rest[b].translation for b in shared])
+                C = {b: crest[b].inverted() @ T.inverted() @ rest[b] for b in shared}
+                worst = max(((T @ crest[b]).translation - rest[b].translation).length for b in shared) * 100.0
+                self.clips[clip] = (o, o.animation_data.action, fps, T, C)
+                self.clip_fit[clip] = {"source": os.path.splitext(full)[1][1:], "bones": len(shared), "rest_mismatch_cm": round(worst, 3)}
+                made = o
+            else:
+                bpy.data.objects.remove(o)
+        self.sc.render.fps, self.sc.render.fps_base = 30, 1.0
+        if made is None:
+            raise ValueError("no animation in %s" % full)
+        return {"clip": clip, "seconds": round(self._clip_len(clip), 3), **self.clip_fit[clip]}
+
+    def _hand_in_gun(self, side):
+        return self._gun().inverted() @ self._bw(self._n("hand", side))
+
+    def _check(self, c, prev, refs):
+        """(met, value) for one check on the pose as it stands; prev: bone positions a frame before (pops)."""
+        t = c["type"]
+        if t == "pop":
+            if prev is None:
+                return True, 0.0
+            v = max((self._bw(b).translation - prev[b]).length * 100.0 * c["_fps"] for b in c.get("bones", ["hand_l", "hand_r"]))
+            return v <= c.get("max_cm_per_s", 300.0), round(v, 1)
+        if t == "hold":
+            v = (self._hand_in_gun(c["side"]).translation - refs[c["side"]].translation).length * 100.0
+            return v <= c.get("max_cm", 0.5), round(v, 2)
+        met, v, _ = self._goal(c)
+        return met, v
+
+    def scan_clip(self, clip, checks):
+        """Plays a clip frame by frame and runs each check: clearance, faces_eye, visible, on_screen, barrel, contact
+        (a, b, max_cm), hold (side, max_cm: the hand's drift on the rifle from its grip at ref_s), pop (bones,
+        max_cm_per_s). Any check takes during: [from_s, to_s]. Reports, for each check, the worst value and when, and
+        the times it fails."""
+        self._need()
+        frames, fps = self._frames(clip)
+        return self._scan(frames, fps, checks, clip)
+
+    def _scan(self, frames, fps, checks, name):
+        checks = [dict(c, _fps=fps) for c in checks]
+        refs = {}
+        for c in checks:
+            if c["type"] == "hold":
+                self._apply(frames[min(len(frames) - 1, int(round(c.get("ref_s", 0.0) * fps)))])
+                refs[c["side"]] = self._hand_in_gun(c["side"])
+        pop_bones = {b for c in checks if c["type"] == "pop" for b in c.get("bones", ["hand_l", "hand_r"])}
+        per = [[] for _ in checks]
+        prev = None
+        for i, fr in enumerate(frames):
+            t = i / fps
+            self._apply(fr)
+            for k, c in enumerate(checks):
+                d = c.get("during")
+                if d and not (d[0] - 1e-9 <= t <= d[1] + 1e-9):
+                    continue
+                met, v = self._check(c, prev, refs)
+                per[k].append((t, met, v))
+            prev = {b: self._bw(b).translation.copy() for b in pop_bones}
+        report = []
+        for c, rows in zip(checks, per):
+            bad = [r for r in rows if not r[1]]
+            higher_worse = c["type"] in ("clearance", "barrel", "distance", "contact", "hold", "pop")
+            worst = (max if higher_worse else min)(rows, key=lambda r: r[2]) if rows else None
+            spans = []
+            for t, met, v in rows:
+                if met:
+                    continue
+                if spans and t - spans[-1][1] <= 1.5 / fps:
+                    spans[-1][1] = t
+                else:
+                    spans.append([t, t])
+            report.append({"check": {k: v for k, v in c.items() if k != "_fps"}, "passed": not bad,
+                           "worst": worst[2] if worst else None, "worst_at_s": round(worst[0], 3) if worst else None,
+                           "failing_frames": len(bad), "failing_s": [[round(a, 3), round(b, 3)] for a, b in spans]})
+        return {"clip": name, "frames": len(frames), "fps": fps, "all_passed": all(r["passed"] for r in report), "checks": report}
+
+    def _swing_elbow(self, side, deg):
+        """The elbow turned about the shoulder-wrist line by deg; the wrist and the hand stay where they are."""
+        up, lo, hn = self._n("upperarm", side), self._n("lowerarm", side), self._n("hand", side)
+        S, E, W = self._bw(up).translation, self._bw(lo).translation, self._bw(hn).translation
+        H = self._bw(hn).copy()
+        E2 = S + Quaternion((W - S).normalized(), math.radians(deg)) @ (E - S)
+        self._two_bone(side, W, pole_world=E2)
+        self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, H.to_quaternion(), self._unit()))
+
+    def _put_hand(self, side, M):
+        """The hand to M by arm IK; returns how far the target lies beyond the arm's reach (cm, 0 if reachable)."""
+        hn = self._n("hand", side)
+        up, lo = self._n("upperarm", side), self._n("lowerarm", side)
+        S, E, W = self._bw(up).translation, self._bw(lo).translation, self._bw(hn).translation
+        short = max(0.0, (M.translation - S).length - (E - S).length - (W - E).length) * 100.0
+        self._two_bone(side, M.translation)
+        self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, M.to_quaternion(), self._unit()))
+        return short
+
+    @staticmethod
+    def _in(c, t):
+        d = c.get("during")
+        return not d or d[0] - 1e-9 <= t <= d[1] + 1e-9
+
+    def fix_clip(self, clip, checks, out=None, max_swing_deg=90.0, spread_frames=4):
+        """Mends a clip against the checks and stores the result as a new clip (out, default <clip>_fixed):
+        pop: frames that jump are blended again from the good frames round them;
+        hold: the hand goes back onto its grip on the rifle (arm IK);
+        contact: the wrist moves until a point of the hand (a) touches its mark (b);
+        clearance: each elbow swings about its shoulder-wrist line, the wrist kept, by the least angle that clears,
+        spread over the frames round it so nothing pops.
+        Reports the scan before and after; save_clip writes the result."""
+        self._need()
+        out = out or clip + "_fixed"
+        frames, fps = self._frames(clip)
+        before = self._scan(frames, fps, checks, clip)
+        changed = set()
+        limits = {}   # check -> the frames whose target lies out of the arm's reach, and how far
+
+        def out_of_reach(c, i, short):
+            if short > 0.05:
+                key = "%s %s" % (c["type"], c.get("side") or c.get("a"))
+                n, worst, first, last = limits.get(key, (0, 0.0, i, i))
+                limits[key] = (n + 1, max(worst, short), min(first, i), max(last, i))
+        # pops: the frames that jump are blended again between the nearest good frames
+        for c in [c for c in checks if c["type"] == "pop"]:
+            rep = self._scan(frames, fps, [c], clip)["checks"][0]
+            bad = set()
+            for a, b in rep["failing_s"]:
+                for i in range(int(round(a * fps)), int(round(b * fps)) + 1):
+                    bad.update((i - 1, i))
+            bad = sorted(i for i in bad if 0 <= i < len(frames))
+            good = [i for i in range(len(frames)) if i not in bad]
+            for i in bad:
+                lo_ = max([g for g in good if g < i], default=None)
+                hi_ = min([g for g in good if g > i], default=None)
+                if lo_ is not None and hi_ is not None:
+                    frames[i] = self._blend(frames[lo_], frames[hi_], (i - lo_) / (hi_ - lo_))
+                    changed.add(i)
+        # holds: each frame's hand back onto its grip as at ref_s
+        for c in [c for c in checks if c["type"] == "hold"]:
+            self._apply(frames[min(len(frames) - 1, int(round(c.get("ref_s", 0.0) * fps)))])
+            ref = self._hand_in_gun(c["side"])
+            for i, fr in enumerate(frames):
+                if not self._in(c, i / fps):
+                    continue
+                self._apply(fr)
+                if (self._hand_in_gun(c["side"]).translation - ref.translation).length * 100.0 > c.get("max_cm", 0.5):
+                    out_of_reach(c, i, self._put_hand(c["side"], self._gun() @ ref))
+                    frames[i] = self._capture()
+                    changed.add(i)
+        # contacts: the wrist moves until the point of the hand touches its mark
+        for c in [c for c in checks if c["type"] == "contact"]:
+            side = c["a"][-1] if c["a"][-2:] in ("_l", "_r") else c.get("side", "l")
+            for i, fr in enumerate(frames):
+                if not self._in(c, i / fps):
+                    continue
+                self._apply(fr)
+                if self.distance(c["a"], c["b"])["cm"] <= c.get("max_cm", 0.5):
+                    continue
+                short = 0.0
+                for _ in range(8):
+                    err = self._point(c["b"]) - self._point(c["a"])
+                    if err.length * 100.0 <= c.get("max_cm", 0.5) * 0.5:
+                        break
+                    short = self._put_hand(side, Matrix.Translation(err) @ self._bw(self._n("hand", side)))
+                out_of_reach(c, i, short)
+                frames[i] = self._capture()
+                changed.add(i)
+        # clearance: the least elbow swing that clears, per frame and side, spread over the frames round it
+        steps = [0.0] + [sg * a for a in range(10, int(max_swing_deg) + 1, 10) for sg in (1, -1)]
+        for c in [c for c in checks if c["type"] == "clearance"]:
+            for side in [s_ for s_ in ("l", "r") if c.get("parts", "both") in ("both", s_, {"l": "left", "r": "right"}[s_])]:
+                part = {"l": "left", "r": "right"}[side]
+                angle = [0.0] * len(frames)
+                for i, fr in enumerate(frames):
+                    if not self._in(c, i / fps):
+                        continue
+                    self._apply(fr)
+                    if self.clearance(part, c.get("ignore", ()))["worst_cm"] <= c.get("max_cm", 0.0):
+                        continue
+                    best = None
+                    for a in steps:
+                        self._apply(fr)
+                        self._swing_elbow(side, a)
+                        v = self.clearance(part, c.get("ignore", ()))["worst_cm"]
+                        if best is None or v < best[0] - 1e-6:
+                            best = (v, a)
+                        if v <= c.get("max_cm", 0.0):
+                            break
+                    angle[i] = best[1]
+                spread = list(angle)
+                for i, a in enumerate(angle):
+                    if not a:
+                        continue
+                    for k in range(-spread_frames, spread_frames + 1):
+                        j = i + k
+                        if 0 <= j < len(frames):
+                            w = a * (1.0 - smooth(0.0, spread_frames + 1.0, abs(k)))
+                            if abs(w) > abs(spread[j]):
+                                spread[j] = w
+                for i, a in enumerate(spread):
+                    if a:
+                        self._apply(frames[i])
+                        self._swing_elbow(side, a)
+                        frames[i] = self._capture()
+                        changed.add(i)
+        self._store(out, frames, fps, "fixed from %s" % clip)
+        after = self._scan(frames, fps, checks, out)
+        brief = lambda r: [{"check": x["check"]["type"], "passed": x["passed"], "worst": x["worst"], "failing_frames": x["failing_frames"]} for x in r["checks"]]
+        # what no fix can mend: a hand asked to be where the arm cannot reach (the pose itself must change)
+        reach = [{"check": k, "frames": n, "from_s": round(a / fps, 3), "to_s": round(b / fps, 3), "worst_short_cm": round(w, 2)}
+                 for k, (n, w, a, b) in limits.items()]
+        return {"clip": out, "changed_frames": len(changed), "before": brief(before), "after": brief(after),
+                "all_passed_after": after["all_passed"], "out_of_reach": reach, "after_detail": after["checks"]}
+
+    def save_clip(self, clip, formats=("pose.json",), root_name=None):
+        """Writes a clip to the output folder's clips/: pose.json (bone data) and fbx (an armature animation for a
+        game engine). root_name renames the armature object while it exports (Unreal reads the top node as the
+        skeleton's root bone: give the root bone's name)."""
+        self._need()
+        frames, fps = self._frames(clip)
+        folder = self._own(os.path.join(self.out_dir, "clips"))
+        os.makedirs(folder, exist_ok=True)
+        written = []
+        if "pose.json" in formats:
+            path = self._own(os.path.join(folder, clip + ".pose.json"))
+            with open(path, "w") as fh:
+                json.dump({"fps": fps, "frames": frames}, fh)
+            written.append(path)
+        if "fbx" in formats:
+            path = self._own(os.path.join(folder, clip + ".fbx"))
+            keep = self._capture()
+            act = bpy.data.actions.new(clip)
+            self.arm.animation_data_create()
+            self.arm.animation_data.action = act
+            for i, fr in enumerate(frames):
+                for pb in self.arm.pose.bones:
+                    if pb.name in fr:
+                        pb.location, pb.rotation_quaternion = Vector(fr[pb.name][0]), Quaternion(fr[pb.name][1])
+                        pb.keyframe_insert("location", frame=i)
+                        pb.keyframe_insert("rotation_quaternion", frame=i)
+            for o in bpy.context.view_layer.objects:
+                o.select_set(False)
+            self.arm.select_set(True)
+            bpy.context.view_layer.objects.active = self.arm
+            old_name = self.arm.name
+            renamed = None
+            if root_name:
+                clash = bpy.data.objects.get(root_name)
+                if clash and clash != self.arm:
+                    renamed = clash
+                    clash.name = clash.name + "_kept"
+                self.arm.name = root_name
+            self.sc.render.fps, self.sc.render.fps_base = int(round(fps)), 1.0
+            self.sc.frame_start, self.sc.frame_end = 0, len(frames) - 1
+            try:
+                bpy.ops.export_scene.fbx(filepath=path, use_selection=True, object_types={'ARMATURE'}, add_leaf_bones=False,
+                                         bake_anim=True, bake_anim_use_all_actions=False, bake_anim_use_nla_strips=False,
+                                         bake_anim_force_startend_keying=True, bake_anim_simplify_factor=0.0)
+            finally:
+                self.arm.name = old_name
+                if renamed:
+                    renamed.name = root_name
+                self.arm.animation_data.action = None
+                bpy.data.actions.remove(act)
+                self.sc.render.fps = 30
+                self._apply(keep)
+            written.append(path)
+        return {"clip": clip, "frames": len(frames), "fps": fps, "written": written}
 
     # --- pictures ---------------------------------------------------------------------------------------------
     def render(self, views=("eye", "right", "left", "top"), size=(640, 360)):
