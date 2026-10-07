@@ -5,12 +5,17 @@ README on PyPI carries `mcp-name: io.github.hpdkhoa/poselab-mcp`. README.md hold
 
 ## 1. GitHub
 
-    git init
-    git add .
-    git commit -m "Pose Lab 0.1.0"
-    git branch -M main
+The GitHub repo already holds a first commit (its `.gitignore` and `LICENSE`). Build on it:
+
+    git init -b main
     git remote add origin https://github.com/hpdkhoa/poselab-mcp.git
+    git fetch origin
+    git reset origin/main
+    git add .
+    git commit -F <message file>
     git push -u origin main
+
+`git reset origin/main` points the new branch at GitHub's commit and keeps every file here as it is.
 
 ## 2. PyPI
 
