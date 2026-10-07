@@ -1,0 +1,39 @@
+{
+  "_about": "Your own rigs for Pose Lab: point POSELAB_RIGS at a file like this one. Folders are relative to this file. Points and normals are in the gun frame: the gun bone at the idle pose, Unreal-style axes, cm (+X the gun's left, +Y forward along the barrel, +Z up). The eye is in the arms' space, cm. Bone names default to the Unreal mannequin's; rename any under bones.",
+  "my_rifle": {
+    "title": "My rifle on my first-person arms",
+    "folder": "my_rifle",
+    "arms": "Arms.fbx",
+    "idle": "Arms_Idle.fbx",
+    "gun": "Rifle.fbx",
+    "gun_offset": [0.0, 0.0, 0.0],
+    "eye": [0.0, -2.3, 162.6],
+    "clips": {
+      "reload": "A_Reload.fbx",
+      "check": "A_ChamberCheck.pose.json"
+    },
+    "parts": {
+      "carrier": ["Bolt", "ChargingHandle"]
+    },
+    "points": {
+      "port": [-1.6, 2.0, 3.8],
+      "bore": [0.0, 0.0, 3.0],
+      "stock": [0.0, -25.0, 0.0],
+      "muzzle": [0.0, 48.0, 3.0]
+    },
+    "normals": {
+      "port": [-1.0, 0.0, 0.0]
+    },
+    "poles": {
+      "l": [45.0, -20.0, 95.0],
+      "r": [-45.0, -20.0, 95.0]
+    },
+    "bones": {
+      "gun": "ik_hand_gun",
+      "upperarm": "upperarm_{s}",
+      "lowerarm": "lowerarm_{s}",
+      "hand": "hand_{s}",
+      "finger": "{f}_{j}_{s}"
+    }
+  }
+}

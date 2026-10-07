@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hpdkhoa/poselab-mcp",
+  "title": "Pose Lab",
+  "description": "Measured spatial answers for posing first-person arms and a rifle in Blender",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/hpdkhoa/poselab-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "poselab-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "POSELAB_BLENDER",
+          "description": "Blender's executable (4.2 or newer), if it is not on the PATH or in the usual install folder",
+          "isRequired": false
+        },
+        {
+          "name": "POSELAB_RIGS",
+          "description": "A rigs.json describing your own FBX rigs; the built-in sample rig needs none",
+          "isRequired": false
+        },
+        {
+          "name": "POSELAB_OUT",
+          "description": "The only folder Pose Lab writes to (renders, the worker's log); defaults to ~/.poselab",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
