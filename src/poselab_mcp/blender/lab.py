@@ -39,6 +39,13 @@ def ue_back(v):
     return Vector((v[0], -v[1], v[2])) * 100.0
 
 
+def _xyz(v, what):
+    """Three numbers, or a clear error that names the argument."""
+    if not isinstance(v, (list, tuple)) or len(v) != 3 or not all(isinstance(c, (int, float)) for c in v):
+        raise ValueError("%s must be [x, y, z] (three numbers), got %r" % (what, v))
+    return v
+
+
 def r2(v, n=2):
     return [round(c, n) for c in v]
 
@@ -232,7 +239,7 @@ class Lab:
         raise ValueError("frame must be gun, arms or view")
 
     def _from(self, v, frame):
-        v = Vector(v)
+        v = Vector(_xyz(v, "a point"))
         if frame == "gun":
             return self._gun() @ ue(v)
         if frame == "arms":
@@ -327,6 +334,8 @@ class Lab:
         if clip not in self.clips:
             raise ValueError("no clip %r; clips: %s" % (clip, list(self.clips)))
         o, act, fps, T, C = self.clips[clip]
+        asked, length = seconds, self._clip_len(clip)
+        seconds = min(max(float(seconds), 0.0), length)   # a time outside the clip shows its first or last frame
         if o == "json":
             x = min(max(seconds * fps, 0.0), len(act) - 1)
             i = int(math.floor(x))
@@ -350,7 +359,10 @@ class Lab:
                     pb.matrix = inv @ want[pb.name]
                     bpy.context.view_layer.update()
         self._place_rifle()
-        return {"clip": clip, "seconds": seconds, "length": round(self._clip_len(clip), 3)}
+        out = {"clip": clip, "seconds": round(seconds, 3), "length": round(length, 3)}
+        if abs(asked - seconds) > 1e-9:
+            out["note"] = "%s s is outside the clip; showing %s s" % (asked, round(seconds, 3))
+        return out
 
     def move_part(self, part, cm):
         """A moving part of the rifle drawn back along the barrel (cm from home)."""
@@ -391,6 +403,8 @@ class Lab:
     def reach(self, side, target, frame="gun", pole=None):
         """A wrist to a point by arm IK; the hand keeps its turn. pole: where the elbow points (arms frame, cm)."""
         self._need()
+        if pole is not None:
+            _xyz(pole, "pole")
         hn = self._n("hand", side)
         H = self._bw(hn)
         miss = self._two_bone(side, self._point(target, frame), pole)
@@ -476,9 +490,11 @@ class Lab:
         """How squarely a surface faces the eye: 1 square on, 0 edge on, below 0 turned away."""
         self._need()
         p = self._point(point)
-        n = normal if normal is not None else self.R.get("normals", {}).get(point)
+        n = normal if normal is not None else (self.R.get("normals", {}).get(point) if isinstance(point, str) else None)
         if n is None:
             raise ValueError("no normal for %r: give one in the gun frame" % (point,))
+        if ue(_xyz(n, "normal")).length < 1e-9:
+            raise ValueError("normal must not be [0, 0, 0]")
         nw = (self._gun().to_quaternion() @ ue(n)).normalized()
         to_eye = self.eye - p
         dot = nw.dot(to_eye.normalized())
@@ -488,6 +504,8 @@ class Lab:
     def visible(self, point="port", radius_cm=0.6, rings=2):
         """The share of a small disc round a point the eye sees with nothing (arms, rifle) in the way."""
         self._need()
+        if radius_cm <= 0:
+            raise ValueError("radius_cm must be above 0")
         target = self._point(point)
         d = (target - self.eye).normalized()
         u = d.cross(VIEW_UP)
@@ -551,9 +569,20 @@ class Lab:
         one that meets every goal; reports each goal at the best and how often any sample met it (never met: a fact
         of the geometry, not a tuning miss). Leaves the scene at the best."""
         self._need()
-        names = [k for k in dofs if k in ("roll", "swing", "pitch", "right", "forward", "up")]
-        if not names:
-            raise ValueError("dofs: name -> [min, max] for roll, swing, pitch, right, forward, up")
+        known = ("roll", "swing", "pitch", "right", "forward", "up")
+        names = list(dofs)
+        if not names or any(k not in known for k in names):
+            raise ValueError("dofs: name -> [min, max] for roll, swing, pitch, right, forward, up; got %s" % ", ".join(map(str, names)))
+        for k in names:
+            r = dofs[k]
+            if not isinstance(r, (list, tuple)) or len(r) != 2 or not all(isinstance(c, (int, float)) for c in r) or r[0] > r[1]:
+                raise ValueError("dofs[%r] must be [min, max] with min <= max, got %r" % (k, r))
+        if samples < 1:
+            raise ValueError("samples must be 1 or more")
+        if maximize is not None and not 0 <= maximize < len(goals):
+            raise ValueError("maximize must be a goal's index, 0 to %d" % (len(goals) - 1))
+        for g in goals:
+            self._need_keys(g)
         self.snapshot("save", "_solve_base")
         rng = random.Random(seed)
         met_count = [0] * len(goals)
@@ -657,18 +686,22 @@ class Lab:
 
     def record_clip(self, action, clip=None, seconds=0.0, fps=30.0, ease=True):
         """Builds a clip from poses: start (a name), key (the current pose at a time, s), stop (bakes the frames:
-        each bone eased from key to key). Between keys the bones blend by rotation, so hands may drift off the rifle:
-        scan_clip's hold check finds that and fix_clip mends it."""
+        each bone eased from key to key). Between keys the bones blend by rotation, so hands may drift off the rifle
+        between keys."""
         self._need()
         if action == "start":
             if not clip:
                 raise ValueError("start needs a clip name")
+            if fps <= 0:
+                raise ValueError("fps must be above 0")
             self._rec = {"clip": clip, "fps": float(fps), "keys": []}
             return {"recording": clip, "fps": fps}
         rec = getattr(self, "_rec", None)
         if not rec:
             raise RuntimeError("no recording: record_clip start first")
         if action == "key":
+            if seconds < 0:
+                raise ValueError("seconds must be 0 or more")
             rec["keys"] = [k for k in rec["keys"] if abs(k[0] - seconds) > 1e-6] + [(float(seconds), self._capture())]
             rec["keys"].sort(key=lambda k: k[0])
             return {"keys": [round(k[0], 3) for k in rec["keys"]]}
@@ -762,7 +795,26 @@ class Lab:
         frames, fps = self._frames(clip)
         return self._scan(frames, fps, checks, clip)
 
+    def _need_keys(self, c):
+        """A clear error for a goal or check that lacks what its type needs."""
+        if not isinstance(c, dict) or "type" not in c:
+            raise ValueError("each goal or check is {type: ..., ...}, got %r" % (c,))
+        t = c["type"]
+        need = {"on_screen": ("point",), "distance": ("a", "b"), "contact": ("a", "b"), "hold": ("side",)}.get(t, ())
+        missing = [k for k in need if k not in c]
+        if missing:
+            raise ValueError("%s needs %s" % (t, ", ".join(missing)))
+        if t == "hold" and c["side"] not in ("l", "r"):
+            raise ValueError("hold side must be l or r, got %r" % (c["side"],))
+        if t == "pop" and "bones" in c and not c["bones"]:
+            raise ValueError("pop bones must name at least one bone")
+        d = c.get("during")
+        if d is not None and (not isinstance(d, (list, tuple)) or len(d) != 2 or not all(isinstance(x, (int, float)) for x in d) or d[0] > d[1]):
+            raise ValueError("during must be [from_s, to_s] with from_s <= to_s, got %r" % (d,))
+
     def _scan(self, frames, fps, checks, name):
+        for c in checks:
+            self._need_keys(c)
         checks = [dict(c, _fps=fps) for c in checks]
         for c in checks:
             if c["type"] == "pop":
@@ -999,6 +1051,8 @@ class Lab:
         """Renders the pose: eye is the player's camera (90 degrees, 5 cm near plane); right, left, top and front
         look at the rifle from outside. Images go to the output folder."""
         self._need()
+        if not views:
+            raise ValueError("views: at least one of eye, right, left, top, front")
         out_dir = self._own(os.path.join(self.out_dir, "renders"))
         os.makedirs(out_dir, exist_ok=True)
         cam_data = bpy.data.cameras.get("poselab") or bpy.data.cameras.new("poselab")

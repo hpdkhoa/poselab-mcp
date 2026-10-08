@@ -77,8 +77,8 @@ Run details, from `runs/2026-10-08-claude-code/run.json`:
   agents copied their own render with `cp`, and one ran inline Python as a calculator on numbers the tools returned.
   No agent read source code, benchmark files or results.
 
-Known issue: the `record_clip` description names `scan_clip` and `fix_clip`, which the vision condition does not
-have. One vision agent noticed. It gives no measurement, but a later run should fix the description first.
+Known issue in this run: the `record_clip` description named `scan_clip` and `fix_clip`, which the vision condition
+does not have. One vision agent noticed. It gives no measurement. 0.2.2 removes those names from the description.
 
 `runs/2026-10-08-claude-code/` holds the summary, the run details and every episode's grade and tool calls. The
 renders are left out to keep the repo small.

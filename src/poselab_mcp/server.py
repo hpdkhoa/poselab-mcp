@@ -154,7 +154,7 @@ def record_clip(action: Literal["start", "key", "stop"], clip: str | None = None
                 ease: bool = True) -> dict:
     """Builds a clip from poses you set: start (a name), key (the current pose at a time in seconds), stop (bakes the
     frames, each bone eased from key to key). Between keys the bones blend by rotation, so hands can drift off the
-    rifle; scan_clip's hold check finds that and fix_clip mends it."""
+    rifle between keys."""
     return worker.call("record_clip", action=action, clip=clip, seconds=seconds, fps=fps, ease=ease)
 
 

@@ -49,5 +49,8 @@ https://registry.modelcontextprotocol.io/v0/servers?search=poselab
 
 ## Each release
 
+Run the checks first, with POSELAB_BLENDER set: `python examples/selftest.py`, `python examples/motion_test.py`,
+`python examples/edge_cases.py` (no raw Python errors), and `python benchmarks/run.py --oracle` (5 of 5).
+
 Raise the version in three places: `pyproject.toml`, `src/poselab_mcp/__init__.py`, and `server.json` (both
 `version` fields). Build and upload to PyPI first, then `mcp-publisher publish`.
