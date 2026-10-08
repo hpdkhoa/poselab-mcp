@@ -15,6 +15,11 @@ New:
   values come from the AAOS 1965 table as reprinted in Greene and Heckman 1994; the docs show where Eaton's table
   differs (10 to 25 degrees for the fingers and thumb). The 30 degree wrist rule and the knuckle's 40 degree side bend
   are marked as working values with no source. The docs say why the finger defaults stay looser than AAOS.
+* The thumb in `anatomy`: its knuckle (MCP) bends -10 to 60 and its end joint (IP) -15 to 90 across the palm,
+  each close to its hinge's plane; its base joint (CMC) spreads at most 80 degrees from the index metacarpal and sits
+  at most 20 behind the palm. The hinge ranges take Eaton's hyperextension and the AAOS flexion plus the fingers' 10
+  degrees of slack; the base joint's two limits are working values. `fix_clip` bends the knuckle and end joint back
+  into range; the base joint is reported, not mended. A rig's `thumb_limits` overrides the values.
 * `grip`: how each hand touches the rifle. A hand on the rifle must face it with the palm, not the back of the hand.
   The rifle must stay out of the back of the hand and of each finger (0.1 cm), and the palm side may press in up to
   1 cm. `clearance` with palms and fingers left out, the usual way to allow a grip's contact, never showed a hand on

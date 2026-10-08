@@ -116,9 +116,18 @@ RANGES = {
         "cmc_abduction": {"standard": 70, "source": "AAOS", "note": "the most varied value: Eaton lists 45 (palmar) "
                           "or 60 (radial)"},
         "mcp_flexion": {"standard": 50, "source": "AAOS"},
+        "mcp_hyperextension": {"standard": 10, "source": "Eaton"},
         "ip_flexion": {"standard": 80, "source": "AAOS"},
-        "checked": "not checked yet",
-        "note": "Listed for reference. The thumb's base joint is a saddle with two axes, so it needs its own check.",
+        "ip_hyperextension": {"standard": 15, "source": "Eaton"},
+        "checked": "the knuckle (MCP) bends -10 to 60 and the end joint (IP) -15 to 90, each at most 30 and 25 out of its "
+                   "hinge's plane (thumb_limits '02', '03'); the base joint (CMC) spreads at most 80 from the index "
+                   "metacarpal (cmc_spread_max_deg) and sits at most 20 behind the palm's plane (cmc_palmar_min_deg)",
+        "note": "The hinge ranges take Eaton's hyperextension and the AAOS flexion plus the 10 degrees of slack the "
+                "fingers get (why: finger_defaults). The base joint is a saddle with two axes, and no table gives its "
+                "range as the angle between two bones, so its two limits are working values with no source: 80 "
+                "leaves room above the AAOS 70 for the bones' angle at rest (the sample's thumb rests at 36), and 20 "
+                "behind the palm allows the thumb's own extension. The thumb's turn about its own line (opposition) "
+                "is not checked.",
     },
 }
 
@@ -131,4 +140,4 @@ def arm_ranges():
     return {"angles": "degrees from the anatomical position (arm straight, palm forward)", "joints": RANGES,
             "functional_hand": FUNCTIONAL_HAND, "tables_differ": TABLES_DIFFER, "finger_defaults": FINGER_DEFAULTS,
             "sources": SOURCES,
-            "override": "a rig's limits and finger_limits entries in rigs.json replace the checked values"}
+            "override": "a rig's limits, finger_limits and thumb_limits entries in rigs.json replace the checked values"}

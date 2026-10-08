@@ -107,13 +107,26 @@ repeated the study with the Sollerman hand function test.
 
 ## Thumb
 
-| Motion | Standard (AAOS) |
-|---|---|
-| Base joint (CMC) abduction | 70 (Eaton lists 45 palmar, 60 radial) |
-| MCP flexion | 50 |
-| IP flexion | 80 |
+| Joint | Motion | Standard | Checked |
+|---|---|---|---|
+| Base joint (CMC) | abduction | 70 (AAOS; Eaton lists 45 palmar, 60 radial) | spread at most 80 from the index metacarpal |
+| Base joint (CMC) | behind the palm | | at most 20 behind the palm's plane |
+| Knuckle (MCP) | flexion | 50 (AAOS) | 60 |
+| Knuckle (MCP) | hyperextension | 10 (Eaton) | 10 |
+| End joint (IP) | flexion | 80 (AAOS) | 90 |
+| End joint (IP) | hyperextension | 15 (Eaton) | 15 |
 
-**Checked:** not yet. The thumb's base joint is a saddle with two axes, so it needs its own check.
+**Checked:** the knuckle and the end joint are hinges. They bend the thumb across the palm toward the little finger,
+inside the range above, and at most 30 (knuckle) and 25 (end joint) out of the hinge's plane. Their flexion has the
+same 10 degrees of slack as the fingers, for the same reasons.
+
+The base joint is a saddle with two axes. No table gives its range as the angle between two bones, so its two limits
+are working values with no source. The 80 degree spread leaves room above the AAOS 70 for the bones' angle at rest:
+the sample's thumb rests at 36. The 20 degrees behind the palm allows the thumb's own extension. The thumb's turn
+about its own line (opposition) is not checked.
+
+A rig's `thumb_limits` entry in `rigs.json` overrides these, with the keys `cmc_spread_max_deg`,
+`cmc_palmar_min_deg`, `"02"` and `"03"` (least bend, most bend, most out of the hinge's plane).
 
 ## The standard tables differ
 
@@ -132,7 +145,7 @@ Pose Lab uses the AAOS 1965 column. The thumb's base abduction varies the most.
 
 ## Changing the limits
 
-A rig's `limits` and `finger_limits` entries in `rigs.json` replace any checked value. The keys are those in the
+A rig's `limits`, `finger_limits` and `thumb_limits` entries in `rigs.json` replace any checked value. The keys are those in the
 `limits` field of an `anatomy` reply.
 
 ## Sources

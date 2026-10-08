@@ -66,6 +66,7 @@ A pose can clear the rifle and still be one no human arm can take. `anatomy` che
 | Wrist | within 30 degrees of the forearm's line; inside its joint range: flexion 80, extension 70, radial 20, ulnar 30 |
 | Fingers | each joint curls only toward the palm: knuckle -30 to 100, middle joint -5 to 110, end joint -10 to 90 |
 | Fingers | each finger stays in its own plane: at most 15 degrees out at the middle joint, 25 at the end joint |
+| Thumb | the knuckle bends -10 to 60 and the end joint -15 to 90, across the palm; the base spreads at most 80 from the index metacarpal and sits at most 20 behind the palm |
 
 The wrist and elbow ranges are the AAOS normal values, from the AAOS 1965 table as reprinted in Greene and Heckman
 1994. Other tables differ, by 10 to 25 degrees for the fingers and thumb. The 30 degree wrist line, the 5 degree elbow
@@ -78,7 +79,7 @@ Soucie 2011). `arm_ranges` returns the same data to a model.
 
 The `anatomy` reply lists, for each arm, the elbow's height under the shoulder, the elbow's bend, the wrist's bend split into
 flexion and radial deviation, each finger joint's curl and twist, and `bad`: every rule the pose breaks. A rig's
-`limits` and `finger_limits` entries in `rigs.json` override any value. `solve` takes `{"type": "anatomy"}` as a goal.
+`limits`, `finger_limits` and `thumb_limits` entries in `rigs.json` override any value. `solve` takes `{"type": "anatomy"}` as a goal.
 
 Fix a broken rule by moving the rifle, the grip or the elbow's pole. Do not bend a joint further.
 

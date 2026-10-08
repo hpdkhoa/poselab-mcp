@@ -124,7 +124,9 @@ def anatomy(side: Literal["both", "l", "r"] = "both", fingers: bool = True) -> d
     and inside its joint range (flexion 80, extension 70, radial 20, ulnar 30: the AAOS normal values); the hand's roll
     belongs to the forearm, not the wrist joint. Each finger joint curls only toward the palm within its range
     (knuckle -30..100, middle joint -5..110, end joint -10..90) and stays in the finger's own plane: no hyperextended
-    or twisted finger. A rig's limits and finger_limits override these. ok false lists every rule a pose breaks. Fix a
+    or twisted finger. The thumb's knuckle bends -10..60 and its end joint -15..90 across the palm; its base spreads at
+    most 80 from the index metacarpal and sits at most 20 behind the palm. A rig's limits, finger_limits and
+    thumb_limits override these. ok false lists every rule a pose breaks. Fix a
     broken rule by moving the rifle, the grip or the elbow's pole, never by bending a joint further. arm_ranges gives
     the research behind each limit."""
     return worker.call("anatomy", side=side, fingers=fingers)

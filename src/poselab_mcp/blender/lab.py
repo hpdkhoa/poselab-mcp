@@ -48,6 +48,14 @@ ARM_LIMITS = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension
 # bent backward (hyperextended); out of its plane the finger is twisted. A rig's "finger_limits" entry overrides them.
 FINGER_LIMITS = {"01": [-30.0, 100.0, 40.0], "02": [-5.0, 110.0, 15.0], "03": [-10.0, 90.0, 25.0]}
 JOINT_NAMES = {"01": "knuckle", "02": "middle joint", "03": "end joint"}
+# The thumb: its base joint (CMC, where the metacarpal "01" meets the wrist) moves on two axes; its knuckle (MCP, "02")
+# and end joint (IP, "03") are hinges that bend it across the palm toward the little finger. cmc_spread_max_deg: the
+# most angle between the thumb's metacarpal and the index finger's; cmc_palmar_min_deg: how far the metacarpal may sit
+# behind the palm's plane (below 0); "02", "03": (least bend, most bend, most out of the hinge's plane), degrees. The
+# hinge values are Eaton's hyperextension (MCP 10, IP 15) and the AAOS flexion (MCP 50, IP 80) plus the fingers' 10
+# degree slack; the CMC values are working values (see ranges.py). A rig's "thumb_limits" entry overrides them.
+THUMB_LIMITS = {"cmc_spread_max_deg": 80.0, "cmc_palmar_min_deg": -20.0, "02": [-10.0, 60.0, 30.0], "03": [-15.0, 90.0, 25.0]}
+THUMB_JOINTS = {"02": "knuckle", "03": "end joint"}
 
 
 def ue(v):
@@ -684,6 +692,66 @@ class Lab:
                     bad.append("%s %s twisted %.0f out of the finger's plane (at most %.0f)" % (fi, JOINT_NAMES[j], abs(side_deg), sd))
         return out, bad, planes
 
+    def _thumb_limits(self):
+        tl = {k: (list(v) if isinstance(v, list) else v) for k, v in THUMB_LIMITS.items()}
+        tl.update(self.R.get("thumb_limits", {}))
+        return tl
+
+    def _has_thumb(self, s):
+        try:
+            for j in ("01", "02", "03"):
+                self.arm.pose.bones[self._n("finger", s, "thumb", j)]
+            return True
+        except KeyError:
+            return False
+
+    def _thumb_report(self, s, TL):
+        """The thumb's base joint (spread from the index metacarpal, and how far in front of the palm's plane) and its
+        knuckle and end joint (bend + across the palm toward the little finger, and the bend out of the hinge's
+        plane). Returns the values, the rules broken, and each hinge's axis (for the mend)."""
+        b = lambda j: self._bw(self._n("finger", s, "thumb", j)).translation
+        across, k = self._hand_frame(s)
+        wrist = self._bw(self._n("hand", s)).translation
+        mid = self._bw(self._n("finger", s, "middle", "01")).translation
+        index_meta = self._bw(self._n("finger", s, "index", "01")).translation - wrist
+        palm = across.cross((mid - wrist).normalized()) * k
+        palm = palm.normalized() if palm.length > 1e-9 else palm
+        pts = [b("01"), b("02"), b("03"), self._finger_tip("thumb", s)]
+        meta = pts[1] - pts[0]
+        asin = lambda x: math.degrees(math.asin(max(-1.0, min(1.0, x))))
+        spread = self._deg(meta, index_meta)
+        palmar = asin(meta.normalized().dot(palm)) if meta.length > 1e-9 else 0.0
+        out = {"cmc_spread_deg": round(spread), "cmc_palmar_deg": round(palmar)}
+        bad, axes = [], {}
+        if spread > TL["cmc_spread_max_deg"]:
+            bad.append("thumb base spread %.0f from the index (at most %.0f)" % (spread, TL["cmc_spread_max_deg"]))
+        if palmar < TL["cmc_palmar_min_deg"]:
+            bad.append("thumb base %.0f behind the palm (at most %.0f)" % (-palmar, -TL["cmc_palmar_min_deg"]))
+        flex = (palm - across).normalized()          # a thumb bends across the palm toward the little finger
+        for i, j in ((0, "02"), (1, "03")):
+            a, c = (pts[i + 1] - pts[i]), (pts[i + 2] - pts[i + 1])
+            if a.length < 1e-9 or c.length < 1e-9:
+                continue
+            a, c = a.normalized(), c.normalized()
+            f_perp = flex - a * flex.dot(a)
+            if f_perp.length < 1e-6:
+                continue
+            f_perp.normalize()
+            axis = a.cross(f_perp).normalized()      # the hinge: turning about it moves c toward flex
+            in_plane = c - axis * c.dot(axis)
+            bend = math.degrees(math.atan2(in_plane.dot(f_perp), in_plane.dot(a))) if in_plane.length > 1e-9 else 0.0
+            side_deg = asin(c.dot(axis))
+            axes[j] = axis
+            lo, hi, sd = TL[j]
+            out["thumb_" + j] = [round(bend), round(side_deg)]
+            if bend < lo:
+                bad.append("thumb %s bent %.0f backward (hyperextended; at most %.0f)" % (THUMB_JOINTS[j], -bend, -lo))
+            elif bend > hi:
+                bad.append("thumb %s bent %.0f (at most %.0f)" % (THUMB_JOINTS[j], bend, hi))
+            if abs(side_deg) > sd:
+                bad.append("thumb %s bent %.0f out of its hinge's plane (at most %.0f)" % (THUMB_JOINTS[j], abs(side_deg), sd))
+        return out, bad, axes
+
     def _has_fingers(self, s):
         try:
             for fi in ("index", "middle", "ring", "pinky"):
@@ -696,19 +764,25 @@ class Lab:
     def anatomy(self, side="both", fingers=True):
         """Each arm against the human arm's limits (ARM_LIMITS, FINGER_LIMITS): the elbow under the shoulder, the elbow's
         bend, the wrist's bend split into flexion (+ toward the palm) and radial deviation (+ toward the thumb), and
-        each finger joint's curl and twist. ok false lists every rule the pose breaks. The hand's roll belongs to the
+        each finger joint's curl and twist, and the thumb (THUMB_LIMITS: its base joint's spread and place in front of
+        the palm, its knuckle's and end joint's bend). ok false lists every rule the pose breaks. The hand's roll belongs to the
         forearm (radius over ulna), so a rolled hand turns the forearm, not the wrist joint."""
         self._need()
         if side not in ("both", "l", "r"):
             raise ValueError("side must be both, l or r, got %r" % (side,))
         L, FL = self._limits()
-        out = {"ok": True, "limits": dict(L, fingers=FL)}
+        TL = self._thumb_limits()
+        out = {"ok": True, "limits": dict(L, fingers=FL, thumb=TL)}
         for s_ in (("l", "r") if side == "both" else (side,)):
             rep_, bad = self._arm_report(s_, L)
             if fingers and self._has_fingers(s_):
                 fr, fbad, _ = self._finger_report(s_, FL)
                 rep_["fingers"] = fr
                 bad += fbad
+            if fingers and self._has_thumb(s_):
+                tr, tbad, _ = self._thumb_report(s_, TL)
+                rep_["thumb"] = tr
+                bad += tbad
             rep_["bad"] = bad
             out[s_] = rep_
             out["ok"] = out["ok"] and not bad
@@ -790,6 +864,32 @@ class Lab:
                         changed = True
             if not changed:
                 break
+        if self._has_thumb(s):
+            TL = self._thumb_limits()
+            for _ in range(3):
+                changed = False
+                for j in ("02", "03"):
+                    tr, _b, axes = self._thumb_report(s, TL)
+                    if "thumb_" + j not in tr or j not in axes:
+                        continue
+                    bend = tr["thumb_" + j][0]
+                    lo, hi, _sd = TL[j]
+                    if lo + 0.5 < bend < hi - 0.5:
+                        continue
+                    fix = (lo + 3.0 - bend) if bend <= lo + 0.5 else (hi - 3.0 - bend)
+                    over0 = (lo - bend) if bend < lo else (bend - hi)
+                    n = self._n("finger", s, "thumb", j)
+                    head, M = self._bw(n).translation.copy(), self._bw(n)
+                    for sg in (1.0, -1.0):
+                        self._turn_about(n, axes[j], fix * sg, head)
+                        b2 = self._thumb_report(s, TL)[0]["thumb_" + j][0]
+                        if ((lo - b2) if b2 < lo else (b2 - hi) if b2 > hi else -1.0) < over0:
+                            break
+                        self._set_world(n, M)
+                    made += 1
+                    changed = True
+                if not changed:
+                    break
         return made
 
     def faces_eye(self, point="port", normal=None):
