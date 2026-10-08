@@ -1,0 +1,132 @@
+{
+ "good": {
+  "today": {
+   "clip_cm": 0.0,
+   "palm_facing": 0.85,
+   "wrist_deg": 21.0,
+   "wrist_twist_deg": 0.0,
+   "elbow_under_shoulder_cm": 27.3,
+   "arm_bad": [],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.0,
+   "palm_facing": -0.85
+  }
+ },
+ "back": {
+  "today": {
+   "clip_cm": 0.0,
+   "palm_facing": -0.85,
+   "wrist_deg": 21.0,
+   "wrist_twist_deg": 179.0,
+   "elbow_under_shoulder_cm": 27.3,
+   "arm_bad": [],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.0,
+   "palm_facing": 0.85
+  }
+ },
+ "thumb": {
+  "today": {
+   "clip_cm": 1.68,
+   "palm_facing": 0.85,
+   "wrist_deg": 21.0,
+   "wrist_twist_deg": 0.0,
+   "elbow_under_shoulder_cm": 27.3,
+   "arm_bad": [],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.62,
+   "palm_facing": -0.85
+  }
+ },
+ "twist": {
+  "today": {
+   "clip_cm": 0.0,
+   "palm_facing": 0.85,
+   "wrist_deg": 21.0,
+   "wrist_twist_deg": 154.0,
+   "elbow_under_shoulder_cm": 27.3,
+   "arm_bad": [],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.0,
+   "palm_facing": -0.85
+  }
+ },
+ "finger": {
+  "today": {
+   "clip_cm": 0.0,
+   "palm_facing": 0.85,
+   "wrist_deg": 21.0,
+   "wrist_twist_deg": 0.0,
+   "elbow_under_shoulder_cm": 27.3,
+   "arm_bad": [],
+   "finger_bad": [
+    "index end joint bent 48 sideways (at most 25)"
+   ]
+  },
+  "this_morning": {
+   "clip_cm": 0.0,
+   "palm_facing": -0.85
+  }
+ },
+ "clip": {
+  "today": {
+   "clip_cm": 1.46,
+   "palm_facing": 0.8,
+   "wrist_deg": 23.0,
+   "wrist_twist_deg": 1.0,
+   "elbow_under_shoulder_cm": 27.2,
+   "arm_bad": [
+    "wrist past its joint range (flexion -10, radial 20)"
+   ],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.61,
+   "palm_facing": -0.8
+  }
+ },
+ "elbow": {
+  "today": {
+   "clip_cm": 0.0,
+   "palm_facing": 0.85,
+   "wrist_deg": 118.0,
+   "wrist_twist_deg": 176.0,
+   "elbow_under_shoulder_cm": -1.0,
+   "arm_bad": [
+    "elbow 3.0 cm above the line 2 cm under the shoulder",
+    "wrist bent 118 off the forearm (most 30)"
+   ],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.0,
+   "palm_facing": -0.85
+  }
+ },
+ "wrist": {
+  "today": {
+   "clip_cm": 0.0,
+   "palm_facing": 0.74,
+   "wrist_deg": 55.0,
+   "wrist_twist_deg": 14.0,
+   "elbow_under_shoulder_cm": 27.3,
+   "arm_bad": [
+    "wrist bent 55 off the forearm (most 30)",
+    "wrist past its joint range (flexion -49, radial 21)"
+   ],
+   "finger_bad": []
+  },
+  "this_morning": {
+   "clip_cm": 0.0,
+   "palm_facing": -0.74
+  }
+ }
+}

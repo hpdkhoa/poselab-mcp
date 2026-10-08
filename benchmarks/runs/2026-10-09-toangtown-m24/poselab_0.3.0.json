@@ -1,0 +1,320 @@
+{
+ "load_seconds": 1.73,
+ "poses": {
+  "good": {
+   "seconds": 0.23,
+   "anatomy_bad": [
+    "wrist past its joint range (extension 8, radial 20)"
+   ],
+   "wrist": 21,
+   "elbow_under": 27.3,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": true,
+    "gap_cm": 0.02,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.0,
+   "contacts": []
+  },
+  "back": {
+   "seconds": 0.21,
+   "anatomy_bad": [],
+   "wrist": 21,
+   "elbow_under": 27.3,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": false,
+    "gap_cm": 4.7,
+    "palm_faces_rifle": -1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.0,
+   "contacts": []
+  },
+  "thumb": {
+   "seconds": 0.21,
+   "anatomy_bad": [
+    "wrist past its joint range (extension 8, radial 20)"
+   ],
+   "wrist": 21,
+   "elbow_under": 27.3,
+   "thumb": {
+    "cmc_spread_deg": 36,
+    "cmc_palmar_deg": 35,
+    "thumb_02": [
+     7,
+     22
+    ],
+    "thumb_03": [
+     0,
+     0
+    ]
+   },
+   "grip": {
+    "holding": true,
+    "gap_cm": -0.62,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.62,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.68,
+   "contacts": [
+    {
+     "segment": "thumb2_l",
+     "depth_cm": 0.68,
+     "rifle_point": [
+      1.2,
+      6.6,
+      -7.7
+     ]
+    },
+    {
+     "segment": "thumb3_l",
+     "depth_cm": 0.34,
+     "rifle_point": [
+      1.2,
+      9.5,
+      -8.4
+     ]
+    },
+    {
+     "segment": "thumb1_l",
+     "depth_cm": 0.05,
+     "rifle_point": [
+      1.2,
+      6.0,
+      -8.4
+     ]
+    }
+   ]
+  },
+  "twist": {
+   "seconds": 0.21,
+   "anatomy_bad": [
+    "wrist past its joint range (extension 8, radial 20)"
+   ],
+   "wrist": 21,
+   "elbow_under": 27.3,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": true,
+    "gap_cm": 0.02,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.0,
+   "contacts": []
+  },
+  "finger": {
+   "seconds": 0.23,
+   "anatomy_bad": [
+    "wrist past its joint range (extension 8, radial 20)"
+   ],
+   "wrist": 21,
+   "elbow_under": 27.3,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": true,
+    "gap_cm": 0.02,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.0,
+   "contacts": []
+  },
+  "clip": {
+   "seconds": 0.2,
+   "anatomy_bad": [
+    "wrist past its joint range (extension 11, radial 20)"
+   ],
+   "wrist": 23,
+   "elbow_under": 27.2,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": true,
+    "gap_cm": -0.61,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.61,
+    "back_contact_cm": 0.55,
+    "bad": [
+     "rifle 0.55 cm inside the back of middle3_l (at most 0.10)"
+    ],
+    "back_contact": {
+     "segment": "middle3_l",
+     "rifle_point": [
+      1.2,
+      12.5,
+      -10.4
+     ]
+    }
+   },
+   "grip_ok": false,
+   "clearance_cm": 0.65,
+   "contacts": [
+    {
+     "segment": "thumb2_l",
+     "depth_cm": 0.65,
+     "rifle_point": [
+      1.2,
+      7.2,
+      -8.4
+     ]
+    },
+    {
+     "segment": "thumb3_l",
+     "depth_cm": 0.54,
+     "rifle_point": [
+      1.2,
+      10.1,
+      -9.1
+     ]
+    },
+    {
+     "segment": "middle3_l",
+     "depth_cm": 0.51,
+     "rifle_point": [
+      1.2,
+      12.5,
+      -10.4
+     ]
+    }
+   ]
+  },
+  "elbow": {
+   "seconds": 0.2,
+   "anatomy_bad": [
+    "elbow -1.0 cm under the shoulder (at least 2.0)",
+    "wrist bent 118 off the forearm (at most 30)",
+    "wrist past its joint range (flexion 150, ulnar 119)"
+   ],
+   "wrist": 118,
+   "elbow_under": -1.0,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": true,
+    "gap_cm": 0.02,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.0,
+   "contacts": []
+  },
+  "wrist": {
+   "seconds": 0.21,
+   "anatomy_bad": [
+    "wrist bent 55 off the forearm (at most 30)",
+    "wrist past its joint range (extension 53, radial 28)"
+   ],
+   "wrist": 55,
+   "elbow_under": 27.3,
+   "thumb": {
+    "cmc_spread_deg": 16,
+    "cmc_palmar_deg": 19,
+    "thumb_02": [
+     14,
+     20
+    ],
+    "thumb_03": [
+     4,
+     -1
+    ]
+   },
+   "grip": {
+    "holding": false,
+    "gap_cm": 3.65,
+    "palm_faces_rifle": 0.7,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "grip_ok": true,
+   "clearance_cm": 0.0,
+   "contacts": []
+  }
+ }
+}

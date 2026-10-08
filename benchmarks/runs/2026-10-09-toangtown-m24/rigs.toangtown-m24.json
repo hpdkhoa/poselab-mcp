@@ -1,0 +1,54 @@
+{
+ "_about": "The rig entry used for this benchmark. The files (ToangTown's licensed FP_AKS74U arms and its M24 model) are not in this repository; the pose.json clips are made by ToangTown's Tools/blender/pose_m24_maghold.py with POSE_FAULTS=1.",
+ "m24": {
+  "title": "M24A2 on the FP_AKS74U arms (ToangTown), the magazine hold",
+  "folder": "<the folder with the FBX files and fault_*.pose.json>",
+  "arms": "AkArms.fbx",
+  "idle": "AkArms_Idle.fbx",
+  "gun": "M24.fbx",
+  "gun_offset": [
+   0.0,
+   2.0,
+   -3.0
+  ],
+  "eye": [
+   0.0,
+   -2.3,
+   162.6
+  ],
+  "clips": {
+   "good": "fault_good.pose.json",
+   "back": "fault_back.pose.json",
+   "thumb": "fault_thumb.pose.json",
+   "twist": "fault_twist.pose.json",
+   "finger": "fault_finger.pose.json",
+   "clip": "fault_clip.pose.json",
+   "elbow": "fault_elbow.pose.json",
+   "wrist": "fault_wrist.pose.json"
+  },
+  "points": {
+   "mag_left": [
+    1.45,
+    7.75,
+    -8.5
+   ],
+   "mag_front": [
+    0.0,
+    12.7,
+    -8.5
+   ],
+   "mag_center": [
+    0.0,
+    7.75,
+    -8.5
+   ]
+  },
+  "normals": {
+   "mag_left": [
+    1.0,
+    0.0,
+    0.0
+   ]
+  }
+ }
+}
