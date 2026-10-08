@@ -1,0 +1,176 @@
+{
+ "load_seconds": 2.22,
+ "poses": {
+  "good": {
+   "seconds": 0.32,
+   "anatomy_bad": [],
+   "wrist": 21,
+   "wrist_twist": 0,
+   "grip_ok": true,
+   "grip": {
+    "holding": false,
+    "touching": true,
+    "gap_cm": 0.02,
+    "palm_gap_cm": 4.71,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "clearance_cm": 0.0
+  },
+  "back": {
+   "seconds": 0.27,
+   "anatomy_bad": [
+    "wrist twisted 179 against the idle grip (at most 30): the hand's roll belongs to the forearm"
+   ],
+   "wrist": 21,
+   "wrist_twist": 179,
+   "grip_ok": true,
+   "grip": {
+    "holding": false,
+    "touching": false,
+    "gap_cm": 4.7,
+    "palm_gap_cm": 8.3,
+    "palm_faces_rifle": -1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "clearance_cm": 0.0
+  },
+  "thumb": {
+   "seconds": 0.27,
+   "anatomy_bad": [],
+   "wrist": 21,
+   "wrist_twist": 0,
+   "grip_ok": false,
+   "grip": {
+    "holding": false,
+    "touching": true,
+    "gap_cm": -1.68,
+    "palm_gap_cm": 4.71,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 1.68,
+    "back_contact_cm": 0.0,
+    "bad": [
+     "rifle 1.68 cm inside the palm side of thumb2_l (at most 1.00)"
+    ]
+   },
+   "clearance_cm": 1.68
+  },
+  "twist": {
+   "seconds": 0.28,
+   "anatomy_bad": [
+    "wrist twisted 154 against the idle grip (at most 30): the hand's roll belongs to the forearm"
+   ],
+   "wrist": 21,
+   "wrist_twist": 154,
+   "grip_ok": true,
+   "grip": {
+    "holding": false,
+    "touching": true,
+    "gap_cm": 0.02,
+    "palm_gap_cm": 4.71,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "clearance_cm": 0.0
+  },
+  "finger": {
+   "seconds": 0.27,
+   "anatomy_bad": [
+    "index end joint twisted 48 out of the finger's plane (at most 25)"
+   ],
+   "wrist": 21,
+   "wrist_twist": 0,
+   "grip_ok": true,
+   "grip": {
+    "holding": false,
+    "touching": true,
+    "gap_cm": 0.02,
+    "palm_gap_cm": 4.71,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "clearance_cm": 0.0
+  },
+  "clip": {
+   "seconds": 0.27,
+   "anatomy_bad": [],
+   "wrist": 23,
+   "wrist_twist": 1,
+   "grip_ok": false,
+   "grip": {
+    "holding": false,
+    "touching": true,
+    "gap_cm": -1.46,
+    "palm_gap_cm": 3.21,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 1.46,
+    "back_contact_cm": 0.57,
+    "bad": [
+     "rifle 1.46 cm inside the palm side of thumb2_l (at most 1.00)",
+     "rifle 0.57 cm inside the back of middle3_l (at most 0.10)"
+    ],
+    "back_contact": {
+     "segment": "middle3_l",
+     "rifle_point": [
+      1.2,
+      12.5,
+      -10.5
+     ]
+    }
+   },
+   "clearance_cm": 1.46
+  },
+  "elbow": {
+   "seconds": 0.27,
+   "anatomy_bad": [
+    "elbow -1.0 cm under the shoulder (at least 2.0)",
+    "wrist bent 118 off the forearm (at most 30)",
+    "wrist past its joint range (flexion 150, ulnar 119)",
+    "wrist twisted 176 against the idle grip (at most 30): the hand's roll belongs to the forearm"
+   ],
+   "wrist": 118,
+   "wrist_twist": 176,
+   "grip_ok": true,
+   "grip": {
+    "holding": false,
+    "touching": true,
+    "gap_cm": 0.02,
+    "palm_gap_cm": 4.71,
+    "palm_faces_rifle": 1.0,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "clearance_cm": 0.0
+  },
+  "wrist": {
+   "seconds": 0.27,
+   "anatomy_bad": [
+    "wrist bent 55 off the forearm (at most 30)",
+    "wrist past its joint range (extension 53, radial 28)"
+   ],
+   "wrist": 55,
+   "wrist_twist": 14,
+   "grip_ok": true,
+   "grip": {
+    "holding": false,
+    "touching": false,
+    "gap_cm": 3.64,
+    "palm_gap_cm": 8.28,
+    "palm_faces_rifle": 0.71,
+    "palm_contact_cm": 0.0,
+    "back_contact_cm": 0.0,
+    "bad": []
+   },
+   "clearance_cm": 0.0
+  }
+ }
+}
