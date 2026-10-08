@@ -166,10 +166,9 @@ def setup_clip(lab):
 
 
 def grade_clip(lab, ctx, submit):
-    try:
-        scan = lab.data("scan_clip", clip="roll_ok", checks=CLIP_CHECKS)
-    except RuntimeError as e:
-        return False, [{"check": "clip roll_ok exists", "met": False, "value": str(e)[:120]}]
+    if "roll_ok" not in lab.data("describe")["clips"]:
+        return False, [{"check": "clip roll_ok exists", "met": False, "value": None}]
+    scan = lab.data("scan_clip", clip="roll_ok", checks=CLIP_CHECKS)
     lab.data("pose_clip", clip="roll_ok", seconds=0.6)
     off = moved(ctx["rolled"], lab.data("where", names=["muzzle", "stock"], frame="arms"))
     checks = [{"check": x["check"]["type"] + (" " + x["check"]["side"] if x["check"].get("side") else ""), "met": x["passed"], "value": x["worst"]} for x in scan["checks"]]

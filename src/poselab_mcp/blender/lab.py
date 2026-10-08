@@ -254,7 +254,8 @@ class Lab:
                 return self._tip(f, side)
             if p in self.arm.pose.bones:
                 return self._bw(p).translation
-            raise ValueError("unknown point %r" % p)
+            raise ValueError("unknown point %r; use [x, y, z], a rig point (%s), a fingertip like index_tip_l, or a bone "
+                             "name" % (p, ", ".join(sorted(pts))))
         return self._from(p, frame)
 
     # --- posing -----------------------------------------------------------------------------------------------
