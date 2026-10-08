@@ -30,6 +30,7 @@ goal in 0 of 60 samples, and turning and moving met every goal in 9 s.
 | `where`, `distance` | positions in a named frame |
 | `clearance` | how deep the rifle sits inside a forearm, palm or finger, and where |
 | `anatomy` | each arm against the human arm's limits: elbow, wrist and each finger joint, and every rule a pose breaks |
+| `grip` | how each hand touches the rifle: with the palm, not the back of the hand, and how deep on each side |
 | `arm_ranges` | the research behind those limits: each joint's AAOS range, its functional range, the value checked, and the sources |
 | `faces_eye`, `visible`, `screen` | how squarely a surface faces the eye, how much of it the eye sees, where it falls on screen |
 | `solve` | searches rifle moves against goals; reports each goal and how often any sample met it |
@@ -82,12 +83,30 @@ flexion and radial deviation, each finger joint's curl and twist, and `bad`: eve
 Fix a broken rule by moving the rifle, the grip or the elbow's pole. Do not bend a joint further.
 
 The sample rig's idle grip breaks the wrist rule: the left wrist bends 44 degrees off the forearm and the right 58.
-`fix_clip` with an `anatomy` check brings both to 29.
+`fix_clip` with an `anatomy` check brings the left to 29. It leaves the right at 58: every turn that mends it puts
+the rifle inside the back of the palm, so that hand needs a new grip or elbow, not a wrist turn.
+
+### Hand contact (`grip`)
+
+A hand holds the rifle with its palm and the palm sides of its fingers. `clearance` is usually run with the palms and
+fingers left out, since a grip touches the rifle there. That also hides a hand on the wrong side. `grip` checks the
+contact itself, for each hand:
+
+| Rule | Default |
+|---|---|
+| A hand on the rifle faces it with the palm, not the back (`palm_faces_rifle` above 0) | within `hold_within_cm` 1.0 |
+| The rifle stays out of the back of the hand and the back of each finger | `back_max_cm` 0.1 |
+| The palm side may press in a little: the capsules are rounder than a palm | `palm_max_cm` 1.0 |
+
+Each finger segment's palm side is the side it curls toward. The thumb's pad faces sideways, so its contacts count
+toward the palm side's depth only. The reply gives each hand's `palm_faces_rifle`, `palm_contact_cm`,
+`back_contact_cm`, where the back contact is, and `bad`. `solve` takes `{"type": "grip"}` as a goal and `scan_clip` as a
+check. On the sample rig, a hand turned 180 degrees about its forearm fails it, and the idle grip passes.
 
 ## Motion: scan and fix clips
 
 `scan_clip` plays a clip frame by frame and runs checks on each frame. The checks are the solver's goals
-(`clearance`, `anatomy`, `faces_eye`, `visible`, `on_screen`, `barrel`) and three more:
+(`clearance`, `anatomy`, `grip`, `faces_eye`, `visible`, `on_screen`, `barrel`) and three more:
 
 * `contact`: a point of the hand on its mark, such as a fingertip on the charging handle (`a`, `b`, `max_cm`)
 * `hold`: how far a hand drifts on the rifle from its grip at `ref_s` (`side`, `max_cm`)
@@ -101,8 +120,10 @@ Any check takes `during: [from_s, to_s]`. `fix_clip` then mends a copy of the cl
 * clearance: it swings each elbow about the shoulder to wrist line by the least angle that clears, wrist kept, and
   eases that swing over the neighbouring frames
 * anatomy: it swings the elbow the same way until the elbow sits under the shoulder and inside its bend. Then it turns
-  the wrist back inside its limits and each finger joint back inside its range. Turning the wrist turns the hand on
-  its grip, so add a `hold` check when the grip must stay exact.
+  the wrist back inside its limits and each finger joint back inside its range. It never turns a wrist so far that
+  the rifle goes into the back of the hand; a wrist it cannot mend that way stays as it was, and the scan after says
+  so. Turning the wrist turns the hand on its grip, so add a `hold` check when the grip must stay exact.
+* grip: not mended; `fix_clip` reports it before and after. A wrong-side hold needs a new grip.
 
 It reports the scan before and after. It also lists the frames where a hand must be somewhere its arm cannot reach,
 since only a new pose can mend those.

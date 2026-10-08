@@ -35,7 +35,7 @@ VIEW_RIGHT, VIEW_FWD, VIEW_UP = Vector((-1.0, 0.0, 0.0)), Vector((0.0, -1.0, 0.0
 H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
-          "where", "distance", "clearance", "anatomy", "faces_eye", "visible", "screen", "solve", "render")
+          "where", "distance", "clearance", "anatomy", "grip", "faces_eye", "visible", "screen", "solve", "render")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -506,6 +506,89 @@ class Lab:
         return {"worst_cm": round(ranked[0][1][0], 2) if ranked else 0.0,
                 "contacts": [{"segment": k, "depth_cm": round(v[0], 2), "rifle_point": r2(self._to(v[1], frame), 1)} for k, v in ranked[:top]]}
 
+    # --- the hand's contact with the rifle -------------------------------------------------------------------------
+    def _hand_frame(self, s):
+        """The hand's thumb-side line (across the knuckles) and the sign that turns across x a segment's direction
+        into that segment's palm side (+: the side a finger curls toward)."""
+        f = lambda fi: self._bw(self._n("finger", s, fi, "01")).translation
+        return (f("index") - f("pinky")).normalized(), (-1.0 if s == "l" else 1.0)   # left palm down: thumb x fingers points up
+
+    def _hand_contacts(self, s, tree):
+        """The hand's contacts with the rifle: (closest gap cm, deepest palm-side cm and segment, deepest back-side cm,
+        segment and rifle point). The thumb's pad faces sideways, not the way the fingers curl, so its contacts count
+        only toward the palm side's depth."""
+        across, k = self._hand_frame(s)
+        palm_cm = back_cm = 0.0
+        near, palm_seg, back_seg, back_pt = None, None, None, None
+        for name, a, b, r in self._segments(s):
+            if name.startswith("forearm"):
+                continue
+            d = b - a
+            if d.length < 1e-9:
+                continue
+            dn = d.normalized()
+            palmar = across.cross(dn) * k
+            thumb = name.startswith("thumb")
+            n = max(2, int(d.length / 0.003))
+            for i in range(n + 1):
+                p = a.lerp(b, i / n)
+                co, _i, dist = tree.find(p)
+                if co is not None:
+                    gap = (dist - r) * 100.0
+                    near = gap if near is None else min(near, gap)
+                for q, _j, dq in tree.find_range(p, r):
+                    depth = (r - dq) * 100.0
+                    off = q - p
+                    off = off - dn * off.dot(dn)
+                    back = (not thumb and palmar.length > 1e-6 and off.length > 1e-9
+                            and off.normalized().dot(palmar.normalized()) < -0.25)
+                    if back and depth > back_cm:
+                        back_cm, back_seg, back_pt = depth, name, q.copy()
+                    elif not back and depth > palm_cm:      # the palm side, a finger's edge, or the thumb
+                        palm_cm, palm_seg = depth, name
+        return near, palm_cm, palm_seg, back_cm, back_seg, back_pt
+
+    def grip(self, side="both", back_max_cm=0.1, palm_max_cm=1.0, hold_within_cm=1.0, frame="gun"):
+        """How each hand touches the rifle: the palm side or the back. A hand holds with its palm and the palm sides
+        of its fingers; the rifle inside the back of the hand or the back of a finger is a physical error that
+        clearance with palms and fingers ignored never shows. For each hand: palm_faces_rifle (the palm's direction
+        dotted with the direction to the nearest rifle point, 1 square on, below 0 the back of the hand toward it),
+        palm_contact_cm and back_contact_cm (the deepest rifle point inside the hand on each side), and bad: the rules
+        broken. A hand within hold_within_cm of the rifle must face it with the palm (palm_faces_rifle above 0) and
+        keep the back clear (back_contact_cm at most back_max_cm). The palm side may press into the rifle up to
+        palm_max_cm: the capsules are rounder than a palm, so a firm grip reads a few millimetres deep. The thumb's
+        contacts count toward the palm side only (its pad faces sideways)."""
+        self._need()
+        if side not in ("both", "l", "r"):
+            raise ValueError("side must be both, l or r, got %r" % (side,))
+        tree = self._tree()
+        out = {"ok": True}
+        for s_ in (("l", "r") if side == "both" else (side,)):
+            near, palm_cm, palm_seg, back_cm, back_seg, back_pt = self._hand_contacts(s_, tree)
+            across, k = self._hand_frame(s_)
+            hn = self._bw(self._n("hand", s_)).translation
+            mid = self._bw(self._n("finger", s_, "middle", "01")).translation
+            centre = hn.lerp(mid, 0.5)
+            palm_dir = across.cross((mid - hn).normalized()) * k
+            co, _i, _d = tree.find(centre)
+            facing = palm_dir.normalized().dot((co - centre).normalized()) if co is not None and (co - centre).length > 1e-9 else 0.0
+            holding = near is not None and near <= hold_within_cm
+            bad = []
+            if holding and facing <= 0.0:
+                bad.append("holds the rifle with the back of the hand (palm faces %.2f away from it)" % -facing)
+            if palm_cm > palm_max_cm:
+                bad.append("rifle %.2f cm inside the palm side of %s (at most %.2f)" % (palm_cm, palm_seg, palm_max_cm))
+            if back_cm > back_max_cm:
+                bad.append("rifle %.2f cm inside the back of %s (at most %.2f)" % (back_cm, back_seg, back_max_cm))
+            rep_ = {"holding": holding, "gap_cm": round(near, 2) if near is not None else None,
+                    "palm_faces_rifle": round(facing, 2), "palm_contact_cm": round(palm_cm, 2),
+                    "back_contact_cm": round(back_cm, 2), "bad": bad}
+            if back_seg:
+                rep_["back_contact"] = {"segment": back_seg, "rifle_point": r2(self._to(back_pt, frame), 1)}
+            out[s_] = rep_
+            out["ok"] = out["ok"] and not bad
+        return out
+
     # --- the human arm's limits --------------------------------------------------------------------------------
     def _limits(self):
         fl = {k: list(v) for k, v in FINGER_LIMITS.items()}
@@ -533,17 +616,24 @@ class Lab:
             bad.append("elbow locked straight (%.0f)" % bend)
         total = self._deg(fore, hand)
         thumb_side = f("index") - f("pinky")
-        palm = thumb_side.cross(hand) * (1.0 if s == "l" else -1.0)
+        palm = thumb_side.cross(hand) * (-1.0 if s == "l" else 1.0)   # toward the palm (see _hand_frame)
         fn = fore.normalized()
         off = hand.normalized() - fn * hand.normalized().dot(fn)
         flat = lambda v: v - fn * v.dot(fn)
         asin = lambda x: math.degrees(math.asin(max(-1.0, min(1.0, x))))
-        flex = asin(off.dot(flat(palm).normalized())) if flat(palm).length > 1e-9 else 0.0
-        dev = asin(off.dot(flat(thumb_side).normalized())) if flat(thumb_side).length > 1e-9 else 0.0
+        # the bend split on two perpendicular axes across the forearm: toward the palm, and toward the thumb
+        c = hand.normalized().dot(fn)
+        e1 = flat(palm).normalized() if flat(palm).length > 1e-9 else Vector((0.0, 0.0, 0.0))
+        t = flat(thumb_side)
+        e2 = t - e1 * t.dot(e1)
+        e2 = e2.normalized() if e2.length > 1e-9 else Vector((0.0, 0.0, 0.0))
+        flex = math.degrees(math.atan2(off.dot(e1), c))
+        dev = math.degrees(math.atan2(off.dot(e2), c))
         if total > L["wrist_max_deg"]:
             bad.append("wrist bent %.0f off the forearm (at most %.0f)" % (total, L["wrist_max_deg"]))
         if flex > L["wrist_flexion_deg"] or -flex > L["wrist_extension_deg"] or dev > L["wrist_radial_deg"] or -dev > L["wrist_ulnar_deg"]:
-            bad.append("wrist past its joint range (flexion %.0f, radial %.0f)" % (flex, dev))
+            bad.append("wrist past its joint range (%s %.0f, %s %.0f)" % ("flexion" if flex >= 0 else "extension", abs(flex),
+                                                                          "radial" if dev >= 0 else "ulnar", abs(dev)))
         return {"elbow_under_shoulder_cm": round(under, 1), "upper_arm_raised_deg": round(self._deg(upper, -up)),
                 "elbow_bend_deg": round(bend), "wrist_bend_deg": round(total), "wrist_flexion_deg": round(flex),
                 "wrist_radial_deg": round(dev)}, bad
@@ -637,6 +727,8 @@ class Lab:
         L, FL = self._limits()
         made = 0
         hn = self._n("hand", s)
+        tree = self._tree()
+        back0 = self._hand_contacts(s, tree)[3]
         for _ in range(3):
             rep_, bad = self._arm_report(s, L)
             over = max(rep_["wrist_bend_deg"] - L["wrist_max_deg"], rep_["wrist_radial_deg"] - L["wrist_radial_deg"],
@@ -645,9 +737,18 @@ class Lab:
                 break
             line = (self._bw(hn).translation - self._bw(self._n("lowerarm", s)).translation).normalized()
             hand = (self._bw(self._n("finger", s, "middle", "01")).translation - self._bw(hn).translation).normalized()
-            q = Quaternion().slerp(hand.rotation_difference(line), min(1.0, (over + 1.0) / rep_["wrist_bend_deg"]))
+            want = min(1.0, (over + 1.0) / rep_["wrist_bend_deg"])
             H = self._bw(hn)
-            self._set_world(hn, Matrix.LocRotScale(H.translation, q @ H.to_quaternion(), self._unit()))
+            turned = False
+            for part in (1.0, 0.5, 0.25):          # the largest turn that keeps the back of the hand out of the rifle
+                q = Quaternion().slerp(hand.rotation_difference(line), want * part)
+                self._set_world(hn, Matrix.LocRotScale(H.translation, q @ H.to_quaternion(), self._unit()))
+                if self._hand_contacts(s, tree)[3] <= max(back0, 0.1) + 1e-6:
+                    turned = True
+                    break
+                self._set_world(hn, H)
+            if not turned:
+                break
             made += 1
         if not fingers or not self._has_fingers(s):
             return made
@@ -768,10 +869,14 @@ class Lab:
             a = self.anatomy(g.get("side", "both"), g.get("fingers", True))
             n = sum(len(a[k]["bad"]) for k in ("l", "r") if k in a)
             return n == 0, n, float(n)
+        if t == "grip":
+            a = self.grip(g.get("side", "both"), g.get("back_max_cm", 0.1), g.get("palm_max_cm", 1.0), g.get("hold_within_cm", 1.0))
+            n = sum(len(a[k]["bad"]) for k in ("l", "r") if k in a)
+            return n == 0, n, float(n)
         if t in ("distance", "contact"):
             v = self.distance(g["a"], g["b"])["cm"]
             return v <= g.get("max_cm", 0.5), v, max(0.0, v - g.get("max_cm", 0.5)) / 5.0
-        raise ValueError("goal type %r: faces_eye, visible, on_screen, clearance, anatomy, barrel, distance, contact" % t)
+        raise ValueError("goal type %r: faces_eye, visible, on_screen, clearance, anatomy, grip, barrel, distance, contact" % t)
 
     def solve(self, dofs, goals, keep_hands=("l", "r"), pivot="stock", samples=120, maximize=None, seed=1):
         """Searches rifle moves (dofs: roll, swing, pitch, right, forward, up -> [min, max]) from the current pose for

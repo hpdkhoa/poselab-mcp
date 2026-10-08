@@ -58,6 +58,7 @@ def main():
     c.tool("load_rig", rig="sample")
     c.tool("clearance", parts="both")          # the baseline: what the hands touch on the idle grip
     c.tool("anatomy")                          # the idle grip against the human arm's limits
+    c.tool("grip")                             # each hand on the rifle with its palm, the back of the hand clear
     c.tool("move_part", part="carrier", cm=4.0)
     c.tool("faces_eye", point="port")
     c.tool("visible", point="port")

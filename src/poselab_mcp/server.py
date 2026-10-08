@@ -19,11 +19,11 @@ mcp = MCPServer("poselab", title="Pose Lab", version=__version__, instructions=(
     "Pose Lab measures a first-person rig (arms holding a rifle) in Blender. Call list_rigs, then load_rig. Positions "
     "use named frames: gun (the gun bone, cm: +X the gun's left, +Y along the barrel, +Z up), arms (the arms' space, "
     "cm) and view (from the eye, cm: +X right, +Y forward, +Z up). Turns: roll + turns the gun's right side up, swing + "
-    "takes the muzzle left, pitch + the muzzle up. Measure before you pose: clearance, anatomy, faces_eye, visible, screen; use "
+    "takes the muzzle left, pitch + the muzzle up. Measure before you pose: clearance, anatomy, grip, faces_eye, visible, screen; use "
     "solve to search moves against goals; a goal never met in any sample is a fact of the geometry. A hand round its "
     "grip touches the rifle on the idle pose already: check clearance at pose_idle for that baseline. For motion: "
     "record_clip or load_clip a clip, scan_clip it against checks, fix_clip what fails, then save_clip the result. "
-    "A pose must also be one a human arm can take: anatomy checks the elbow, wrist and finger limits."))
+    "A pose must also be one a human arm can take: anatomy checks the elbow, wrist and finger limits, and grip checks that each hand holds the rifle with its palm, the back of the hand clear."))
 worker = Worker()
 atexit.register(worker.stop)
 
@@ -131,6 +131,20 @@ def anatomy(side: Literal["both", "l", "r"] = "both", fingers: bool = True) -> d
 
 
 @mcp.tool()
+def grip(side: Literal["both", "l", "r"] = "both", back_max_cm: float = 0.1, palm_max_cm: float = 1.0,
+         hold_within_cm: float = 1.0, frame: Frame = "gun") -> dict:
+    """How each hand touches the rifle: with the palm or with the back. A hand holds with its palm and the palm sides of
+    its fingers. The back of the hand toward the rifle, or the rifle inside the back of the hand or of a finger, is a
+    physical error; clearance with palms and fingers ignored never shows it. For each hand: holding (within
+    hold_within_cm), palm_faces_rifle (1 square on, below 0 the back of the hand toward it), palm_contact_cm and
+    back_contact_cm (the deepest rifle point inside the hand on each side), and bad: every rule broken. ok false
+    lists them. The palm side may press in up to palm_max_cm (the capsules are rounder than a palm); the back side
+    only up to back_max_cm. Fix a wrong-side hold by turning the hand or the grip, not by moving a finger through the rifle."""
+    return worker.call("grip", side=side, back_max_cm=back_max_cm, palm_max_cm=palm_max_cm,
+                       hold_within_cm=hold_within_cm, frame=frame)
+
+
+@mcp.tool()
 def arm_ranges() -> dict:
     """The research behind anatomy's limits: for each joint of the arm (shoulder, elbow, forearm, wrist, finger
     knuckle, middle and end joints, thumb), the AAOS normal range (the 1965 table; tables_differ shows where other
@@ -159,7 +173,7 @@ def screen(point: Point) -> dict:
 
 @mcp.tool()
 def solve(dofs: Annotated[dict[str, list[float]], Field(description="roll, swing, pitch, right, forward, up -> [min, max]")],
-          goals: Annotated[list[dict], Field(description="each {type: faces_eye|visible (point, min), on_screen (point), clearance (parts, ignore, max_cm), anatomy (side, fingers), barrel (max_deg), distance (a, b, max_cm)}")],
+          goals: Annotated[list[dict], Field(description="each {type: faces_eye|visible (point, min), on_screen (point), clearance (parts, ignore, max_cm), anatomy (side, fingers), grip (side, back_max_cm, palm_max_cm), barrel (max_deg), distance (a, b, max_cm)}")],
           keep_hands: Hands = ["l", "r"], pivot: str = "stock", samples: int = 120,
           maximize: Annotated[int | None, Field(description="a goal's index to push higher once all are met")] = None) -> dict:
     """Searches rifle moves from the current pose for one meeting every goal, and leaves the scene there. Reports each
@@ -168,7 +182,7 @@ def solve(dofs: Annotated[dict[str, list[float]], Field(description="roll, swing
 
 
 Checks = Annotated[list[dict], Field(description=(
-    "each {type, ...}: clearance (parts, ignore, max_cm), anatomy (side both|l|r, fingers: the rules broken, counted), faces_eye / visible (point, min), on_screen (point), "
+    "each {type, ...}: clearance (parts, ignore, max_cm), anatomy (side both|l|r, fingers: the rules broken, counted), grip (side, back_max_cm, palm_max_cm: the hand's wrong-side or too-deep contacts, counted), faces_eye / visible (point, min), on_screen (point), "
     "barrel (max_deg), contact (a, b, max_cm), hold (side l|r, max_cm, ref_s: the hand's drift on the rifle from its "
     "grip at ref_s), pop (bones, 'gun' for the gun bone, max_cm_per_s). Any check takes during: [from_s, to_s]"))]
 

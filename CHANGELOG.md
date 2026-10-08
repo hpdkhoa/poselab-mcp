@@ -15,21 +15,30 @@ New:
   values come from the AAOS 1965 table as reprinted in Greene and Heckman 1994; the docs show where Eaton's table
   differs (10 to 25 degrees for the fingers and thumb). The 30 degree wrist rule and the knuckle's 40 degree side bend
   are marked as working values with no source. The docs say why the finger defaults stay looser than AAOS.
-* `solve` takes an `anatomy` goal, and `scan_clip` an `anatomy` check (`side`, `fingers`). Its value is the count of
+* `grip`: how each hand touches the rifle. A hand on the rifle must face it with the palm, not the back of the hand.
+  The rifle must stay out of the back of the hand and of each finger (0.1 cm), and the palm side may press in up to
+  1 cm. `clearance` with palms and fingers left out, the usual way to allow a grip's contact, never showed a hand on
+  the wrong side. On the sample rig a hand turned 180 degrees about its forearm fails it; the idle grip passes.
+* `solve` takes `anatomy` and `grip` goals, and `scan_clip` `anatomy` and `grip` checks. Each value is the count of
   broken rules.
 * `fix_clip` mends `anatomy`: it swings the elbow under the shoulder and inside its bend, eased over the neighbouring
-  frames. Then it turns the wrist back inside its limits and each finger joint back inside its range.
+  frames. Then it turns the wrist back inside its limits and each finger joint back inside its range. It never turns
+  a wrist so far that the rifle goes into the back of the hand.
 
 Fixes:
 
-* `fix_clip` with a `clearance` check that needed an elbow swing failed with `NameError: smooth`. The easing helper
-  was missing.
+* `fix_clip` with a `clearance` check that needed an elbow swing failed with `NameError: smooth` (0.2.0 to 0.2.2).
+  The easing helper was missing.
+* Found while building `grip`, before release: the palm's direction pointed out of the back of the hand, so
+  `anatomy` read wrist flexion as extension and checked it against the wrong limit. The wrist's bend is also now split
+  on two perpendicular axes; the old split read the sample's right wrist as 34 degrees ulnar when it is 57.
 
 Notes:
 
 * The sample rig's idle grip breaks the wrist rule (44 degrees left, 58 right). The rig is unchanged, so the
-  benchmark numbers still hold. `fix_clip` with an `anatomy` check brings both wrists to 29 degrees.
-* `examples/edge_cases.py` covers the new tool, goal and check. `examples/selftest.py` calls `anatomy`.
+  benchmark numbers still hold. `fix_clip` with an `anatomy` check brings the left wrist to 29 degrees. It leaves the
+  right at 58: every turn that mends it puts the rifle inside the back of the palm.
+* `examples/edge_cases.py` covers the new tools, goals and checks. `examples/selftest.py` calls `anatomy` and `grip`.
 
 ## 0.2.2
 
