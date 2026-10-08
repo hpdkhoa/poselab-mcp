@@ -10,6 +10,8 @@ import sys
 import time
 from pathlib import Path
 
+from mcp.server.mcpserver.exceptions import ToolError   # reaches the model as the tool's error, with its message
+
 HERE = Path(__file__).resolve().parent
 WORKER = HERE / "blender" / "worker.py"
 
@@ -32,7 +34,8 @@ def find_blender():
     for g in guesses:
         if os.path.exists(g):
             return g
-    raise RuntimeError("Blender not found: set POSELAB_BLENDER to blender's executable")
+    raise ToolError("Blender not found: set POSELAB_BLENDER to blender's executable (for example "
+                    "D:/Blender/blender.exe) in the MCP client's configuration or the shell that starts the server")
 
 
 def out_dir():
@@ -68,7 +71,7 @@ class Worker:
         start = time.time()
         while time.time() - start < 120:
             if self.proc.poll() is not None:
-                raise RuntimeError("Blender stopped while starting; see %s" % (out / "worker.log"))
+                raise ToolError("Blender stopped while starting; see %s" % (out / "worker.log"))
             try:
                 s = socket.create_connection(("127.0.0.1", port), timeout=5)
                 s.settimeout(900)
@@ -76,7 +79,7 @@ class Worker:
                 return
             except OSError:
                 time.sleep(0.5)
-        raise RuntimeError("Blender did not answer within 120 s; see %s" % (out / "worker.log"))
+        raise ToolError("Blender did not answer within 120 s; see %s" % (out / "worker.log"))
 
     def call(self, cmd, **args):
         """Runs a Lab command; returns its result or raises with the worker's error."""
@@ -90,10 +93,10 @@ class Worker:
             raise
         if not line:
             self.file = None
-            raise RuntimeError("the Blender worker closed; see %s" % (out_dir() / "worker.log"))
+            raise ToolError("the Blender worker closed; see %s" % (out_dir() / "worker.log"))
         reply = json.loads(line)
         if not reply.get("ok"):
-            raise RuntimeError(reply.get("error", "worker error"))
+            raise ToolError(reply.get("error", "worker error"))
         return reply["result"]
 
     def stop(self):

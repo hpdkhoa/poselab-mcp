@@ -140,6 +140,11 @@ def main():
     for t in tasks:
         if t not in TASKS:
             sys.exit("no task %s; tasks: %s" % (t, ", ".join(TASKS)))
+    try:   # Blender first: without it every task fails with the same error
+        from poselab_mcp.worker_client import find_blender
+        find_blender()
+    except Exception as e:
+        sys.exit("Pose Lab cannot start: %s" % e)
     client = None
     if not scripted:
         import anthropic
