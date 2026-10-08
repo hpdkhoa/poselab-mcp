@@ -11,6 +11,7 @@ from mcp.server.mcpserver import Image, MCPServer
 from pydantic import Field
 
 from . import __version__
+from .ranges import arm_ranges as _arm_ranges
 from .sheet import sheet
 from .worker_client import Worker
 
@@ -18,10 +19,11 @@ mcp = MCPServer("poselab", title="Pose Lab", version=__version__, instructions=(
     "Pose Lab measures a first-person rig (arms holding a rifle) in Blender. Call list_rigs, then load_rig. Positions "
     "use named frames: gun (the gun bone, cm: +X the gun's left, +Y along the barrel, +Z up), arms (the arms' space, "
     "cm) and view (from the eye, cm: +X right, +Y forward, +Z up). Turns: roll + turns the gun's right side up, swing + "
-    "takes the muzzle left, pitch + the muzzle up. Measure before you pose: clearance, faces_eye, visible, screen; use "
+    "takes the muzzle left, pitch + the muzzle up. Measure before you pose: clearance, anatomy, faces_eye, visible, screen; use "
     "solve to search moves against goals; a goal never met in any sample is a fact of the geometry. A hand round its "
     "grip touches the rifle on the idle pose already: check clearance at pose_idle for that baseline. For motion: "
-    "record_clip or load_clip a clip, scan_clip it against checks, fix_clip what fails, then save_clip the result."))
+    "record_clip or load_clip a clip, scan_clip it against checks, fix_clip what fails, then save_clip the result. "
+    "A pose must also be one a human arm can take: anatomy checks the elbow, wrist and finger limits."))
 worker = Worker()
 atexit.register(worker.stop)
 
@@ -116,6 +118,28 @@ def clearance(parts: Parts = "both",
 
 
 @mcp.tool()
+def anatomy(side: Literal["both", "l", "r"] = "both", fingers: bool = True) -> dict:
+    """Each arm against the human arm's limits. Rules: the elbow stays at least 2 cm below the shoulder while the hand
+    works the gun; the elbow is a hinge bent 5 to 150 degrees; the wrist stays within 30 degrees of the forearm's line
+    and inside its joint range (flexion 80, extension 70, radial 20, ulnar 30: the AAOS normal values); the hand's roll
+    belongs to the forearm, not the wrist joint. Each finger joint curls only toward the palm within its range
+    (knuckle -30..100, middle joint -5..110, end joint -10..90) and stays in the finger's own plane: no hyperextended
+    or twisted finger. A rig's limits and finger_limits override these. ok false lists every rule a pose breaks. Fix a
+    broken rule by moving the rifle, the grip or the elbow's pole, never by bending a joint further. arm_ranges gives
+    the research behind each limit."""
+    return worker.call("anatomy", side=side, fingers=fingers)
+
+
+@mcp.tool()
+def arm_ranges() -> dict:
+    """The research behind anatomy's limits: for each joint of the arm (shoulder, elbow, forearm, wrist, finger
+    knuckle, middle and end joints, thumb), the AAOS normal range (the 1965 table; tables_differ shows where other
+    tables disagree), the range daily tasks use (Morrey 1981, Palmer 1985, Ryu 1991, Bain 2015), the value anatomy
+    checks, and why it differs from the standard where it does. Full citations included. Needs no rig."""
+    return _arm_ranges()
+
+
+@mcp.tool()
 def faces_eye(point: Point = "port", normal: Annotated[list[float] | None, Field(description="the surface's normal, gun frame; a rig normal by the point's name if left out")] = None) -> dict:
     """How squarely a surface faces the eye: facing 1 square on, 0 edge on, below 0 turned away."""
     return worker.call("faces_eye", point=point, normal=normal)
@@ -135,7 +159,7 @@ def screen(point: Point) -> dict:
 
 @mcp.tool()
 def solve(dofs: Annotated[dict[str, list[float]], Field(description="roll, swing, pitch, right, forward, up -> [min, max]")],
-          goals: Annotated[list[dict], Field(description="each {type: faces_eye|visible (point, min), on_screen (point), clearance (parts, ignore, max_cm), barrel (max_deg), distance (a, b, max_cm)}")],
+          goals: Annotated[list[dict], Field(description="each {type: faces_eye|visible (point, min), on_screen (point), clearance (parts, ignore, max_cm), anatomy (side, fingers), barrel (max_deg), distance (a, b, max_cm)}")],
           keep_hands: Hands = ["l", "r"], pivot: str = "stock", samples: int = 120,
           maximize: Annotated[int | None, Field(description="a goal's index to push higher once all are met")] = None) -> dict:
     """Searches rifle moves from the current pose for one meeting every goal, and leaves the scene there. Reports each
@@ -144,7 +168,7 @@ def solve(dofs: Annotated[dict[str, list[float]], Field(description="roll, swing
 
 
 Checks = Annotated[list[dict], Field(description=(
-    "each {type, ...}: clearance (parts, ignore, max_cm), faces_eye / visible (point, min), on_screen (point), "
+    "each {type, ...}: clearance (parts, ignore, max_cm), anatomy (side both|l|r, fingers: the rules broken, counted), faces_eye / visible (point, min), on_screen (point), "
     "barrel (max_deg), contact (a, b, max_cm), hold (side l|r, max_cm, ref_s: the hand's drift on the rifle from its "
     "grip at ref_s), pop (bones, 'gun' for the gun bone, max_cm_per_s). Any check takes during: [from_s, to_s]"))]
 
@@ -177,7 +201,9 @@ def fix_clip(clip: str, checks: Checks, out: str | None = None, max_swing_deg: f
     """Mends a clip against the checks and stores a new clip (out, default <clip>_fixed): pops are blended again from
     the good frames round them; a hold puts the hand back on its grip; a contact moves the wrist until the point
     touches its mark; clearance swings each elbow about its shoulder-wrist line (the wrist kept) by the least angle
-    that clears, spread over neighbouring frames. Reports the scan before and after."""
+    that clears, spread over neighbouring frames; anatomy swings the elbow the same way until it sits under the
+    shoulder inside its bend, then turns the wrist back inside its limits and each finger joint back inside its range.
+    Reports the scan before and after."""
     return worker.call("fix_clip", clip=clip, checks=checks, out=out, max_swing_deg=max_swing_deg, spread_frames=spread_frames)
 
 

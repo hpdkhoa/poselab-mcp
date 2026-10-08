@@ -54,8 +54,10 @@ def main():
     c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
     print("tools:", [t["name"] for t in c.rpc("tools/list")["result"]["tools"]])
     c.tool("list_rigs")
+    c.tool("arm_ranges")                       # the research behind anatomy's limits; needs no rig
     c.tool("load_rig", rig="sample")
     c.tool("clearance", parts="both")          # the baseline: what the hands touch on the idle grip
+    c.tool("anatomy")                          # the idle grip against the human arm's limits
     c.tool("move_part", part="carrier", cm=4.0)
     c.tool("faces_eye", point="port")
     c.tool("visible", point="port")

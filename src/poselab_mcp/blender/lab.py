@@ -23,11 +23,31 @@ DEFAULT_BONES = {"gun": "ik_hand_gun", "upperarm": "upperarm_{s}", "lowerarm": "
                  "finger": "{f}_{j}_{s}"}
 
 # the view: the eye looks along +Y (Blender -Y), up is +Z, the player's right is -X
+def smooth(a, b, t):
+    """0 before a, 1 after b, an S-curve between."""
+    if b <= a:
+        return 1.0 if t >= b else 0.0
+    x = min(max((t - a) / (b - a), 0.0), 1.0)
+    return x * x * (3.0 - 2.0 * x)
+
+
 VIEW_RIGHT, VIEW_FWD, VIEW_UP = Vector((-1.0, 0.0, 0.0)), Vector((0.0, -1.0, 0.0)), Vector((0.0, 0.0, 1.0))
 H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
-          "where", "distance", "clearance", "faces_eye", "visible", "screen", "solve", "render")
+          "where", "distance", "clearance", "anatomy", "faces_eye", "visible", "screen", "solve", "render")
+# How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
+# 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
+# within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
+# while the hand is on the gun. A rig's "limits" entry overrides any of these. The research behind each value and how
+# it differs from the standard: poselab_mcp/ranges.py and docs/ANATOMY.md.
+ARM_LIMITS = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension_deg": 70.0, "wrist_radial_deg": 20.0,
+              "wrist_ulnar_deg": 30.0, "elbow_bend_max_deg": 150.0, "elbow_bend_min_deg": 5.0, "elbow_under_shoulder_cm": 2.0}
+# Each finger joint, + curling toward the palm: the knuckle (MCP, "01"), the middle joint (PIP, "02"), the end joint
+# (DIP, "03"): (least curl, most curl, most out of the finger's own plane), degrees. Below the least curl a joint is
+# bent backward (hyperextended); out of its plane the finger is twisted. A rig's "finger_limits" entry overrides them.
+FINGER_LIMITS = {"01": [-30.0, 100.0, 40.0], "02": [-5.0, 110.0, 15.0], "03": [-10.0, 90.0, 25.0]}
+JOINT_NAMES = {"01": "knuckle", "02": "middle joint", "03": "end joint"}
 
 
 def ue(v):
@@ -486,6 +506,191 @@ class Lab:
         return {"worst_cm": round(ranked[0][1][0], 2) if ranked else 0.0,
                 "contacts": [{"segment": k, "depth_cm": round(v[0], 2), "rifle_point": r2(self._to(v[1], frame), 1)} for k, v in ranked[:top]]}
 
+    # --- the human arm's limits --------------------------------------------------------------------------------
+    def _limits(self):
+        fl = {k: list(v) for k, v in FINGER_LIMITS.items()}
+        fl.update({k: list(v) for k, v in self.R.get("finger_limits", {}).items()})
+        return dict(ARM_LIMITS, **self.R.get("limits", {})), fl
+
+    @staticmethod
+    def _deg(a, b):
+        return math.degrees(a.angle(b)) if a.length > 1e-9 and b.length > 1e-9 else 0.0
+
+    def _arm_report(self, s, L):
+        up = Vector((0.0, 0.0, 1.0))
+        b = lambda part: self._bw(self._n(part, s)).translation
+        f = lambda fi: self._bw(self._n("finger", s, fi, "01")).translation
+        shoulder, elbow, wrist, knuckle = b("upperarm"), b("lowerarm"), b("hand"), f("middle")
+        upper, fore, hand = elbow - shoulder, wrist - elbow, knuckle - wrist
+        bad = []
+        under = (shoulder - elbow).dot(up) * 100.0
+        if under < L["elbow_under_shoulder_cm"]:
+            bad.append("elbow %.1f cm under the shoulder (at least %.1f)" % (under, L["elbow_under_shoulder_cm"]))
+        bend = self._deg(upper, fore)
+        if bend > L["elbow_bend_max_deg"]:
+            bad.append("elbow bent %.0f (at most %.0f)" % (bend, L["elbow_bend_max_deg"]))
+        if bend < L["elbow_bend_min_deg"]:
+            bad.append("elbow locked straight (%.0f)" % bend)
+        total = self._deg(fore, hand)
+        thumb_side = f("index") - f("pinky")
+        palm = thumb_side.cross(hand) * (1.0 if s == "l" else -1.0)
+        fn = fore.normalized()
+        off = hand.normalized() - fn * hand.normalized().dot(fn)
+        flat = lambda v: v - fn * v.dot(fn)
+        asin = lambda x: math.degrees(math.asin(max(-1.0, min(1.0, x))))
+        flex = asin(off.dot(flat(palm).normalized())) if flat(palm).length > 1e-9 else 0.0
+        dev = asin(off.dot(flat(thumb_side).normalized())) if flat(thumb_side).length > 1e-9 else 0.0
+        if total > L["wrist_max_deg"]:
+            bad.append("wrist bent %.0f off the forearm (at most %.0f)" % (total, L["wrist_max_deg"]))
+        if flex > L["wrist_flexion_deg"] or -flex > L["wrist_extension_deg"] or dev > L["wrist_radial_deg"] or -dev > L["wrist_ulnar_deg"]:
+            bad.append("wrist past its joint range (flexion %.0f, radial %.0f)" % (flex, dev))
+        return {"elbow_under_shoulder_cm": round(under, 1), "upper_arm_raised_deg": round(self._deg(upper, -up)),
+                "elbow_bend_deg": round(bend), "wrist_bend_deg": round(total), "wrist_flexion_deg": round(flex),
+                "wrist_radial_deg": round(dev)}, bad
+
+    def _finger_tip(self, fi, s):
+        """The end segment's tip: the middle segment's rest line carried by the end bone's own turn from its rest
+        (a rig loaded from FBX keeps no fingertip, so a last bone's tail can point anywhere)."""
+        n3, n2 = self._n("finger", s, fi, "03"), self._n("finger", s, fi, "02")
+        b3, b2 = self.arm.data.bones[n3], self.arm.data.bones[n2]
+        rest = b3.head_local - b2.head_local
+        if rest.length < 1e-9:
+            return self._tip(fi, s)
+        P = self.arm.pose.bones[n3].matrix @ b3.matrix_local.inverted()
+        return self.arm.matrix_world @ (P @ (b3.head_local + rest.normalized() * rest.length * 0.8))
+
+    def _finger_report(self, s, FL):
+        """Each finger joint's curl (+ toward the palm) and its bend out of the finger's own plane; the joints out of
+        range. A healthy finger is three hinges about parallel lines: it stays in one plane whatever its curl."""
+        b = lambda fi, j: self._bw(self._n("finger", s, fi, j)).translation
+        across = (b("index", "01") - b("pinky", "01")).normalized()
+        sign = -1.0 if s == "l" else 1.0
+        wrist_to_knuckle = b("middle", "01") - self._bw(self._n("hand", s)).translation
+        out, bad, planes = {}, [], {}
+        asin = lambda x: math.degrees(math.asin(max(-1.0, min(1.0, x))))
+        for fi in ("index", "middle", "ring", "pinky"):
+            pts = [b(fi, "01") - wrist_to_knuckle, b(fi, "01"), b(fi, "02"), b(fi, "03"), self._finger_tip(fi, s)]
+            d1, d2 = pts[2] - pts[1], pts[4] - pts[1]
+            n = d1.cross(d2)
+            if n.length < 0.26 * d1.length * d2.length:   # under about 15 degrees of curl: no plane of its own
+                n = across - d2.normalized() * across.dot(d2.normalized())
+            n.normalize()
+            planes[fi] = n
+            for i, j in enumerate(("01", "02", "03")):
+                a, c = (pts[i + 1] - pts[i]).normalized(), (pts[i + 2] - pts[i + 1]).normalized()
+                curl = math.degrees(math.atan2(a.cross(c).dot(across) * sign, a.dot(c)))
+                if j == "01":
+                    side_axis = across - a * across.dot(a)
+                    side_deg = asin(c.dot(side_axis.normalized())) if side_axis.length > 1e-6 else 0.0
+                else:
+                    side_deg = asin(c.dot(n)) - asin(a.dot(n))
+                lo, hi, sd = FL[j]
+                out["%s_%s" % (fi, j)] = [round(curl), round(side_deg)]
+                if curl < lo:
+                    bad.append("%s %s bent %.0f backward (hyperextended; at most %.0f)" % (fi, JOINT_NAMES[j], -curl, -lo))
+                elif curl > hi:
+                    bad.append("%s %s curled %.0f (at most %.0f)" % (fi, JOINT_NAMES[j], curl, hi))
+                if abs(side_deg) > sd:
+                    bad.append("%s %s twisted %.0f out of the finger's plane (at most %.0f)" % (fi, JOINT_NAMES[j], abs(side_deg), sd))
+        return out, bad, planes
+
+    def _has_fingers(self, s):
+        try:
+            for fi in ("index", "middle", "ring", "pinky"):
+                for j in ("01", "02", "03"):
+                    self.arm.pose.bones[self._n("finger", s, fi, j)]
+            return True
+        except KeyError:
+            return False
+
+    def anatomy(self, side="both", fingers=True):
+        """Each arm against the human arm's limits (ARM_LIMITS, FINGER_LIMITS): the elbow under the shoulder, the elbow's
+        bend, the wrist's bend split into flexion (+ toward the palm) and radial deviation (+ toward the thumb), and
+        each finger joint's curl and twist. ok false lists every rule the pose breaks. The hand's roll belongs to the
+        forearm (radius over ulna), so a rolled hand turns the forearm, not the wrist joint."""
+        self._need()
+        if side not in ("both", "l", "r"):
+            raise ValueError("side must be both, l or r, got %r" % (side,))
+        L, FL = self._limits()
+        out = {"ok": True, "limits": dict(L, fingers=FL)}
+        for s_ in (("l", "r") if side == "both" else (side,)):
+            rep_, bad = self._arm_report(s_, L)
+            if fingers and self._has_fingers(s_):
+                fr, fbad, _ = self._finger_report(s_, FL)
+                rep_["fingers"] = fr
+                bad += fbad
+            rep_["bad"] = bad
+            out[s_] = rep_
+            out["ok"] = out["ok"] and not bad
+        return out
+
+    def _turn_about(self, n, axis, deg, pivot):
+        M = self._bw(n)
+        q = Quaternion(axis, math.radians(deg))
+        R = Matrix.Translation(pivot) @ q.to_matrix().to_4x4() @ Matrix.Translation(-pivot) @ M
+        self._set_world(n, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
+
+    def _mend_hand(self, s, fingers=True):
+        """The wrist back inside its limits (turned toward the forearm's line), then each finger joint back inside its
+        curl range (turned about the finger's own hinge, the better way) and the knuckle and middle joint back into the
+        finger's plane. Returns how many corrections it made."""
+        L, FL = self._limits()
+        made = 0
+        hn = self._n("hand", s)
+        for _ in range(3):
+            rep_, bad = self._arm_report(s, L)
+            over = max(rep_["wrist_bend_deg"] - L["wrist_max_deg"], rep_["wrist_radial_deg"] - L["wrist_radial_deg"],
+                       -rep_["wrist_radial_deg"] - L["wrist_ulnar_deg"], 0.0)
+            if over <= 0.0 or rep_["wrist_bend_deg"] <= 0.0:
+                break
+            line = (self._bw(hn).translation - self._bw(self._n("lowerarm", s)).translation).normalized()
+            hand = (self._bw(self._n("finger", s, "middle", "01")).translation - self._bw(hn).translation).normalized()
+            q = Quaternion().slerp(hand.rotation_difference(line), min(1.0, (over + 1.0) / rep_["wrist_bend_deg"]))
+            H = self._bw(hn)
+            self._set_world(hn, Matrix.LocRotScale(H.translation, q @ H.to_quaternion(), self._unit()))
+            made += 1
+        if not fingers or not self._has_fingers(s):
+            return made
+        for _ in range(4):
+            changed = False
+            for fi in ("index", "middle", "ring", "pinky"):
+                for j in ("01", "02", "03"):
+                    fr, _b, planes = self._finger_report(s, FL)
+                    curl, side_deg = fr["%s_%s" % (fi, j)]
+                    lo, hi, sd = FL[j]
+                    n = self._n("finger", s, fi, j)
+                    head = self._bw(n).translation
+                    if curl <= lo + 0.5 or curl >= hi - 0.5:
+                        fix = (lo + 3.0 - curl) if curl <= lo + 0.5 else (hi - 3.0 - curl)
+                        axis = planes[fi]
+                        over0 = (lo - curl) if curl < lo else (curl - hi)
+                        M = self._bw(n)
+                        for sg in (1.0, -1.0):
+                            self._turn_about(n, axis, fix * sg, head)
+                            c2 = self._finger_report(s, FL)[0]["%s_%s" % (fi, j)][0]
+                            if ((lo - c2) if c2 < lo else (c2 - hi) if c2 > hi else -1.0) < over0:
+                                break
+                            self._set_world(n, M)
+                        made += 1
+                        changed = True
+                    elif j != "03" and abs(side_deg) >= sd - 0.5:
+                        child = self._bw(self._n("finger", s, fi, "%02d" % (int(j) + 1))).translation
+                        axis = (child - head).cross(planes[fi])
+                        if axis.length < 1e-9:
+                            continue
+                        fix = math.copysign(sd - 3.0, side_deg) - side_deg
+                        M = self._bw(n)
+                        for sg in (1.0, -1.0):
+                            self._turn_about(n, axis.normalized(), fix * sg, head)
+                            if abs(self._finger_report(s, FL)[0]["%s_%s" % (fi, j)][1]) < abs(side_deg):
+                                break
+                            self._set_world(n, M)
+                        made += 1
+                        changed = True
+            if not changed:
+                break
+        return made
+
     def faces_eye(self, point="port", normal=None):
         """How squarely a surface faces the eye: 1 square on, 0 edge on, below 0 turned away."""
         self._need()
@@ -559,10 +764,14 @@ class Lab:
         if t == "barrel":
             v = self._barrel_off()
             return v <= g.get("max_deg", 2.0), round(v, 2), max(0.0, v - g.get("max_deg", 2.0)) / 30.0
+        if t == "anatomy":
+            a = self.anatomy(g.get("side", "both"), g.get("fingers", True))
+            n = sum(len(a[k]["bad"]) for k in ("l", "r") if k in a)
+            return n == 0, n, float(n)
         if t in ("distance", "contact"):
             v = self.distance(g["a"], g["b"])["cm"]
             return v <= g.get("max_cm", 0.5), v, max(0.0, v - g.get("max_cm", 0.5)) / 5.0
-        raise ValueError("goal type %r: faces_eye, visible, on_screen, clearance, barrel, distance, contact" % t)
+        raise ValueError("goal type %r: faces_eye, visible, on_screen, clearance, anatomy, barrel, distance, contact" % t)
 
     def solve(self, dofs, goals, keep_hands=("l", "r"), pivot="stock", samples=120, maximize=None, seed=1):
         """Searches rifle moves (dofs: roll, swing, pitch, right, forward, up -> [min, max]) from the current pose for
@@ -787,7 +996,8 @@ class Lab:
         return met, v
 
     def scan_clip(self, clip, checks):
-        """Plays a clip frame by frame and runs each check: clearance, faces_eye, visible, on_screen, barrel, contact
+        """Plays a clip frame by frame and runs each check: clearance, anatomy (side, fingers: the rules a frame
+        breaks, counted), faces_eye, visible, on_screen, barrel, contact
         (a, b, max_cm), hold (side, max_cm: the hand's drift on the rifle from its grip at ref_s), pop (bones, "gun" for the gun bone,
         max_cm_per_s). Any check takes during: [from_s, to_s]. Reports, for each check, the worst value and when, and
         the times it fails."""
@@ -806,6 +1016,8 @@ class Lab:
             raise ValueError("%s needs %s" % (t, ", ".join(missing)))
         if t == "hold" and c["side"] not in ("l", "r"):
             raise ValueError("hold side must be l or r, got %r" % (c["side"],))
+        if t == "anatomy" and c.get("side", "both") not in ("both", "l", "r"):
+            raise ValueError("anatomy side must be both, l or r, got %r" % (c.get("side"),))
         if t == "pop" and "bones" in c and not c["bones"]:
             raise ValueError("pop bones must name at least one bone")
         d = c.get("during")
@@ -840,7 +1052,7 @@ class Lab:
         report = []
         for c, rows in zip(checks, per):
             bad = [r for r in rows if not r[1]]
-            higher_worse = c["type"] in ("clearance", "barrel", "distance", "contact", "hold", "pop")
+            higher_worse = c["type"] in ("clearance", "barrel", "distance", "contact", "hold", "pop", "anatomy")
             worst = (max if higher_worse else min)(rows, key=lambda r: r[2]) if rows else None
             spans = []
             for t, met, v in rows:
@@ -885,7 +1097,9 @@ class Lab:
         hold: the hand goes back onto its grip on the rifle (arm IK);
         contact: the wrist moves until a point of the hand (a) touches its mark (b);
         clearance: each elbow swings about its shoulder-wrist line, the wrist kept, by the least angle that clears,
-        spread over the frames round it so nothing pops.
+        spread over the frames round it so nothing pops;
+        anatomy: the elbow swings (as for clearance) by the least angle that brings it under the shoulder and inside
+        its bend, then the wrist turns back inside its limits and each finger joint back inside its range.
         Reports the scan before and after; save_clip writes the result."""
         self._need()
         out = out or clip + "_fixed"
@@ -980,6 +1194,50 @@ class Lab:
                     if a:
                         self._apply(frames[i])
                         self._swing_elbow(side, a)
+                        frames[i] = self._capture()
+                        changed.add(i)
+        # anatomy: the least elbow swing that puts each elbow under its shoulder and inside its bend, spread over the
+        # frames round it; then the wrist and the fingers inside their limits, frame by frame
+        for c in [c for c in checks if c["type"] == "anatomy"]:
+            L, _FL = self._limits()
+            for side in [s_ for s_ in ("l", "r") if c.get("side", "both") in ("both", s_)]:
+                elbow_bad = lambda: [b_ for b_ in self._arm_report(side, L)[1] if b_.startswith("elbow")]
+                angle = [0.0] * len(frames)
+                for i, fr in enumerate(frames):
+                    if not self._in(c, i / fps):
+                        continue
+                    self._apply(fr)
+                    if not elbow_bad():
+                        continue
+                    best = None
+                    for a in steps:
+                        self._apply(fr)
+                        self._swing_elbow(side, a)
+                        n_ = len(elbow_bad())
+                        under = self._arm_report(side, L)[0]["elbow_under_shoulder_cm"]
+                        if best is None or (n_, -under) < best[0]:
+                            best = ((n_, -under), a)
+                        if n_ == 0:
+                            break
+                    angle[i] = best[1]
+                spread = list(angle)
+                for i, a in enumerate(angle):
+                    if not a:
+                        continue
+                    for k in range(-spread_frames, spread_frames + 1):
+                        j = i + k
+                        if 0 <= j < len(frames):
+                            w = a * (1.0 - smooth(0.0, spread_frames + 1.0, abs(k)))
+                            if abs(w) > abs(spread[j]):
+                                spread[j] = w
+                for i, fr in enumerate(frames):
+                    if not self._in(c, i / fps) and not spread[i]:
+                        continue
+                    self._apply(fr)
+                    if spread[i]:
+                        self._swing_elbow(side, spread[i])
+                    made = self._mend_hand(side, c.get("fingers", True)) if self._in(c, i / fps) else 0
+                    if spread[i] or made:
                         frames[i] = self._capture()
                         changed.add(i)
         self._store(out, frames, fps, "fixed from %s" % clip)
