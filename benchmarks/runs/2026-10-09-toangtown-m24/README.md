@@ -19,21 +19,26 @@ ToangTown's `Tools/blender/pose_m24_maghold.py` made one good hold, then seven c
 | elbow | the elbow over the shoulder |
 | wrist | the wrist bent 55 degrees off the forearm |
 
-## Results with Pose Lab 0.3.0 (`poselab_0.3.0.json`)
+## Results (`poselab_0.3.0.json`, `poselab_0.3.1.json`, `toangtown_checks.json`)
 
-| Pose | Pose Lab 0.3.0 | ToangTown's checks (`toangtown_checks.json`) |
-|---|---|---|
-| good | flags the wrist at a reported 20 radial, its limit | clean |
-| back | palm facing -1, not holding; `ok` stays true | palm facing -0.85 |
-| thumb | clearance 0.68 cm (true depth 1.68); grip passes it | clip 1.68 cm |
-| twist | missed | twist 154 |
-| finger | missed: reads 3 to 7 sideways | caught: 48 sideways |
-| clip | clearance 0.65 cm (true 1.46); grip fails | clip 1.46 cm |
-| elbow | caught | caught |
-| wrist | caught | caught |
-| **Caught** | **5 of 7**, depth about 40% | 7 of 7, depth about 100% |
+| Pose | Pose Lab 0.3.0 | Pose Lab 0.3.1 | ToangTown's checks |
+|---|---|---|---|
+| good | flags the wrist at a reported 20 radial, its limit | clean (grip: palm 4.7 cm off, not holding) | clean |
+| back | palm facing -1, not holding; `ok` stays true | wrist twisted 179; palm facing -1 | palm facing -0.85 |
+| thumb | clearance 0.68 cm (true depth 1.68); grip passes it | clearance 1.68 cm; grip fails | clip 1.68 cm |
+| twist | missed | wrist twisted 154 | twist 154 |
+| finger | missed: reads 3 to 7 sideways | end joint 48 out of plane | 48 sideways |
+| clip | clearance 0.65 cm (true 1.46); grip fails | clearance 1.46 cm; grip fails | clip 1.46 cm |
+| elbow | caught | caught | caught |
+| wrist | caught | caught | caught |
+| **Caught** | **5 of 7**, depth about 40% | **7 of 7**, depth exact | 7 of 7, depth exact |
 
-Time: `load_rig` 1.7 s, then 0.2 s per pose for `pose_clip`, `anatomy`, `grip` and `clearance`.
+Time: `load_rig` 1.7 s (0.3.0) and 2.2 s (0.3.1), then about 0.2 and 0.27 s per pose for `pose_clip`, `anatomy`,
+`grip` and `clearance`.
+
+0.3.1's `grip` also says the good pose's palm is 4.7 cm off the magazine: the fingers and thumb touch it, the palm
+does not. On this rig the palm's skin lies deeper than the 1.8 cm capsule, so the true gap is smaller, but the hold
+is fingers and thumb, not palm. That is a finding about the pose, not a false alarm.
 
 ## What it found in Pose Lab
 
@@ -45,7 +50,7 @@ Time: `load_rig` 1.7 s, then 0.2 s per pose for `pose_clip`, `anatomy`, `grip` a
 5. A `rigs.json` saved with a UTF-8 BOM (Windows PowerShell's default) failed to load.
 6. A wrist reported at 20 failed its 20 degree limit: the rule compared the unrounded value.
 
-Pose Lab 0.3.1 fixes all six. `poselab_0.3.1.json` holds the same run after the fixes.
+Pose Lab 0.3.1 fixes all six. `examples/anatomy_faults.py` checks each on the built-in sample.
 
 ## Run it
 

@@ -51,6 +51,11 @@ locked fully straight. Soucie 2011 gives measured elbow values by age and sex.
 **Checked:** no limit of its own. The radius turns over the ulna, so the hand's roll about the forearm's line belongs
 to the forearm. The wrist check measures only the bend off that line, never the roll.
 
+The wrist itself has no twist. Since 0.3.1 `anatomy` measures the hand's twist about the forearm's line against the
+forearm's bone, beyond the idle grip's (a rig's bind offset is not a roll), and fails it past 30 degrees
+(`wrist_twist_max_deg`). That is a working value: a skinned forearm without twist bones wrings past it. `move_gun`,
+`reach` and `fix_clip` move a placed hand's twist into the forearm, so their own poses read none.
+
 ## Wrist
 
 | Motion | Standard (AAOS) | Functional (Palmer 1985) | Functional (Ryu 1991) |
@@ -69,6 +74,9 @@ and 15 ulnar. Ryu found that every task in the study fit within 54 flexion, 60 e
 sample rig's own idle grip breaks the rule (44 degrees left, 58 right). A rig sets its own value with
 `"limits": {"wrist_max_deg": ...}` in `rigs.json`.
 
+Every rule reads the value as reported: angles to the degree, the elbow's height to 0.1 cm. A wrist reported at 20
+radial passes the 20 limit; at 21 it fails.
+
 ## Fingers
 
 | Joint | Motion | Standard (AAOS) | Functional (Bain 2015) | Checked |
@@ -84,6 +92,11 @@ Each joint also stays near the finger's own plane: at most 40 degrees off it at 
 25 at the end joint. The 40 at the knuckle is a working value with no source. It leaves room for the knuckle's own
 spread (abduction), which the AAOS table does not list. The middle and end joints are hinges. Their side bend allows
 only for a rig's bone axes.
+
+How each is measured (0.3.1): the knuckle against the line across the knuckles, the middle joint against its own
+hinge (square to the segment before it and to the palm's normal), the end joint against the middle joint's bending
+plane. Before 0.3.1 the middle and end joints were measured against a plane fitted through the fingertip, which
+follows a sideways kink and hid a 35 degree one.
 
 **Where Pose Lab differs from AAOS:** it allows 10 more flexion at the knuckle and the middle joint, and 15 less
 hyperextension at the knuckle.

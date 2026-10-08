@@ -28,9 +28,9 @@ goal in 0 of 60 samples, and turning and moving met every goal in 9 s.
 | `move_gun` | roll, swing, pitch and move the rifle; the hands keep their hold by arm IK |
 | `reach` | a wrist onto a point by arm IK (try elbow poles to clear a forearm) |
 | `where`, `distance` | positions in a named frame |
-| `clearance` | how deep the rifle sits inside a forearm, palm or finger, and where |
+| `clearance` | how deep the rifle sits inside a forearm, palm or finger, measured to its surface, and where |
 | `anatomy` | each arm against the human arm's limits: elbow, wrist and each finger joint, and every rule a pose breaks |
-| `grip` | how each hand touches the rifle: with the palm, not the back of the hand, and how deep on each side |
+| `grip` | how each hand touches the rifle: with the palm, not the back of the hand; whether the palm itself holds it; how deep on each side |
 | `arm_ranges` | the research behind those limits: each joint's AAOS range, its functional range, the value checked, and the sources |
 | `faces_eye`, `visible`, `screen` | how squarely a surface faces the eye, how much of it the eye sees, where it falls on screen |
 | `solve` | searches rifle moves against goals; reports each goal and how often any sample met it |
@@ -53,6 +53,8 @@ muzzle up. Moves (`right`, `forward`, `up`) are in the view.
 
 A hand round its grip touches the rifle on the idle pose already (a finger on the trigger, fingers round the
 handguard). Call `clearance` at `pose_idle` for that baseline, and leave those segments out with `ignore` wildcards.
+On the built-in sample the left thumb sits 2.7 cm inside the handguard at idle. `clearance` measures to the rifle's
+surface (inside or out by ray parity), so it sees a body part inside a flat face between the mesh's corner points.
 
 ### Arm rules (`anatomy`)
 
@@ -63,9 +65,10 @@ A pose can clear the rifle and still be one no human arm can take. `anatomy` che
 | Shoulder | the elbow stays at least 2 cm below the shoulder while the hand works the gun |
 | Elbow | a hinge, bent 5 to 150 degrees: never locked straight |
 | Forearm | it carries the hand's roll (the radius turns over the ulna), so a rolled hand is not a bent wrist |
+| Wrist | no twist of its own: the hand's twist about the forearm's line, against the idle grip's, at most 30 degrees |
 | Wrist | within 30 degrees of the forearm's line; inside its joint range: flexion 80, extension 70, radial 20, ulnar 30 |
 | Fingers | each joint curls only toward the palm: knuckle -30 to 100, middle joint -5 to 110, end joint -10 to 90 |
-| Fingers | each finger stays in its own plane: at most 15 degrees out at the middle joint, 25 at the end joint |
+| Fingers | each finger stays in its own plane: the middle joint at most 15 degrees off its hinge, the end joint at most 25 off the middle joint's plane |
 | Thumb | the knuckle bends -10 to 60 and the end joint -15 to 90, across the palm; the base spreads at most 80 from the index metacarpal and sits at most 20 behind the palm |
 
 The wrist and elbow ranges are the AAOS normal values, from the AAOS 1965 table as reprinted in Greene and Heckman
@@ -78,8 +81,12 @@ range, the value checked, and the sources (AAOS; Eaton; Morrey 1981; Palmer 1985
 Soucie 2011). `arm_ranges` returns the same data to a model.
 
 The `anatomy` reply lists, for each arm, the elbow's height under the shoulder, the elbow's bend, the wrist's bend split into
-flexion and radial deviation, each finger joint's curl and twist, and `bad`: every rule the pose breaks. A rig's
+flexion and radial deviation, the wrist's twist, each finger joint's curl and twist, and `bad`: every rule the pose
+breaks. Each rule reads the value as reported: angles to the degree, the elbow's height to 0.1 cm. A rig's
 `limits`, `finger_limits` and `thumb_limits` entries in `rigs.json` override any value. `solve` takes `{"type": "anatomy"}` as a goal.
+
+`move_gun`, `reach` and `fix_clip` place hands with a turn. They move the hand's twist into the forearm, so the wrist
+joint only bends: a 60 degree rifle roll with the hands kept reads no wrist twist.
 
 Fix a broken rule by moving the rifle, the grip or the elbow's pole. Do not bend a joint further.
 
@@ -96,13 +103,18 @@ contact itself, for each hand:
 | Rule | Default |
 |---|---|
 | A hand on the rifle faces it with the palm, not the back (`palm_faces_rifle` above 0) | within `hold_within_cm` 1.0 |
+| A hand holding the rifle has its palm on it, not only a fingertip (`palm_gap_cm`) | `palm_within_cm` 1.5 |
 | The rifle stays out of the back of the hand and the back of each finger | `back_max_cm` 0.1 |
 | The palm side may press in a little: the capsules are rounder than a palm | `palm_max_cm` 1.0 |
 
 Each finger segment's palm side is the side it curls toward. The thumb's pad faces sideways, so its contacts count
-toward the palm side's depth only. The reply gives each hand's `palm_faces_rifle`, `palm_contact_cm`,
-`back_contact_cm`, where the back contact is, and `bad`. `solve` takes `{"type": "grip"}` as a goal and `scan_clip` as a
-check. On the sample rig, a hand turned 180 degrees about its forearm fails it, and the idle grip passes.
+toward the palm side's depth only. The reply gives each hand's `touching` (some part within `hold_within_cm`),
+`holding` (touching, the palm facing the rifle and its surface within `palm_within_cm`), `palm_gap_cm`,
+`palm_faces_rifle`, `palm_contact_cm`, `back_contact_cm`, where the back contact is, and `bad`. With `hold` true, a hand
+that is not holding breaks a rule. `solve` takes `{"type": "grip"}` as a goal and `scan_clip` as a check. On the sample
+rig, a hand turned 180 degrees about its forearm fails it. So does the idle grip: the left thumb sits 2.8 cm inside the
+handguard, the right palm presses 1.2 cm into the pistol grip, and the trigger finger's back sits 0.8 cm inside the
+trigger guard. The sample stays as it is, so the benchmark's numbers keep their meaning.
 
 ## Motion: scan and fix clips
 
@@ -135,13 +147,14 @@ the fix gave these numbers:
 
 | Check | Before | After |
 |---|---|---|
-| left hand drift on the rifle | 1.76 cm | 0.48 cm |
-| right hand drift on the rifle | 1.14 cm | 0.49 cm |
+| left hand drift on the rifle | 2.27 cm | 0.48 cm |
+| right hand drift on the rifle | 1.67 cm | 0.45 cm |
 | fastest hand speed (the pop) | 450 cm/s | 33 cm/s |
-| clearance | 0.0 cm | 0.0 cm |
+| clearance | 0.93 cm | 0.0 cm |
 
-The fix changed 26 of 43 frames, and every check passed after it. It also flagged 5 frames where the left arm fell
-0.46 cm short of its grip. That still passed the 0.5 cm limit.
+The fix changed 34 of 43 frames, and every check passed after it. It also flagged 6 frames where the left arm fell
+0.46 cm short of its grip. That still passed the 0.5 cm limit. (Before 0.3.1 the clearance read 0.0 cm: the corner
+points missed the forearm inside the rifle.)
 
 ## Install
 
@@ -223,11 +236,23 @@ python examples/motion_test.py
 It records the faulty clip described above, scans it, fixes it, and saves `roll_fixed.pose.json` and `roll_fixed.fbx`
 in `~/.poselab/clips/`.
 
+```
+blender -b -P examples/anatomy_faults.py
+```
+
+It puts one known fault at a time on the sample and fails if a check misses it: a finger kinked sideways, a hand
+twisted against its forearm, a hand inside a flat face, a fingertip-only touch, and a rigs file with a byte order
+mark. These come from a real rig's benchmark (below).
+
 ## Benchmark
 
 `benchmarks/` asks whether a model poses the rig better with Pose Lab's measurements than with renders alone. It runs
 five tasks on the sample rig and grades them with Pose Lab. A scripted oracle and a do-nothing control check the
 graders. See [benchmarks/README.md](benchmarks/README.md).
+
+[benchmarks/runs/2026-10-09-toangtown-m24](benchmarks/runs/2026-10-09-toangtown-m24/README.md) tests the checks
+themselves on a real game rig: 8 poses of a hand on a magazine, 7 with a known fault. Pose Lab 0.3.0 caught 5 and read
+clipping at 40% of its depth; 0.3.1 catches all 7 with the depths exact.
 
 ## License
 

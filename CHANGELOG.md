@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.3.1
+
+A real game rig tested the checks: ToangTown's M24 magazine hold, 8 poses with 7 known faults
+(`benchmarks/runs/2026-10-09-toangtown-m24`). 0.3.0 caught 5 and read clipping at about 40% of its depth. 0.3.1
+catches all 7 with the depths exact.
+
+Fixes:
+
+* `clearance` and `grip` measured to the nearest corner point of the rifle's mesh. A hand 1.68 cm inside a low-poly
+  magazine read 0.68 cm: a flat face has no vertex inside it. They now measure to the surface (the closest point on
+  its faces), inside or out by ray parity. Each takes about 0.01 s on the sample.
+* `anatomy` hid a finger kinked sideways at its middle joint: it measured against a plane fitted through the
+  fingertip, which follows the kink. The middle joint is now measured against its own hinge, the end joint against the
+  middle joint's bending plane.
+* `anatomy` had no check of the wrist's twist. A forearm turned 154 degrees under a still hand passed. It now reports
+  `wrist_twist_deg` (the hand's twist about the forearm's line, beyond the idle grip's) and fails it past 30.
+  `move_gun`, `reach` and `fix_clip` move a placed hand's twist into the forearm, so their poses read none.
+* `grip` called a hand holding with one fingertip on the rifle and the palm 3 to 5 cm off. It now reports `touching`
+  and `holding` apart, with `palm_gap_cm`: holding needs the palm's surface within `palm_within_cm` (1.5). With
+  `hold` true, a hand that does not hold breaks a rule.
+* A `rigs.json` or `.pose.json` saved with a UTF-8 byte order mark (Windows PowerShell's default) failed to load.
+* `anatomy` failed a wrist reported at its 20 degree limit (20.3 before rounding). Every rule now reads the value as
+  reported: angles to the degree, the elbow's height to 0.1 cm.
+
+Changes you will see:
+
+* The sample's idle grip now shows its real contacts: the left thumb 2.7 cm inside the handguard, the right palm
+  1.2 cm into the pistol grip, the trigger finger's back 0.8 cm inside the guard. `grip` fails it. The sample is
+  unchanged.
+* The benchmark's `fingertip_contact` mark moved to [2.6, 33.0, -1.5]. At the old mark the other fingertips sat
+  1.5 cm inside the handguard, so the task had no clean solution. Oracle 5 of 5, control 0 of 5.
+* `examples/motion_test.py` now finds 0.93 cm of clearance in the faulty clip (0.0 before) and mends it.
+* New: `examples/anatomy_faults.py` (`blender -b -P`) puts each fault on the sample and fails if a check misses it.
+
 ## 0.3.0
 
 New:

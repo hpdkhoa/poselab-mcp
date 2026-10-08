@@ -73,7 +73,9 @@ RANGES = {
         "supination": {"standard": 80, "source": "AAOS", "functional": 50, "functional_source": "Morrey1981"},
         "checked": "not a limit of its own: the hand's roll about the forearm's line belongs here, not to the wrist",
         "note": "The radius turns over the ulna, so a rolled hand is a turned forearm. The wrist check measures only "
-                "the bend off the forearm's line, never this roll.",
+                "the bend off the forearm's line, never this roll. The wrist itself has no twist: anatomy fails a hand "
+                "twisted more than 30 degrees against its forearm's bone beyond the idle grip (wrist_twist_max_deg, a "
+                "working value: a skinned forearm without twist bones wrings past it).",
     },
     "wrist": {
         "flexion": {"standard": 80, "source": "AAOS", "functional_by_study": {"Palmer1985": 5, "Ryu1991": 54}},

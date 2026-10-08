@@ -27,8 +27,9 @@ harness measures the scene and grades it. A claim in the model's answer never co
 ## Controls (free, no API calls)
 
 * `--oracle` runs a scripted solution for each task. It shows that a solution exists for every task and that the
-  graders accept a right answer. Result on 2026-10-08: 5 of 5.
+  graders accept a right answer. Result on 2026-10-08: 5 of 5. Again on 2026-10-09 with 0.3.1: 5 of 5.
 * `--null` submits at once without changing anything. The graders must fail it. Result on 2026-10-08: 0 of 5.
+  Again on 2026-10-09 with 0.3.1: 0 of 5.
 
 ## Results
 
@@ -61,6 +62,11 @@ What the numbers show:
 * Vision agents also found ways round the missing measures. In `fingertip_contact`, all three worked out the
   shoulder position and the finger offset from the distances `reach` reports, and all three passed.
 * Measured agents used half the tool calls and about a third of the time.
+
+Pose Lab 0.3.0 graded these episodes. In 0.3.1 `clearance` measures to the rifle's surface, not its corner points.
+Under that measure the first `fingertip_contact` mark had no clean solution: with the index tip on it, the other
+fingertips sat 1.5 cm inside the handguard. The mark moved from [2.6, 33.0, 2.0] to [2.6, 33.0, -1.5]. The agent
+episodes above were not run again.
 
 How strong the result is: the one-sided Fisher exact test on 15 of 15 against 11 of 15 gives p = 0.0498. That is
 just under the usual 0.05 bar. Most of the difference comes from one task, `port_to_eye`. More trials would make the
