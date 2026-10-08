@@ -4,7 +4,7 @@ run.py drives a model through the Anthropic API. This file lets an agent that ca
 tasks: a bridge keeps one Pose Lab session open behind a local port, offers only the condition's tools, and grades
 the scene with tasks.py when the agent calls submit (or when it reaches the call limit).
 
-    python benchmarks/agent_bridge.py serve TASK CONDITION PORT OUT_DIR     (one episode; stops after grading)
+    python benchmarks/agent_bridge.py serve TASK CONDITION PORT OUT_DIR [TRIAL]   (one episode; stops after grading)
     python benchmarks/agent_bridge.py prompt TASK CONDITION PORT            (the text to give the agent)
     python benchmarks/agent_bridge.py call PORT TOOL '{"arg": 1}'           (what the agent runs; TOOL tools lists them)
     python benchmarks/agent_bridge.py summary RUN_DIR                       (a summary.md over every episode in RUN_DIR)
@@ -33,7 +33,7 @@ SYSTEM = (
 )
 
 
-def serve(task, condition, port, out):
+def serve(task, condition, port, out, trial=0):
     from mcp_stdio import PoseLab
     from tasks import CONDITIONS, TASKS
     os.makedirs(out, exist_ok=True)
@@ -50,7 +50,7 @@ def serve(task, condition, port, out):
 
     def finish(submitted):
         passed, checks = TASKS[task]["grade"](lab, ctx, submitted)
-        res = {"task": task, "condition": condition, "passed": passed, "submitted": submitted is not None,
+        res = {"task": task, "condition": condition, "trial": trial, "passed": passed, "submitted": submitted is not None,
                "answer": (submitted or {}).get("answer"), "checks": checks, "tool_calls": state["calls"],
                "seconds": round(time.time() - (state["t0"] or time.time()), 1)}
         with open(os.path.join(out, "result.json"), "w") as fh:
@@ -152,13 +152,18 @@ def summary(run_dir):
     tasks = list(dict.fromkeys(r["task"] for r in rows))
     conds = list(dict.fromkeys(r["condition"] for r in rows))
     lines = ["# Pose Lab benchmark (agent bridge)", "", "Episodes run by coding agents through agent_bridge.py, graded "
-             "by tasks.py. See agent_bridge.py for how this differs from run.py.", "",
-             "| Task | " + " | ".join(conds) + " |", "|---|" + "---|" * len(conds)]
+             "by tasks.py. See agent_bridge.py for how this differs from run.py.", ""]
+    mp = os.path.join(run_dir, "run.json")   # what the agents ran on, written by whoever starts the run
+    if os.path.exists(mp):
+        with open(mp) as fh:
+            lines += ["Run on:", ""] + ["* %s: %s" % (k, v) for k, v in json.load(fh).items()] + [""]
+    lines += ["| Task | " + " | ".join(conds) + " |", "|---|" + "---|" * len(conds)]
     for t in tasks:
         cells = []
         for c in conds:
             rs = [r for r in rows if r["task"] == t and r["condition"] == c]
-            cells.append(", ".join("%s (%d calls)" % ("PASS" if r["passed"] else "fail", r["tool_calls"]) for r in rs))
+            cells.append("%d / %d: " % (sum(r["passed"] for r in rs), len(rs)) +
+                         ", ".join("%s (%d calls)" % ("PASS" if r["passed"] else "fail", r["tool_calls"]) for r in rs) if rs else "")
         lines.append("| %s | %s |" % (t, " | ".join(cells)))
     lines.append("| **all** | " + " | ".join("%d / %d" % (sum(r["passed"] for r in rows if r["condition"] == c),
                                                         sum(1 for r in rows if r["condition"] == c)) for c in conds) + " |")
@@ -166,7 +171,7 @@ def summary(run_dir):
     for r in rows:
         for ch in r["checks"]:
             if not ch["met"]:
-                lines.append("* %s, %s: %s = %s" % (r["task"], r["condition"], ch["check"], ch["value"]))
+                lines.append("* %s, %s, trial %s: %s = %s" % (r["task"], r["condition"], r.get("trial", "?"), ch["check"], ch["value"]))
     with open(os.path.join(run_dir, "summary.md"), "w") as fh:
         fh.write("\n".join(lines) + "\n")
     print("\n".join(lines))
@@ -177,7 +182,7 @@ if __name__ == "__main__":
     if not a or a[0] not in ("serve", "prompt", "call", "summary"):
         sys.exit(__doc__)
     if a[0] == "serve":
-        serve(a[1], a[2], int(a[3]), a[4])
+        serve(a[1], a[2], int(a[3]), a[4], int(a[5]) if len(a) > 5 else 0)
     elif a[0] == "prompt":
         print(prompt(a[1], a[2], int(a[3])))
     elif a[0] == "call":
