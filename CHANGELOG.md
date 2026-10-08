@@ -4,7 +4,8 @@
 
 * Tool errors now reach the client with their message. Before, a missing Blender showed only "Error executing tool
   load_rig". Now the client reads "Blender not found: set POSELAB_BLENDER ...".
-* The benchmark checks for Blender before it starts.
+* The benchmark checks for Blender and for Anthropic credentials before it starts. The credential check is a free
+  token count, so a run with no key stops at once and records nothing.
 
 ## 0.2.0
 

@@ -149,6 +149,10 @@ def main():
     if not scripted:
         import anthropic
         client = anthropic.Anthropic()
+        try:   # credentials and model name, checked by a free token count before any paid call
+            client.messages.count_tokens(model=args.model, messages=[{"role": "user", "content": "ok"}])
+        except Exception as e:
+            sys.exit("Anthropic API not ready (set ANTHROPIC_API_KEY or run `ant auth login`): %s" % str(e)[:300])
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = os.path.join(args.out, "%s-%s" % (stamp, scripted or args.model))
     os.makedirs(run_dir, exist_ok=True)
