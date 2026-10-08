@@ -42,7 +42,8 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
 # while the hand is on the gun. A rig's "limits" entry overrides any of these. The research behind each value and how
 # it differs from the standard: poselab_mcp/ranges.py and docs/ANATOMY.md.
 ARM_LIMITS = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension_deg": 70.0, "wrist_radial_deg": 20.0,
-              "wrist_ulnar_deg": 30.0, "elbow_bend_max_deg": 150.0, "elbow_bend_min_deg": 5.0, "elbow_under_shoulder_cm": 2.0}
+              "wrist_ulnar_deg": 30.0, "elbow_bend_max_deg": 150.0, "elbow_bend_min_deg": 5.0, "elbow_under_shoulder_cm": 2.0,
+              "wrist_twist_max_deg": 30.0}
 # Each finger joint, + curling toward the palm: the knuckle (MCP, "01"), the middle joint (PIP, "02"), the end joint
 # (DIP, "03"): (least curl, most curl, most out of the finger's own plane), degrees. Below the least curl a joint is
 # bent backward (hyperextended); out of its plane the finger is twisted. A rig's "finger_limits" entry overrides them.
@@ -160,6 +161,10 @@ class Lab:
         self.sc.render.fps, self.sc.render.fps_base = 30, 1.0
         self.snapshots = {}
         self.pose_idle()
+        # the idle grip's forearm and hand: the twist between their bones there is the rig's own (a bind offset, not a
+        # roll); anatomy measures the twist against it
+        self.idle_world = {self._n(p, s): self._bw(self._n(p, s)).copy() for p in ("lowerarm", "hand") for s in ("l", "r")
+                           if self._n(p, s) in self.arm.pose.bones}
         return self.describe()
 
     def _load_files(self, R):
@@ -430,6 +435,7 @@ class Lab:
             miss[s] = round(self._two_bone(s, W.translation), 2)
             hn = self._n("hand", s)
             self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, W.to_quaternion(), self._unit()))
+            self._roll_forearm(s)
         return {"hands_off_their_hold_cm": miss, "barrel_off_deg": round(self._barrel_off(), 2)}
 
     def reach(self, side, target, frame="gun", pole=None):
@@ -441,6 +447,7 @@ class Lab:
         H = self._bw(hn)
         miss = self._two_bone(side, self._point(target, frame), pole)
         self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, H.to_quaternion(), self._unit()))
+        self._roll_forearm(side)
         return {"wrist_off_target_cm": round(miss, 2)}
 
     def snapshot(self, action, name):
@@ -693,9 +700,60 @@ class Lab:
         if rf > L["wrist_flexion_deg"] or -rf > L["wrist_extension_deg"] or rd > L["wrist_radial_deg"] or -rd > L["wrist_ulnar_deg"]:
             bad.append("wrist past its joint range (%s %.0f, %s %.0f)" % ("flexion" if flex >= 0 else "extension", abs(flex),
                                                                           "radial" if dev >= 0 else "ulnar", abs(dev)))
-        return {"elbow_under_shoulder_cm": round(under, 1), "upper_arm_raised_deg": round(self._deg(upper, -up)),
+        rep_ = {"elbow_under_shoulder_cm": round(under, 1), "upper_arm_raised_deg": round(self._deg(upper, -up)),
                 "elbow_bend_deg": round(bend), "wrist_bend_deg": round(total), "wrist_flexion_deg": round(flex),
-                "wrist_radial_deg": round(dev)}, bad
+                "wrist_radial_deg": round(dev)}
+        # the wrist's twist: the hand turned about the forearm's line against the forearm's bone, beyond the idle
+        # grip's. The radius turns over the ulna, so a hand's roll is the forearm's; a twist in the wrist joint itself
+        # wrings the skin between them (a forearm turned 154 degrees under a still hand passed before 0.3.1)
+        twist = self._wrist_twist(s)
+        if twist is not None:
+            rep_["wrist_twist_deg"] = round(twist)
+            if round(twist) > L["wrist_twist_max_deg"]:
+                bad.append("wrist twisted %.0f against the idle grip (at most %.0f): the hand's roll belongs to the forearm"
+                           % (twist, L["wrist_twist_max_deg"]))
+        return rep_, bad
+
+    def _twist_change(self, s):
+        """The hand's twist about the forearm's line against the forearm's bone, beyond the idle grip's, as a turn in
+        the forearm's own frame (None without an idle grip)."""
+        lo, hn = self._n("lowerarm", s), self._n("hand", s)
+        idle = getattr(self, "idle_world", {})
+        if lo not in idle or hn not in idle:
+            return None
+
+        def twist(Lm, Hm):
+            lq = Lm.to_quaternion()
+            axis = lq.inverted() @ (Hm.translation - Lm.translation)
+            if axis.length < 1e-9:
+                return None
+            rel = lq.inverted() @ Hm.to_quaternion()
+            p = Vector((rel.x, rel.y, rel.z)).project(axis.normalized())
+            return Quaternion((rel.w, p.x, p.y, p.z)).normalized()
+        now, base = twist(self._bw(lo), self._bw(hn)), twist(idle[lo], idle[hn])
+        if now is None or base is None:
+            return None
+        return now @ base.inverted()
+
+    def _wrist_twist(self, s):
+        """Degrees the hand is twisted about the forearm's line against the forearm's bone, beyond the idle grip's."""
+        q = self._twist_change(s)
+        if q is None:
+            return None
+        a = math.degrees(q.angle)
+        return 360.0 - a if a > 180.0 else a
+
+    def _roll_forearm(self, s):
+        """The hand's twist moved into the forearm (the radius turns over the ulna), the hand left where it is: after a
+        hand is placed with a turn, the wrist joint only bends."""
+        q = self._twist_change(s)
+        if q is None:
+            return
+        lo, hn = self._n("lowerarm", s), self._n("hand", s)
+        H = self._bw(hn).copy()
+        lq = self._bw(lo).to_quaternion()
+        self._turn(lo, lq @ q @ lq.inverted())
+        self._set_world(hn, Matrix.LocRotScale(H.translation, H.to_quaternion(), self._unit()))
 
     def _finger_tip(self, fi, s):
         """The end segment's tip: the middle segment's rest line carried by the end bone's own turn from its rest
@@ -1341,6 +1399,7 @@ class Lab:
         short = max(0.0, (M.translation - S).length - (E - S).length - (W - E).length) * 100.0
         self._two_bone(side, M.translation)
         self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, M.to_quaternion(), self._unit()))
+        self._roll_forearm(side)
         return short
 
     @staticmethod
