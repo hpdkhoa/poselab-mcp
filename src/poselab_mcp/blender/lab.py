@@ -590,7 +590,8 @@ class Lab:
                         palm_cm, palm_seg = depth, name
         return near, palm_cm, palm_seg, back_cm, back_seg, back_pt
 
-    def grip(self, side="both", back_max_cm=0.1, palm_max_cm=1.0, hold_within_cm=1.0, frame="gun"):
+    def grip(self, side="both", back_max_cm=0.1, palm_max_cm=1.0, hold_within_cm=1.0, palm_within_cm=1.5, hold=False,
+             frame="gun"):
         """How each hand touches the rifle: the palm side or the back. A hand holds with its palm and the palm sides
         of its fingers; the rifle inside the back of the hand or the back of a finger is a physical error that
         clearance with palms and fingers ignored never shows. For each hand: palm_faces_rifle (the palm's direction
@@ -599,7 +600,10 @@ class Lab:
         broken. A hand within hold_within_cm of the rifle must face it with the palm (palm_faces_rifle above 0) and
         keep the back clear (back_contact_cm at most back_max_cm). The palm side may press into the rifle up to
         palm_max_cm: the capsules are rounder than a palm, so a firm grip reads a few millimetres deep. The thumb's
-        contacts count toward the palm side only (its pad faces sideways)."""
+        contacts count toward the palm side only (its pad faces sideways). touching: some part of the hand within
+        hold_within_cm. holding: touching, the palm facing the rifle and the palm's own surface within palm_within_cm of
+        it (palm_gap_cm, below 0 pressed in); a fingertip on the rifle with the palm off it is touching, not holding.
+        hold true: a hand that is not holding breaks a rule."""
         self._need()
         if side not in ("both", "l", "r"):
             raise ValueError("side must be both, l or r, got %r" % (side,))
@@ -614,15 +618,25 @@ class Lab:
             palm_dir = across.cross((mid - hn).normalized()) * k
             co, _d = tree.nearest(centre)
             facing = palm_dir.normalized().dot((co - centre).normalized()) if co is not None and (co - centre).length > 1e-9 else 0.0
-            holding = near is not None and near <= hold_within_cm
+            # the palm's own surface: the capsule's skin on the palm side of its bone line
+            _pc, palm_d = tree.nearest(centre + palm_dir.normalized() * RADIUS["palm"]) if palm_dir.length > 1e-9 else (None, None)
+            palm_gap = palm_d * 100.0 if palm_d is not None else None
+            touching = near is not None and near <= hold_within_cm
+            holding = touching and facing > 0.0 and palm_gap is not None and palm_gap <= palm_within_cm
             bad = []
-            if holding and facing <= 0.0:
+            if touching and facing <= 0.0:
                 bad.append("holds the rifle with the back of the hand (palm faces %.2f away from it)" % -facing)
+            if hold and not holding:
+                why = ("nothing of the hand within %.1f cm of it" % hold_within_cm if not touching else
+                       "the palm faces away from it" if facing <= 0.0 else
+                       "only the fingers touch it: the palm is %.1f cm off (at most %.1f)" % (palm_gap, palm_within_cm))
+                bad.append("does not hold the rifle: " + why)
             if palm_cm > palm_max_cm:
                 bad.append("rifle %.2f cm inside the palm side of %s (at most %.2f)" % (palm_cm, palm_seg, palm_max_cm))
             if back_cm > back_max_cm:
                 bad.append("rifle %.2f cm inside the back of %s (at most %.2f)" % (back_cm, back_seg, back_max_cm))
-            rep_ = {"holding": holding, "gap_cm": round(near, 2) if near is not None else None,
+            rep_ = {"holding": holding, "touching": touching, "gap_cm": round(near, 2) if near is not None else None,
+                    "palm_gap_cm": round(palm_gap, 2) if palm_gap is not None else None,
                     "palm_faces_rifle": round(facing, 2), "palm_contact_cm": round(palm_cm, 2),
                     "back_contact_cm": round(back_cm, 2), "bad": bad}
             if back_seg:

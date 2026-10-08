@@ -134,16 +134,19 @@ def anatomy(side: Literal["both", "l", "r"] = "both", fingers: bool = True) -> d
 
 @mcp.tool()
 def grip(side: Literal["both", "l", "r"] = "both", back_max_cm: float = 0.1, palm_max_cm: float = 1.0,
-         hold_within_cm: float = 1.0, frame: Frame = "gun") -> dict:
+         hold_within_cm: float = 1.0, palm_within_cm: float = 1.5, hold: bool = False, frame: Frame = "gun") -> dict:
     """How each hand touches the rifle: with the palm or with the back. A hand holds with its palm and the palm sides of
     its fingers. The back of the hand toward the rifle, or the rifle inside the back of the hand or of a finger, is a
-    physical error; clearance with palms and fingers ignored never shows it. For each hand: holding (within
-    hold_within_cm), palm_faces_rifle (1 square on, below 0 the back of the hand toward it), palm_contact_cm and
+    physical error; clearance with palms and fingers ignored never shows it. For each hand: touching (some part within
+    hold_within_cm), holding (touching, the palm facing the rifle and its surface within palm_within_cm: palm_gap_cm;
+    a fingertip on the rifle with the palm off it is not holding), palm_faces_rifle (1 square on, below 0 the back of
+    the hand toward it), palm_contact_cm and
     back_contact_cm (the deepest rifle point inside the hand on each side), and bad: every rule broken. ok false
     lists them. The palm side may press in up to palm_max_cm (the capsules are rounder than a palm); the back side
-    only up to back_max_cm. Fix a wrong-side hold by turning the hand or the grip, not by moving a finger through the rifle."""
+    only up to back_max_cm. hold true: a hand that is not holding breaks a rule (use it to check a hand really holds
+    something). Fix a wrong-side hold by turning the hand or the grip, not by moving a finger through the rifle."""
     return worker.call("grip", side=side, back_max_cm=back_max_cm, palm_max_cm=palm_max_cm,
-                       hold_within_cm=hold_within_cm, frame=frame)
+                       hold_within_cm=hold_within_cm, palm_within_cm=palm_within_cm, hold=hold, frame=frame)
 
 
 @mcp.tool()
