@@ -13,7 +13,7 @@ import random
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
-from mathutils.kdtree import KDTree
+from mathutils.bvhtree import BVHTree
 
 FINGERS = ("index", "middle", "ring", "pinky", "thumb")
 RADIUS = {"forearm": 0.030, "palm": 0.018, "finger": 0.0075}       # m: the capsules a body part is tested with
@@ -487,21 +487,49 @@ class Lab:
                     out.append(("%s%d_%s" % (fi, i + 1, side), pts[i], pts[i + 1], RADIUS["finger"]))
         return out
 
+    class Surface:
+        """The rifle's surface: the closest point on its faces and the signed distance to it, negative inside. The
+        nearest corner point (a KD tree of vertices) read a hand 0.68 cm into a low-poly magazine that it was 1.68 cm
+        into: a box's flat face has no vertex inside it. Inside or out is decided by ray parity (an odd count of
+        crossings, the majority of three rays), not by the nearest face's normal, which reads wrong near an edge."""
+        RAYS = (Vector((1.0, 0.13, 0.07)).normalized(), Vector((-0.11, 1.0, 0.05)).normalized(), Vector((0.09, -0.04, 1.0)).normalized())
+
+        def __init__(self, bvh):
+            self.bvh = bvh
+
+        def _crossings(self, p, d):
+            n, o = 0, p.copy()
+            for _ in range(64):
+                hit = self.bvh.ray_cast(o, d, 100.0)
+                if hit[0] is None:
+                    break
+                n += 1
+                o = hit[0] + d * 1e-5
+            return n
+
+        def inside(self, p):
+            return sum(self._crossings(p, d) % 2 for d in self.RAYS) >= 2
+
+        def nearest(self, p):
+            loc, _nrm, _idx, d = self.bvh.find_nearest(p)
+            if loc is None:
+                return None, None
+            # parity only where it matters: a point further out than any capsule's radius is outside either way
+            return loc, (-d if d < 0.05 and self.inside(p) else d)
+
     def _tree(self):
         dg = bpy.context.evaluated_depsgraph_get()
         ev = self.rifle_mesh.evaluated_get(dg)
         me = ev.to_mesh()
-        pts = [self.rifle_mesh.matrix_world @ v.co for v in me.vertices]
+        M = self.rifle_mesh.matrix_world
+        bvh = BVHTree.FromPolygons([M @ v.co for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
         ev.to_mesh_clear()
-        tree = KDTree(len(pts))
-        for i, p in enumerate(pts):
-            tree.insert(p, i)
-        tree.balance()
-        return tree
+        return self.Surface(bvh)
 
     def clearance(self, parts="both", ignore=(), frame="gun", top=5):
-        """How deep the rifle sits inside the arms (capsules: forearm 3 cm, palm 1.8 cm, each finger segment 0.75 cm).
-        worst_cm 0: nothing touches. ignore: segment names, prefixes or wildcards (thumb, index3_r, *_l)."""
+        """How deep the rifle sits inside the arms (capsules: forearm 3 cm, palm 1.8 cm, each finger segment 0.75 cm),
+        measured to the rifle's surface, not its corner points. worst_cm 0: nothing touches. ignore: segment names,
+        prefixes or wildcards (thumb, index3_r, *_l)."""
         self._need()
         tree = self._tree()
         hits = {}
@@ -511,7 +539,7 @@ class Lab:
             n = max(2, int((b - a).length / 0.004))
             for i in range(n + 1):
                 p = a.lerp(b, i / n)
-                co, idx, d = tree.find(p)
+                co, d = tree.nearest(p)
                 if co is not None and d < r and (r - d) * 100.0 > hits.get(name, (0.0,))[0]:
                     hits[name] = ((r - d) * 100.0, co.copy())
         ranked = sorted(hits.items(), key=lambda kv: -kv[1][0])
@@ -544,13 +572,15 @@ class Lab:
             n = max(2, int(d.length / 0.003))
             for i in range(n + 1):
                 p = a.lerp(b, i / n)
-                co, _i, dist = tree.find(p)
-                if co is not None:
-                    gap = (dist - r) * 100.0
-                    near = gap if near is None else min(near, gap)
-                for q, _j, dq in tree.find_range(p, r):
+                q, dq = tree.nearest(p)
+                if q is None:
+                    continue
+                gap = (dq - r) * 100.0
+                near = gap if near is None else min(near, gap)
+                if dq < r:
                     depth = (r - dq) * 100.0
-                    off = q - p
+                    # the side the rifle is on: toward its surface point from outside, away from it from inside
+                    off = (q - p) if dq >= 0.0 else (p - q)
                     off = off - dn * off.dot(dn)
                     back = (not thumb and palmar.length > 1e-6 and off.length > 1e-9
                             and off.normalized().dot(palmar.normalized()) < -0.25)
@@ -582,7 +612,7 @@ class Lab:
             mid = self._bw(self._n("finger", s_, "middle", "01")).translation
             centre = hn.lerp(mid, 0.5)
             palm_dir = across.cross((mid - hn).normalized()) * k
-            co, _i, _d = tree.find(centre)
+            co, _d = tree.nearest(centre)
             facing = palm_dir.normalized().dot((co - centre).normalized()) if co is not None and (co - centre).length > 1e-9 else 0.0
             holding = near is not None and near <= hold_within_cm
             bad = []

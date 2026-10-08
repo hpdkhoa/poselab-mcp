@@ -21,7 +21,8 @@ CLIP_CHECKS = [
     {"type": "pop", "bones": ["hand_l", "hand_r"], "max_cm_per_s": 250},
     {"type": "clearance", "parts": "both", "ignore": GRIPS, "max_cm": 0.0},
 ]
-CONTACT_TARGET = [2.6, 33.0, 2.0]   # gun frame, cm: on the handguard's left side
+CONTACT_TARGET = [2.6, 33.0, -1.5]   # gun frame, cm: on the handguard's left side, low. The mark at z 2.0 had no clean
+# solution: measured to the surface, the other fingertips sat 1.5 cm inside the handguard (corner points hid it)
 
 
 def dist(a, b):
@@ -207,7 +208,7 @@ TASKS = {
     },
     "fingertip_contact": {
         "setup": setup_contact, "grade": grade_contact, "oracle": oracle_contact,
-        "prompt": ("Put the tip of the left index finger on the point [2.6, 33.0, 2.0] in the gun frame (cm), within 0.5 "
+        "prompt": ("Put the tip of the left index finger on the point [2.6, 33.0, -1.5] in the gun frame (cm), within 0.5 "
                    "cm. Do not move the rifle. Apart from that fingertip, nothing of the arms may sit more than 0.2 cm "
                    "inside the rifle (the right hand round its grip may touch it). Then call submit."),
     },
