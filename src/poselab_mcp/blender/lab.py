@@ -619,12 +619,14 @@ class Lab:
         upper, fore, hand = elbow - shoulder, wrist - elbow, knuckle - wrist
         bad = []
         under = (shoulder - elbow).dot(up) * 100.0
-        if under < L["elbow_under_shoulder_cm"]:
+        # every rule reads the value as reported (the elbow's height to 0.1 cm, angles to the degree): a wrist reported
+        # at its 20 degree limit passes, one reported at 21 fails
+        if round(under, 1) < L["elbow_under_shoulder_cm"]:
             bad.append("elbow %.1f cm under the shoulder (at least %.1f)" % (under, L["elbow_under_shoulder_cm"]))
         bend = self._deg(upper, fore)
-        if bend > L["elbow_bend_max_deg"]:
+        if round(bend) > L["elbow_bend_max_deg"]:
             bad.append("elbow bent %.0f (at most %.0f)" % (bend, L["elbow_bend_max_deg"]))
-        if bend < L["elbow_bend_min_deg"]:
+        if round(bend) < L["elbow_bend_min_deg"]:
             bad.append("elbow locked straight (%.0f)" % bend)
         total = self._deg(fore, hand)
         thumb_side = f("index") - f("pinky")
@@ -641,9 +643,10 @@ class Lab:
         e2 = e2.normalized() if e2.length > 1e-9 else Vector((0.0, 0.0, 0.0))
         flex = math.degrees(math.atan2(off.dot(e1), c))
         dev = math.degrees(math.atan2(off.dot(e2), c))
-        if total > L["wrist_max_deg"]:
+        if round(total) > L["wrist_max_deg"]:
             bad.append("wrist bent %.0f off the forearm (at most %.0f)" % (total, L["wrist_max_deg"]))
-        if flex > L["wrist_flexion_deg"] or -flex > L["wrist_extension_deg"] or dev > L["wrist_radial_deg"] or -dev > L["wrist_ulnar_deg"]:
+        rf, rd = round(flex), round(dev)
+        if rf > L["wrist_flexion_deg"] or -rf > L["wrist_extension_deg"] or rd > L["wrist_radial_deg"] or -rd > L["wrist_ulnar_deg"]:
             bad.append("wrist past its joint range (%s %.0f, %s %.0f)" % ("flexion" if flex >= 0 else "extension", abs(flex),
                                                                           "radial" if dev >= 0 else "ulnar", abs(dev)))
         return {"elbow_under_shoulder_cm": round(under, 1), "upper_arm_raised_deg": round(self._deg(upper, -up)),
@@ -688,11 +691,11 @@ class Lab:
                     side_deg = asin(c.dot(n)) - asin(a.dot(n))
                 lo, hi, sd = FL[j]
                 out["%s_%s" % (fi, j)] = [round(curl), round(side_deg)]
-                if curl < lo:
+                if round(curl) < lo:
                     bad.append("%s %s bent %.0f backward (hyperextended; at most %.0f)" % (fi, JOINT_NAMES[j], -curl, -lo))
-                elif curl > hi:
+                elif round(curl) > hi:
                     bad.append("%s %s curled %.0f (at most %.0f)" % (fi, JOINT_NAMES[j], curl, hi))
-                if abs(side_deg) > sd:
+                if abs(round(side_deg)) > sd:
                     bad.append("%s %s twisted %.0f out of the finger's plane (at most %.0f)" % (fi, JOINT_NAMES[j], abs(side_deg), sd))
         return out, bad, planes
 
@@ -727,9 +730,9 @@ class Lab:
         palmar = asin(meta.normalized().dot(palm)) if meta.length > 1e-9 else 0.0
         out = {"cmc_spread_deg": round(spread), "cmc_palmar_deg": round(palmar)}
         bad, axes = [], {}
-        if spread > TL["cmc_spread_max_deg"]:
+        if round(spread) > TL["cmc_spread_max_deg"]:
             bad.append("thumb base spread %.0f from the index (at most %.0f)" % (spread, TL["cmc_spread_max_deg"]))
-        if palmar < TL["cmc_palmar_min_deg"]:
+        if round(palmar) < TL["cmc_palmar_min_deg"]:
             bad.append("thumb base %.0f behind the palm (at most %.0f)" % (-palmar, -TL["cmc_palmar_min_deg"]))
         flex = (palm - across).normalized()          # a thumb bends across the palm toward the little finger
         for i, j in ((0, "02"), (1, "03")):
@@ -748,11 +751,11 @@ class Lab:
             axes[j] = axis
             lo, hi, sd = TL[j]
             out["thumb_" + j] = [round(bend), round(side_deg)]
-            if bend < lo:
+            if round(bend) < lo:
                 bad.append("thumb %s bent %.0f backward (hyperextended; at most %.0f)" % (THUMB_JOINTS[j], -bend, -lo))
-            elif bend > hi:
+            elif round(bend) > hi:
                 bad.append("thumb %s bent %.0f (at most %.0f)" % (THUMB_JOINTS[j], bend, hi))
-            if abs(side_deg) > sd:
+            if abs(round(side_deg)) > sd:
                 bad.append("thumb %s bent %.0f out of its hinge's plane (at most %.0f)" % (THUMB_JOINTS[j], abs(side_deg), sd))
         return out, bad, axes
 
