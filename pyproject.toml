@@ -21,6 +21,9 @@ classifiers = [
 ]
 dependencies = ["mcp>=2.0,<3", "pillow>=10"]
 
+[project.optional-dependencies]
+bench = ["anthropic>=1.12,<2"]
+
 [project.urls]
 Homepage = "https://github.com/hpdkhoa/poselab-mcp"
 Issues = "https://github.com/hpdkhoa/poselab-mcp/issues"

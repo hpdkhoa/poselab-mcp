@@ -165,6 +165,12 @@ python examples/motion_test.py
 It records the faulty clip described above, scans it, fixes it, and saves `roll_fixed.pose.json` and `roll_fixed.fbx`
 in `~/.poselab/clips/`.
 
+## Benchmark
+
+`benchmarks/` asks whether a model poses the rig better with Pose Lab's measurements than with renders alone. It runs
+five tasks on the sample rig and grades them with Pose Lab. A scripted oracle and a do-nothing control check the
+graders. See [benchmarks/README.md](benchmarks/README.md).
+
 ## License
 
 MIT
