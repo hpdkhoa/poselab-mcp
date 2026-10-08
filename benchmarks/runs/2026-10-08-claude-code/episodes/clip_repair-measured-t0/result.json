@@ -1,0 +1,42 @@
+{
+ "task": "clip_repair",
+ "condition": "measured",
+ "trial": 0,
+ "passed": true,
+ "submitted": true,
+ "answer": "roll_ok made with fix_clip from roll (pop blend + hold fixes); scan: holds 0.48/0.19 cm, max hand speed 77.8 cm/s, no arm-rifle intrusion outside palms/fingers.",
+ "checks": [
+  {
+   "check": "hold l",
+   "met": true,
+   "value": 0.48
+  },
+  {
+   "check": "hold r",
+   "met": true,
+   "value": 0.19
+  },
+  {
+   "check": "pop",
+   "met": true,
+   "value": 33.2
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "same length (frames)",
+   "met": true,
+   "value": 43
+  },
+  {
+   "check": "the roll still happens (cm off at 0.6 s)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 9,
+ "seconds": 36.0
+}

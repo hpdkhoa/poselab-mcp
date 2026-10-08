@@ -1,0 +1,27 @@
+{
+ "task": "fingertip_contact",
+ "condition": "vision",
+ "trial": 0,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left wrist placed by IK at [16.08, 26.45, -2.24] gun frame so the left index tip sits on [2.6, 33.0, 2.0]; rifle untouched, right hand on its grip.",
+ "checks": [
+  {
+   "check": "fingertip on the mark (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "nothing else clips (cm)",
+   "met": true,
+   "value": 0.04
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 34,
+ "seconds": 192.4
+}

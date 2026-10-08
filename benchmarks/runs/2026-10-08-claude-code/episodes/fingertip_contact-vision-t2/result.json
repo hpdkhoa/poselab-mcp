@@ -1,0 +1,27 @@
+{
+ "task": "fingertip_contact",
+ "condition": "vision",
+ "trial": 2,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left wrist at gun [16.08, 26.44, -2.24]; measured index-tip offset [-13.48, 6.56, 4.24] puts the index tip on [2.6, 33.0, 2.0]. Rifle not moved.",
+ "checks": [
+  {
+   "check": "fingertip on the mark (cm)",
+   "met": true,
+   "value": 0.01
+  },
+  {
+   "check": "nothing else clips (cm)",
+   "met": true,
+   "value": 0.03
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 35,
+ "seconds": 165.4
+}

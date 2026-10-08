@@ -1,0 +1,42 @@
+{
+ "task": "clip_repair",
+ "condition": "measured",
+ "trial": 2,
+ "passed": true,
+ "submitted": true,
+ "answer": "roll_ok made from roll by fix_clip (pop blend, hold on both hands, forearm clearance). 43 frames, 1.4 s at 30 fps. Scan: left hold worst 0.48 cm (arm at full reach 0.5-0.93 s), right 0.05 cm, hand speed worst 33.2 cm/s, no forearm or arm segment inside the rifle; only palm and finger contacts at the grips.",
+ "checks": [
+  {
+   "check": "hold l",
+   "met": true,
+   "value": 0.48
+  },
+  {
+   "check": "hold r",
+   "met": true,
+   "value": 0.05
+  },
+  {
+   "check": "pop",
+   "met": true,
+   "value": 33.2
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "same length (frames)",
+   "met": true,
+   "value": 43
+  },
+  {
+   "check": "the roll still happens (cm off at 0.6 s)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 8,
+ "seconds": 40.3
+}

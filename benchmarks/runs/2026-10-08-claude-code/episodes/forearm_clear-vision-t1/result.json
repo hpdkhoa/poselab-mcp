@@ -1,0 +1,27 @@
+{
+ "task": "forearm_clear",
+ "condition": "vision",
+ "trial": 1,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left elbow re-aimed with reach(side l, target hand_l, pole [0,250,150] arms frame); wrists unchanged, rifle untouched. Left arm now runs outside the rifle on the player left instead of crossing under the magazine and grip.",
+ "checks": [
+  {
+   "check": "no clipping (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "wrists kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 28,
+ "seconds": 214.8
+}

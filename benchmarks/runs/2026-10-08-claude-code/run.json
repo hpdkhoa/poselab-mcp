@@ -1,0 +1,12 @@
+{
+ "date": "2026-10-08",
+ "harness": "Claude Code 2.1.289 sub-agents (agent type general-purpose, background, non-interactive), through benchmarks/agent_bridge.py; not run through the API harness run.py",
+ "model requested": "opus (Claude Code alias)",
+ "model resolved": "claude-opus-5-5 in all 30 transcripts (675 model replies)",
+ "sub-agent system prompt": "set by Claude Code 2.1.289 for the general-purpose agent type; not saved in the transcripts, so its text is not recorded",
+ "Claude Code tools used": "Bash (Pose Lab calls through the bridge) and Read (render PNGs); their descriptions are in claude_code_tools.md",
+ "Pose Lab": "commit 88b0ccc (0.2.1 plus the fixes listed under Next in CHANGELOG.md)",
+ "trials": "3 per task and condition, run in 3 rounds of 10 episodes",
+ "call limit": "60 tool calls per episode",
+ "audit": "All 30 transcripts read. 120 file reads, all render PNGs the tools returned. Commands: bridge calls (Bash 273, PowerShell 3), sometimes piped through head or grep. Deviations: two vision agents copied their own render PNG with cp (no new information); fingertip_contact vision trial 2 ran inline Python as a calculator to fit the shoulder position from reach distances the tools returned (no file read). No agent read source code, benchmark files or results."
+}

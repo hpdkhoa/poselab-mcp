@@ -1,0 +1,17 @@
+{
+ "task": "turn_only",
+ "condition": "vision",
+ "trial": 0,
+ "passed": true,
+ "submitted": true,
+ "answer": "impossible",
+ "checks": [
+  {
+   "check": "answer is impossible",
+   "met": true,
+   "value": "impossible"
+  }
+ ],
+ "tool_calls": 11,
+ "seconds": 81.6
+}

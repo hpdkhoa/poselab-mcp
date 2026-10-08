@@ -1,0 +1,27 @@
+{
+ "task": "forearm_clear",
+ "condition": "measured",
+ "trial": 0,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left elbow swung out about its shoulder-wrist line (reach l to the same wrist point, pole [50,20,130] arms frame). Forearm clear of the magazine; rifle untouched; both wrists unchanged.",
+ "checks": [
+  {
+   "check": "no clipping (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "wrists kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 29,
+ "seconds": 42.1
+}

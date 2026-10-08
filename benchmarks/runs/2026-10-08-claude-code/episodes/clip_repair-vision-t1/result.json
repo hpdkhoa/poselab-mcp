@@ -1,0 +1,42 @@
+{
+ "task": "clip_repair",
+ "condition": "vision",
+ "trial": 1,
+ "passed": false,
+ "submitted": true,
+ "answer": "roll_ok: 1.4 s, 30 fps, 43 frames, keyed every 0.1 s from roll with both hands re-IKed onto their holds at each key",
+ "checks": [
+  {
+   "check": "hold l",
+   "met": false,
+   "value": 1.71
+  },
+  {
+   "check": "hold r",
+   "met": false,
+   "value": 1.14
+  },
+  {
+   "check": "pop",
+   "met": true,
+   "value": 45.5
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "same length (frames)",
+   "met": true,
+   "value": 43
+  },
+  {
+   "check": "the roll still happens (cm off at 0.6 s)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 56,
+ "seconds": 62.4
+}

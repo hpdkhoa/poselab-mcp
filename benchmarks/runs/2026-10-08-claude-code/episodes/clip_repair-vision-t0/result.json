@@ -1,0 +1,42 @@
+{
+ "task": "clip_repair",
+ "condition": "vision",
+ "trial": 0,
+ "passed": true,
+ "submitted": true,
+ "answer": "roll_ok rebuilt: 15 keys every 0.1 s, roll about the bore 0 -> +60 deg (smoothstep) at 0.7 s -> 0 at 1.4 s, both hands IK-held at every key, linear blend between keys, 43 frames at 30 fps.",
+ "checks": [
+  {
+   "check": "hold l",
+   "met": true,
+   "value": 0.04
+  },
+  {
+   "check": "hold r",
+   "met": true,
+   "value": 0.03
+  },
+  {
+   "check": "pop",
+   "met": true,
+   "value": 20.5
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "same length (frames)",
+   "met": true,
+   "value": 43
+  },
+  {
+   "check": "the roll still happens (cm off at 0.6 s)",
+   "met": true,
+   "value": 1.11
+  }
+ ],
+ "tool_calls": 56,
+ "seconds": 132.9
+}

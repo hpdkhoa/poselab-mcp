@@ -6,6 +6,8 @@
   unknown bone name now gets an error that lists the rig's bones, not a raw `KeyError`.
 * An unknown point name gets an error that lists the rig's points and the other kinds of point.
 * Benchmark: `agent_bridge.py` runs the tasks with coding agents, with no API key.
+* Benchmark results (benchmarks/README.md): with Claude Code agents, 3 trials per task, measured agents passed 15 of
+  15 and vision agents 11 of 15. The run data is in `benchmarks/runs/2026-10-08-claude-code/`.
 * Benchmark: the `turn_only` prompt names the `stock` pivot and allows any roll. An agent showed that a turn about the
   `bore` pivot does show the port, so the old prompt had no single right answer.
 

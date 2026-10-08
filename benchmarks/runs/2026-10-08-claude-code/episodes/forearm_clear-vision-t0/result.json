@@ -1,0 +1,27 @@
+{
+ "task": "forearm_clear",
+ "condition": "vision",
+ "trial": 0,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left elbow swung out to the left (reach l to its own wrist, pole [20,300,160] arms frame) so the left forearm no longer passes through the magazine; rifle and both wrists unchanged.",
+ "checks": [
+  {
+   "check": "no clipping (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "wrists kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 44,
+ "seconds": 246.2
+}

@@ -1,0 +1,37 @@
+{
+ "task": "port_to_eye",
+ "condition": "measured",
+ "trial": 2,
+ "passed": true,
+ "submitted": true,
+ "answer": "Rifle rolled 63 deg right side up, swing -9, pitch +30, moved right -15, up -11, forward -10 cm from the start (stock pivot), both hands kept. Measured: port facing 0.776, visible 0.941, on screen at (-0.34,-0.48), arm clearance 0 cm with fingers and palms ignored, hands 0 cm off their holds.",
+ "checks": [
+  {
+   "check": "faces_eye",
+   "met": true,
+   "value": 0.776
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "visible",
+   "met": true,
+   "value": 0.941
+  },
+  {
+   "check": "on_screen",
+   "met": true,
+   "value": true
+  },
+  {
+   "check": "hands kept their grip (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 22,
+ "seconds": 65.2
+}

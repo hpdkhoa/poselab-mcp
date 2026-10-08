@@ -1,0 +1,27 @@
+{
+ "task": "forearm_clear",
+ "condition": "measured",
+ "trial": 2,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left elbow swung out with reach (wrist kept at [1.49,45.05,134.76] arms frame, pole [40,20,120]); forearm_l clears the magazine; only right palm/fingers touch the grip; rifle unmoved.",
+ "checks": [
+  {
+   "check": "no clipping (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "wrists kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 23,
+ "seconds": 31.0
+}

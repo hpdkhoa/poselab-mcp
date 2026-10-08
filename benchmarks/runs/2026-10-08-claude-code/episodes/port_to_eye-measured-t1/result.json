@@ -1,0 +1,37 @@
+{
+ "task": "port_to_eye",
+ "condition": "measured",
+ "trial": 1,
+ "passed": true,
+ "submitted": true,
+ "answer": "Rifle moved roll 48.46, swing 6.63, pitch 27.79, right -15, forward -10, up -10 about the stock. Port facing 0.764, visible 0.941, on screen (x -0.79, y -0.46). The only arm contacts are the right palm and fingers on the grip (max 0.72 cm). Both hands are 0 cm off their hold.",
+ "checks": [
+  {
+   "check": "faces_eye",
+   "met": true,
+   "value": 0.764
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "visible",
+   "met": true,
+   "value": 0.941
+  },
+  {
+   "check": "on_screen",
+   "met": true,
+   "value": true
+  },
+  {
+   "check": "hands kept their grip (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 15,
+ "seconds": 55.2
+}

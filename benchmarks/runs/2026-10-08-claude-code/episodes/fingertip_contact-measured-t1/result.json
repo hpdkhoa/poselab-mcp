@@ -1,0 +1,27 @@
+{
+ "task": "fingertip_contact",
+ "condition": "measured",
+ "trial": 1,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left wrist reached to [16.08, 26.45, -2.24] gun frame; index_tip_l measured at [2.6, 33.0, 2.0]; left arm worst depth 0.05 cm; rifle not moved.",
+ "checks": [
+  {
+   "check": "fingertip on the mark (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "nothing else clips (cm)",
+   "met": true,
+   "value": 0.04
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 9,
+ "seconds": 27.1
+}

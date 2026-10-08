@@ -1,0 +1,42 @@
+{
+ "task": "clip_repair",
+ "condition": "measured",
+ "trial": 1,
+ "passed": true,
+ "submitted": true,
+ "answer": "roll_ok made by fix_clip from roll (pop 250 cm/s, holds 0.5 cm ref 0 s, clearance ignoring fingers and palms); scan: hold l 0.48, hold r 0.49, pop 33 cm/s, clearance 0, 43 frames over 1.4 s.",
+ "checks": [
+  {
+   "check": "hold l",
+   "met": true,
+   "value": 0.48
+  },
+  {
+   "check": "hold r",
+   "met": true,
+   "value": 0.49
+  },
+  {
+   "check": "pop",
+   "met": true,
+   "value": 33.2
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "same length (frames)",
+   "met": true,
+   "value": 43
+  },
+  {
+   "check": "the roll still happens (cm off at 0.6 s)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 8,
+ "seconds": 36.2
+}

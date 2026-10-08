@@ -1,0 +1,37 @@
+{
+ "task": "port_to_eye",
+ "condition": "vision",
+ "trial": 0,
+ "passed": false,
+ "submitted": true,
+ "answer": "Rifle swung muzzle right 70 deg and rolled 10 deg left-side up about the port, raised 5 cm and moved 5 cm left; right side and port face the eye, both hands holding.",
+ "checks": [
+  {
+   "check": "faces_eye",
+   "met": true,
+   "value": 0.897
+  },
+  {
+   "check": "clearance",
+   "met": false,
+   "value": 2.91
+  },
+  {
+   "check": "visible",
+   "met": true,
+   "value": 1.0
+  },
+  {
+   "check": "on_screen",
+   "met": true,
+   "value": true
+  },
+  {
+   "check": "hands kept their grip (cm)",
+   "met": false,
+   "value": 1.7
+  }
+ ],
+ "tool_calls": 23,
+ "seconds": 103.0
+}

@@ -1,0 +1,37 @@
+{
+ "task": "port_to_eye",
+ "condition": "vision",
+ "trial": 1,
+ "passed": false,
+ "submitted": true,
+ "answer": "Rifle rolled 75 deg right side up about the bore, pitched 20 deg muzzle up about the port, shifted up 3 cm and left 2 cm; both hands on their holds (0 cm).",
+ "checks": [
+  {
+   "check": "faces_eye",
+   "met": false,
+   "value": 0.459
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "visible",
+   "met": true,
+   "value": 0.647
+  },
+  {
+   "check": "on_screen",
+   "met": true,
+   "value": true
+  },
+  {
+   "check": "hands kept their grip (cm)",
+   "met": false,
+   "value": 2.32
+  }
+ ],
+ "tool_calls": 31,
+ "seconds": 119.7
+}

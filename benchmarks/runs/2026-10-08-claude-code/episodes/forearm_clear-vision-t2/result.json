@@ -1,0 +1,27 @@
+{
+ "task": "forearm_clear",
+ "condition": "vision",
+ "trial": 2,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left elbow re-aimed with pole [10,200,150] (arms frame) while the left wrist stayed on its own spot; the left arm now runs along the gun left side instead of crossing under the receiver. Rifle and right arm untouched.",
+ "checks": [
+  {
+   "check": "no clipping (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "wrists kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 26,
+ "seconds": 214.3
+}

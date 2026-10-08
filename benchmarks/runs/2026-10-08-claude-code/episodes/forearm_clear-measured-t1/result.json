@@ -1,0 +1,27 @@
+{
+ "task": "forearm_clear",
+ "condition": "measured",
+ "trial": 1,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left elbow swung out by IK pole [60,10,130] (arms frame), wrist held at its original point; forearm_l now clears the magazine. Remaining contacts are only right palm/fingers on the pistol grip. Rifle untouched.",
+ "checks": [
+  {
+   "check": "no clipping (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "wrists kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 22,
+ "seconds": 46.4
+}

@@ -1,0 +1,27 @@
+{
+ "task": "fingertip_contact",
+ "condition": "vision",
+ "trial": 1,
+ "passed": true,
+ "submitted": true,
+ "answer": "Left wrist at gun [16.094, 26.444, -2.244] so index_tip_l lands on [2.6, 33.0, 2.0]; wrist-to-fingertip offset measured by overreach trilateration as (-13.49, 6.56, 4.24) cm. Rifle not moved.",
+ "checks": [
+  {
+   "check": "fingertip on the mark (cm)",
+   "met": true,
+   "value": 0.01
+  },
+  {
+   "check": "nothing else clips (cm)",
+   "met": true,
+   "value": 0.05
+  },
+  {
+   "check": "rifle kept still (cm)",
+   "met": true,
+   "value": 0.0
+  }
+ ],
+ "tool_calls": 31,
+ "seconds": 109.6
+}

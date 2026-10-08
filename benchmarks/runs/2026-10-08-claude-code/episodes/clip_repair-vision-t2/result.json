@@ -1,0 +1,42 @@
+{
+ "task": "clip_repair",
+ "condition": "vision",
+ "trial": 2,
+ "passed": true,
+ "submitted": true,
+ "answer": "roll_ok rebuilt: 13 linear keys (ease off) every ~0.117 s; rifle roll about the bore follows 0->35->70->35->0 deg eased per 0.35 s segment, hands held by move_gun IK at every key.",
+ "checks": [
+  {
+   "check": "hold l",
+   "met": true,
+   "value": 0.21
+  },
+  {
+   "check": "hold r",
+   "met": true,
+   "value": 0.06
+  },
+  {
+   "check": "pop",
+   "met": true,
+   "value": 23.3
+  },
+  {
+   "check": "clearance",
+   "met": true,
+   "value": 0.0
+  },
+  {
+   "check": "same length (frames)",
+   "met": true,
+   "value": 43
+  },
+  {
+   "check": "the roll still happens (cm off at 0.6 s)",
+   "met": true,
+   "value": 0.78
+  }
+ ],
+ "tool_calls": 58,
+ "seconds": 195.4
+}

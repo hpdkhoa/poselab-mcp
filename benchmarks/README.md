@@ -30,6 +30,59 @@ harness measures the scene and grades it. A claim in the model's answer never co
   graders accept a right answer. Result on 2026-10-08: 5 of 5.
 * `--null` submits at once without changing anything. The graders must fail it. Result on 2026-10-08: 0 of 5.
 
+## Results
+
+Run on 2026-10-08 with Claude Code agents through `agent_bridge.py`, not through the API harness `run.py`. Three
+trials of every task in each condition, 30 episodes in all. Pose Lab's graders measured every final scene.
+
+| Task | measured | vision |
+|---|---|---|
+| `port_to_eye` | 3 / 3 | 0 / 3 |
+| `turn_only` | 3 / 3 | 3 / 3 |
+| `forearm_clear` | 3 / 3 | 3 / 3 |
+| `fingertip_contact` | 3 / 3 | 3 / 3 |
+| `clip_repair` | 3 / 3 | 2 / 3 |
+| **all** | **15 / 15** | **11 / 15** |
+
+| | measured | vision |
+|---|---|---|
+| Mean tool calls per episode | 17.3 | 34.8 |
+| Mean seconds per episode | 45 | 153 |
+
+What the numbers show:
+
+* Measured agents passed every episode. Vision agents failed 4 of 15.
+* Every vision fail was on something a picture cannot measure well. In `port_to_eye`, one agent left an arm 2.91 cm
+  inside the rifle, and two misjudged how squarely the port faced the eye (0.459 and 0.295 against 0.5). Two of
+  those three also pulled a hand off its grip (1.7 and 2.32 cm). In `clip_repair`, one agent's clip let the hands
+  drift 1.71 and 1.14 cm off their grips (limit 0.5).
+* Vision agents often said so themselves. Several reports say the agent could not see whether a part was a few
+  millimetres inside the rifle.
+* Vision agents also found ways round the missing measures. In `fingertip_contact`, all three worked out the
+  shoulder position and the finger offset from the distances `reach` reports, and all three passed.
+* Measured agents used half the tool calls and about a third of the time.
+
+How strong the result is: the one-sided Fisher exact test on 15 of 15 against 11 of 15 gives p = 0.0498. That is
+just under the usual 0.05 bar. Most of the difference comes from one task, `port_to_eye`. More trials would make the
+size of the gap clearer.
+
+Run details, from `runs/2026-10-08-claude-code/run.json`:
+
+* Claude Code 2.1.289 sub-agents (`general-purpose`), model `claude-opus-5-5` in all 30 transcripts.
+* The sub-agent's system prompt comes from Claude Code and is not saved in the transcripts, so its text is not
+  recorded. The descriptions of the two Claude Code tools the agents used, Bash and Read, are in
+  `claude_code_tools.md`.
+* Pose Lab at commit `88b0ccc`.
+* Audit: all 30 transcripts were read. Every file the agents opened was a render the tools returned. Two vision
+  agents copied their own render with `cp`, and one ran inline Python as a calculator on numbers the tools returned.
+  No agent read source code, benchmark files or results.
+
+Known issue: the `record_clip` description names `scan_clip` and `fix_clip`, which the vision condition does not
+have. One vision agent noticed. It gives no measurement, but a later run should fix the description first.
+
+`runs/2026-10-08-claude-code/` holds the summary, the run details and every episode's grade and tool calls. The
+renders are left out to keep the repo small.
+
 ## Running it
 
 You need Blender (`POSELAB_BLENDER`), the package installed (`pip install -e ".[bench]"`), and Anthropic credentials
