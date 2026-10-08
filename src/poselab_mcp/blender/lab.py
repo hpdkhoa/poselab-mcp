@@ -210,6 +210,14 @@ class Lab:
     def _bw(self, n):
         return self.arm.matrix_world @ self.arm.pose.bones[n].matrix
 
+    def _bone(self, b):
+        """A bone by its rig name, or "gun" for the rig's gun bone; a clear error for any other name."""
+        if b == "gun":
+            return self.names["gun"]
+        if b not in self.arm.pose.bones:
+            raise ValueError("no bone %r; use \"gun\" or one of: %s" % (b, ", ".join(sorted(x.name for x in self.arm.pose.bones))))
+        return b
+
     def _gun(self):
         return self._bw(self.names["gun"]) @ self.G0.inverted() @ Matrix.Translation(self.G0.translation)
 
@@ -746,7 +754,7 @@ class Lab:
 
     def scan_clip(self, clip, checks):
         """Plays a clip frame by frame and runs each check: clearance, faces_eye, visible, on_screen, barrel, contact
-        (a, b, max_cm), hold (side, max_cm: the hand's drift on the rifle from its grip at ref_s), pop (bones,
+        (a, b, max_cm), hold (side, max_cm: the hand's drift on the rifle from its grip at ref_s), pop (bones, "gun" for the gun bone,
         max_cm_per_s). Any check takes during: [from_s, to_s]. Reports, for each check, the worst value and when, and
         the times it fails."""
         self._need()
@@ -755,6 +763,9 @@ class Lab:
 
     def _scan(self, frames, fps, checks, name):
         checks = [dict(c, _fps=fps) for c in checks]
+        for c in checks:
+            if c["type"] == "pop":
+                c["bones"] = [self._bone(b) for b in c.get("bones", ["hand_l", "hand_r"])]
         refs = {}
         for c in checks:
             if c["type"] == "hold":

@@ -19,7 +19,7 @@ harness measures the scene and grades it. A claim in the model's answer never co
 | Task | What the model must do | Graded on |
 |---|---|---|
 | `port_to_eye` | Move the rifle so the eye can look into the ejection port. | port facing 0.5 or more, 60% visible, on screen, no clipping beyond the grips, hands kept on their grips |
-| `turn_only` | Answer: can turns alone (no moves) achieve that? | the answer `impossible` |
+| `turn_only` | Answer: can turns about the stock alone (no moves) achieve that? | the answer `impossible` |
 | `forearm_clear` | An arm passes through the rifle; clear it without moving the rifle or the wrists. | no clipping, rifle and wrists kept still |
 | `fingertip_contact` | Put the left index fingertip on a point given in gun coordinates. | the tip within 0.5 cm, nothing else more than 0.2 cm inside the rifle, rifle kept still |
 | `clip_repair` | Mend a clip whose hands drift off the rifle and whose one frame jumps. | each hand within 0.5 cm of its grip, no hand faster than 250 cm/s, no clipping, same length and motion |
@@ -50,10 +50,35 @@ that off.
 Each run writes `benchmarks/results/<time>-<model>/`: `episodes.jsonl` (every episode with each check's value) and
 `summary.md` (pass rates per task and condition, mean tool calls, time and cost).
 
+## Without an API key: agent_bridge.py
+
+`agent_bridge.py` lets a coding agent that runs shell commands take the same tasks, for example a Claude Code
+sub-agent on a Claude plan. A bridge keeps one Pose Lab session open on a local port and offers only the condition's
+tools. It grades the scene with the same graders when the agent calls `submit`, or after 60 tool calls.
+
+```
+python benchmarks/agent_bridge.py serve port_to_eye measured 47902 benchmarks/results/agent-run/port_to_eye-measured
+python benchmarks/agent_bridge.py prompt port_to_eye measured 47902
+python benchmarks/agent_bridge.py summary benchmarks/results/agent-run
+```
+
+Start one bridge per episode, each on its own port. Give the text from `prompt` to a fresh agent. Each episode
+folder gets `result.json` (the grade), `calls.jsonl` (every tool call) and the renders.
+
+It differs from `run.py`:
+
+* The agent works in its own harness. It calls tools through a command and opens renders as image files.
+* The rule against reading the benchmark's files is an instruction, not a sandbox. Check `calls.jsonl` and the
+  agent's transcript.
+* No cost is recorded.
+
+Use it to look at how agents work on the tasks. Use `run.py` for numbers you publish.
+
 ## Limits
 
 * Five tasks on one sample rig. The pass rates say how a model does on these tasks, not on posing in general.
-* The `turn_only` answer comes from Pose Lab's own search: no random sample out of 120 met every goal. That is strong
-  evidence, not a proof.
+* The `turn_only` answer comes from Pose Lab's own search: no random sample out of 400 met every goal. That is strong
+  evidence, not a proof. It holds only for turns about the stock: about the `bore` pivot, a roll of 115 degrees and a
+  swing of 37 degrees meet every goal. An agent found that in a trial, which is why the prompt names the pivot.
 * The `measured` condition includes the solver and the clip fixer, so it tests a model using Pose Lab, not a model's
   spatial reasoning alone.

@@ -146,7 +146,7 @@ def solve(dofs: Annotated[dict[str, list[float]], Field(description="roll, swing
 Checks = Annotated[list[dict], Field(description=(
     "each {type, ...}: clearance (parts, ignore, max_cm), faces_eye / visible (point, min), on_screen (point), "
     "barrel (max_deg), contact (a, b, max_cm), hold (side l|r, max_cm, ref_s: the hand's drift on the rifle from its "
-    "grip at ref_s), pop (bones, max_cm_per_s). Any check takes during: [from_s, to_s]"))]
+    "grip at ref_s), pop (bones, 'gun' for the gun bone, max_cm_per_s). Any check takes during: [from_s, to_s]"))]
 
 
 @mcp.tool()

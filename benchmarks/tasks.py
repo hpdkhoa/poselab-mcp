@@ -87,7 +87,7 @@ def grade_turn(lab, ctx, submit):
 
 
 def oracle_turn(lab, ctx):
-    r = lab.data("solve", dofs={"roll": [-90, 90], "swing": [-40, 40]}, goals=PORT_GOALS, samples=120)
+    r = lab.data("solve", dofs={"roll": [-180, 180], "swing": [-40, 40]}, goals=PORT_GOALS, pivot="stock", samples=400)
     return {"answer": "impossible" if r["all_met_in_samples"].startswith("0 ") and not r["all_met"] else "possible"}
 
 
@@ -195,7 +195,8 @@ TASKS = {
     "turn_only": {
         "setup": setup_turn, "grade": grade_turn, "oracle": oracle_turn,
         "prompt": ("The rifle's ejection port is on its right side (rig point `port`). Question: using only turns of the "
-                   "rifle (roll, and swing up to 40 degrees each way) and no moves, can the port face the eye at 0.5 or "
+                   "rifle about the `stock` pivot (roll at any angle, and swing up to 40 degrees each way) and no moves, "
+                   "can the port face the eye at 0.5 or "
                    "more, with at least 60% of it visible, on screen, and nothing of the arms inside the rifle (fingers "
                    "and palms round their grips may touch)? Answer with submit: answer \"possible\" or \"impossible\"."),
     },
