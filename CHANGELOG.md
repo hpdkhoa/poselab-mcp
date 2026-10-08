@@ -1,13 +1,10 @@
 # Changelog
 
-## Next
+## 0.2.1
 
 * Tool errors now reach the client with their message. Before, a missing Blender showed only "Error executing tool
   load_rig". Now the client reads "Blender not found: set POSELAB_BLENDER ...".
 * The benchmark checks for Blender before it starts.
-
-Planned for 0.3.0: joint bend limits for the arms and hands. A pose or clip that bends a joint past its human range
-fails a check, and the fixer keeps joints inside their ranges. The rules come from my game, ToangTown.
 
 ## 0.2.0
 
