@@ -112,7 +112,10 @@ class Lab:
     def _rigs(self):
         rigs = {"sample": {"title": "the built-in sample: simple arms and a rifle made in Blender (free to share)", "builtin": True}}
         if self.rigs_file and os.path.exists(self.rigs_file):
-            for k, v in json.load(open(self.rigs_file)).items():
+            # utf-8-sig: a file saved with a byte order mark (Windows PowerShell writes one) reads the same
+            with open(self.rigs_file, encoding="utf-8-sig") as fh:
+                rigs_json = json.load(fh)
+            for k, v in rigs_json.items():
                 if not k.startswith("_"):
                     rigs[k] = v
         return rigs
@@ -197,7 +200,8 @@ class Lab:
         for name, f in R.get("clips", {}).items():
             path = os.path.join(self.folder, f)
             if f.endswith(".pose.json"):
-                data = json.load(open(path))
+                with open(path, encoding="utf-8-sig") as fh:
+                    data = json.load(fh)
                 self.clips[name] = ("json", data["frames"], float(data["fps"]), None, None)
                 self.clip_fit[name] = {"source": "bone data"}
                 continue
@@ -1146,7 +1150,8 @@ class Lab:
         if not os.path.exists(full):
             raise ValueError("no file %s" % full)
         if full.endswith(".json"):
-            data = json.load(open(full))
+            with open(full, encoding="utf-8-sig") as fh:
+                data = json.load(fh)
             self._store(clip, data["frames"], data["fps"], "bone data")
             return {"clip": clip, "seconds": round(self._clip_len(clip), 3), "source": "bone data"}
         before = set(bpy.data.objects.keys())
