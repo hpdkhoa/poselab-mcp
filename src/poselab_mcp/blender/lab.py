@@ -789,8 +789,27 @@ class Lab:
                 if j == "01":
                     side_axis = across - a * across.dot(a)
                     side_deg = asin(c.dot(side_axis.normalized())) if side_axis.length > 1e-6 else 0.0
+                elif j == "02":
+                    # the middle joint against its own hinge: square to the segment before it and to the palm's
+                    # normal (across the knuckles). The plane through the tip follows a kink here and hid it
+                    h = across - a * across.dot(a)
+                    side_deg = asin(c.dot(h.normalized())) if h.length > 1e-6 else 0.0
                 else:
-                    side_deg = asin(c.dot(n)) - asin(a.dot(n))
+                    # the end joint against the middle joint: one hinge line, so their bending planes are one plane. A
+                    # plane fitted through the tip follows a kink at the middle joint and hid a 35 degree one (ToangTown's
+                    # M24 benchmark); the two joints' own planes do not. A joint bent under about 10 degrees has no plane:
+                    # then the end segment against the middle joint's plane
+                    p_mid = (pts[2] - pts[1]).cross(pts[3] - pts[2])
+                    p_end = (pts[3] - pts[2]).cross(pts[4] - pts[3])
+                    s_mid = 0.17 * (pts[2] - pts[1]).length * (pts[3] - pts[2]).length
+                    s_end = 0.17 * (pts[3] - pts[2]).length * (pts[4] - pts[3]).length
+                    if p_mid.length >= s_mid and p_end.length >= s_end:
+                        ang = math.degrees(p_mid.angle(p_end))
+                        side_deg = math.copysign(min(ang, 180.0 - ang), p_mid.cross(p_end).dot(pts[3] - pts[2]))
+                    elif p_mid.length >= s_mid:
+                        side_deg = asin(c.dot(p_mid.normalized()))
+                    else:
+                        side_deg = asin(c.dot(n)) - asin(a.dot(n))
                 lo, hi, sd = FL[j]
                 out["%s_%s" % (fi, j)] = [round(curl), round(side_deg)]
                 if round(curl) < lo:
