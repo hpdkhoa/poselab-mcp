@@ -64,8 +64,9 @@ A pose can clear the rifle and still be one no human arm can take. `anatomy` che
 |---|---|
 | Shoulder | the elbow stays at least 2 cm below the shoulder while the hand works the gun |
 | Elbow | a hinge, bent 5 to 150 degrees: never locked straight |
-| Forearm | it carries the hand's roll (the radius turns over the ulna), so a rolled hand is not a bent wrist |
-| Wrist | no twist of its own: the hand's twist about the forearm's line, against the idle grip's, at most 30 degrees |
+| Forearm | it carries the hand's roll (the radius turns over the ulna): pronation and supination at most 80 degrees each from thumb up, measured against the elbow's hinge plane |
+| Forearm skin | on a rig with forearm twist bones, the roll spreads along the forearm: no single link (the elbow's end, each twist bone, the wrist) rolls more than 50 degrees |
+| Wrist | no twist of its own; on a rig without twist bones, the hand's twist against the idle grip's at most 30 degrees |
 | Wrist | within 30 degrees of the forearm's line; inside its joint range: flexion 80, extension 70, radial 20, ulnar 30 |
 | Fingers | each joint curls only toward the palm: knuckle -30 to 100, middle joint -5 to 110, end joint -10 to 90 |
 | Fingers | each finger stays in its own plane: the middle joint at most 15 degrees off its hinge, the end joint at most 25 off the middle joint's plane |

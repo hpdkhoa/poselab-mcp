@@ -3,7 +3,7 @@
   "name": "io.github.hpdkhoa/poselab-mcp",
   "title": "Pose Lab",
   "description": "Measured spatial answers for posing first-person arms and a rifle in Blender",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "repository": {
     "url": "https://github.com/hpdkhoa/poselab-mcp",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "pypi",
       "identifier": "poselab-mcp",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "transport": {
         "type": "stdio"
       },

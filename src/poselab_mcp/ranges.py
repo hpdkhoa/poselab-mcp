@@ -71,11 +71,16 @@ RANGES = {
     "forearm": {
         "pronation": {"standard": 80, "source": "AAOS", "functional": 50, "functional_source": "Morrey1981"},
         "supination": {"standard": 80, "source": "AAOS", "functional": 50, "functional_source": "Morrey1981"},
-        "checked": "not a limit of its own: the hand's roll about the forearm's line belongs here, not to the wrist",
-        "note": "The radius turns over the ulna, so a rolled hand is a turned forearm. The wrist check measures only "
-                "the bend off the forearm's line, never this roll. The wrist itself has no twist: anatomy fails a hand "
-                "twisted more than 30 degrees against its forearm's bone beyond the idle grip (wrist_twist_max_deg, a "
-                "working value: a skinned forearm without twist bones wrings past it).",
+        "checked": "pronation and supination each at most 80 degrees from thumb up (pronation_deg, supination_deg), "
+                   "measured against the elbow's hinge plane; on a rig with forearm twist bones, each link of the "
+                   "forearm's skin (the elbow's end, each twist bone, the wrist) rolls at most 50 degrees "
+                   "(forearm_link_max_deg)",
+        "note": "The radius turns over the ulna, so a rolled hand is a turned forearm, and the skin turns a little near "
+                "the elbow and fully at the wrist. The rotation is measured from the knuckle line against the elbow's "
+                "hinge plane, so the bones' bind pose does not enter it. The 50 degree link is a working value: a full "
+                "160 degrees from pronation to supination over the elbow's end, two twist bones and the wrist. A rig "
+                "without twist bones keeps the 0.3.1 rule: the hand's twist against its forearm's bone beyond the idle "
+                "grip at most 30 (wrist_twist_max_deg).",
     },
     "wrist": {
         "flexion": {"standard": 80, "source": "AAOS", "functional_by_study": {"Palmer1985": 5, "Ryu1991": 54}},

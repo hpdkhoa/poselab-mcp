@@ -122,8 +122,10 @@ def anatomy(side: Literal["both", "l", "r"] = "both", fingers: bool = True) -> d
     """Each arm against the human arm's limits. Rules: the elbow stays at least 2 cm below the shoulder while the hand
     works the gun; the elbow is a hinge bent 5 to 150 degrees; the wrist stays within 30 degrees of the forearm's line
     and inside its joint range (flexion 80, extension 70, radial 20, ulnar 30: the AAOS normal values); the hand's roll
-    belongs to the forearm, not the wrist joint: the wrist's own twist against the idle grip stays within 30
-    (wrist_twist_deg). Each finger joint curls only toward the palm within its range
+    belongs to the forearm, not the wrist joint: the forearm turns at most 80 degrees each way from thumb up (pronation
+    and supination, forearm_rotation_deg), and on a rig with forearm twist bones no link along the forearm rolls more
+    than 50 degrees (forearm_links_deg: the skin wrings there); without twist bones, the wrist's own twist against the
+    idle grip stays within 30 (wrist_twist_deg). Each finger joint curls only toward the palm within its range
     (knuckle -30..100, middle joint -5..110, end joint -10..90) and stays in the finger's own plane: no hyperextended
     or twisted finger. The thumb's knuckle bends -10..60 and its end joint -15..90 across the palm; its base spreads at
     most 80 from the index metacarpal and sits at most 20 behind the palm. A rig's limits, finger_limits and

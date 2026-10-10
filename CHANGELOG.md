@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+The forearm's roll, physically. ToangTown's arm clips (2026-10-10) showed what 0.3.1's twist rule could not: it
+measured the hand against the idle grip, so a wrong idle grip passed, and `move_gun`, `reach` and `fix_clip` moved a
+hand's whole roll into the forearm bone, which wrings the skin at the elbow on a rig with twist bones.
+
+* `anatomy` reports `forearm_rotation_deg`: positive for supination, negative for pronation, from thumb up, measured
+  against the elbow's hinge plane. Past 80 either way (AAOS) is a rule (`pronation_deg`, `supination_deg`). Turning
+  the forearm and hand 20 degrees moves the reading 20 (`examples/anatomy_faults.py`).
+* On a rig with forearm twist bones it reports `forearm_roll_deg` and `forearm_links_deg`: the roll of each link (the
+  elbow's end, each twist bone, the wrist) against the skin's bind. A link past 50 degrees is a rule
+  (`forearm_link_max_deg`, a working value). Rigs without twist bones keep the 0.3.1 wrist twist rule.
+* `move_gun`, `reach` and `fix_clip` spread a placed hand's roll along the twist bones (a tenth at the elbow's end,
+  `forearm_elbow_share`) instead of putting it all in the forearm bone. The hand and the elbow do not move.
+* A rifle's own FBX animation (a trigger, a magazine) no longer plays, and its bones start at rest: it followed
+  whatever scene frame a clip's sampling left. The rifle's parts move only by `move_part`.
+* Inside or outside the rifle is decided by seven rays in uneven directions, the majority deciding (it was three). On
+  a mesh that is not watertight (a trigger, a guard), one grazing ray flipped the answer for a point moved 0.0001 cm:
+  the same finger read 1.46 cm inside or 0.04 cm off from one frame to the next.
+
+Changes you will see: the sample's left idle hand reads `forearm supinated 133`. Its idle grip was already outside the
+wrist rule.
+
 ## 0.3.1
 
 A real game rig tested the checks: ToangTown's M24 magazine hold, 8 poses with 7 known faults

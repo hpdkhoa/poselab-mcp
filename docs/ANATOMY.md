@@ -48,13 +48,21 @@ locked fully straight. Soucie 2011 gives measured elbow values by age and sex.
 | Pronation | 80 | 50 |
 | Supination | 80 | 50 |
 
-**Checked:** no limit of its own. The radius turns over the ulna, so the hand's roll about the forearm's line belongs
-to the forearm. The wrist check measures only the bend off that line, never the roll.
+**Checked:** since 0.4.0, pronation and supination each at most 80 degrees (`pronation_deg`, `supination_deg`),
+reported as `forearm_rotation_deg` (positive for supination, negative for pronation). It is measured from thumb up:
+the knuckle line (index to little finger) against the elbow's hinge plane, so the bones' bind pose does not enter it.
+With the elbow near straight there is no hinge plane, and the value is left out.
 
-The wrist itself has no twist. Since 0.3.1 `anatomy` measures the hand's twist about the forearm's line against the
-forearm's bone, beyond the idle grip's (a rig's bind offset is not a roll), and fails it past 30 degrees
-(`wrist_twist_max_deg`). That is a working value: a skinned forearm without twist bones wrings past it. `move_gun`,
-`reach` and `fix_clip` move a placed hand's twist into the forearm, so their own poses read none.
+The radius turns over the ulna, so the hand's roll about the forearm's line belongs to the forearm, and the skin turns
+a little near the elbow and fully at the wrist. On a rig with forearm twist bones (children of the forearm whose names
+hold "twist"), `anatomy` reports the roll of each link along the forearm against the skin's bind: the elbow's end,
+each twist bone, the wrist (`forearm_links_deg`). A link past 50 degrees is a rule (`forearm_link_max_deg`). That is a
+working value: a full 160 degrees from pronation to supination over the elbow's end, two twist bones and the wrist.
+`move_gun`, `reach` and `fix_clip` spread a placed hand's roll in proportion (a tenth at the elbow's end,
+`forearm_elbow_share`); the hand and the elbow do not move.
+
+A rig without twist bones keeps the 0.3.1 rule: the hand's twist about the forearm's line against the forearm's bone,
+beyond the idle grip's (a rig's bind offset is not a roll), at most 30 degrees (`wrist_twist_max_deg`).
 
 ## Wrist
 
