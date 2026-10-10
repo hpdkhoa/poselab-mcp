@@ -91,6 +91,30 @@ g = L.grip(side="l", hold=True)["l"]
 check("fingertip only: touching but not holding", g["touching"] and not g["holding"] and has(g["bad"], "does not hold"),
       {k_: g[k_] for k_ in ("touching", "holding", "palm_gap_cm", "gap_cm")})
 
+# 7 the forearm's rotation (0.4.0): the forearm and hand turned together about the forearm's line read as that much
+# more or less supination, the sign by side; past the AAOS range it is a rule
+for s in ("l", "r"):
+    L.pose_idle()
+    r0 = L.anatomy(side=s)[s].get("forearm_rotation_deg")
+    lo_, hn_ = L._n("lowerarm", s), L._n("hand", s)
+    E_, W_ = L._bw(lo_).translation.copy(), L._bw(hn_).translation.copy()
+    ax = (W_ - E_).normalized()
+    H_ = L._bw(hn_).copy()
+    L._turn_about(hn_, ax, 20.0, W_)
+    r1 = L.anatomy(side=s)[s].get("forearm_rotation_deg")
+    check("forearm %s turned 20: the rotation moves 20" % s, r0 is not None and r1 is not None and abs(abs(r1 - r0) - 20) <= 2,
+          (r0, r1))
+    L.pose_idle()
+    d_ = 1.0 if s == "r" else -1.0
+    want = 100.0 - (r0 or 0.0)          # to 100 degrees of supination
+    L._turn_about(hn_, ax, want * d_, W_)
+    a = L.anatomy(side=s)
+    if a[s].get("forearm_rotation_deg") is not None and a[s]["forearm_rotation_deg"] < 0:
+        L.pose_idle()
+        L._turn_about(hn_, ax, -want * d_, W_)
+        a = L.anatomy(side=s)
+    check("forearm %s at 100 supinated: a rule" % s, has(a[s]["bad"], "supinated"), (a[s].get("forearm_rotation_deg"), a[s]["bad"][-1:]))
+
 # 6 a rigs file with a byte order mark loads
 path = os.path.join(out, "rigs.json")
 with open(path, "w", encoding="utf-8-sig") as fh:

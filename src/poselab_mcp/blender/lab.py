@@ -43,7 +43,8 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
 # it differs from the standard: poselab_mcp/ranges.py and docs/ANATOMY.md.
 ARM_LIMITS = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension_deg": 70.0, "wrist_radial_deg": 20.0,
               "wrist_ulnar_deg": 30.0, "elbow_bend_max_deg": 150.0, "elbow_bend_min_deg": 5.0, "elbow_under_shoulder_cm": 2.0,
-              "wrist_twist_max_deg": 30.0}
+              "wrist_twist_max_deg": 30.0, "pronation_deg": 80.0, "supination_deg": 80.0, "forearm_link_max_deg": 50.0,
+              "forearm_elbow_share": 0.1}
 # Each finger joint, + curling toward the palm: the knuckle (MCP, "01"), the middle joint (PIP, "02"), the end joint
 # (DIP, "03"): (least curl, most curl, most out of the finger's own plane), degrees. Below the least curl a joint is
 # bent backward (hyperextended); out of its plane the finger is twisted. A rig's "finger_limits" entry overrides them.
@@ -141,6 +142,13 @@ class Lab:
             R.update(made["config"])
         else:
             self._load_files(R)
+        # the rifle at its rest: a rifle's FBX may carry its own animation (a trigger, a magazine), which then followed
+        # whatever scene frame a clip's sampling left; a finger on the trigger read 1.4 cm inside it (ToangTown's
+        # AKS-74U, 2026-10-10). The rig's parts move only by move_part
+        if self.rifle_arm.animation_data:
+            self.rifle_arm.animation_data.action = None
+        for pb in self.rifle_arm.pose.bones:     # the action's last pose stays on the bones without this
+            pb.matrix_basis = Matrix.Identity(4)
         for pb in self.arm.pose.bones:
             pb.rotation_mode = 'QUATERNION'
         self.idle = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy(), pb.scale.copy()) for pb in self.arm.pose.bones}
@@ -499,7 +507,11 @@ class Lab:
         nearest corner point (a KD tree of vertices) read a hand 0.68 cm into a low-poly magazine that it was 1.68 cm
         into: a box's flat face has no vertex inside it. Inside or out is decided by ray parity (an odd count of
         crossings, the majority of three rays), not by the nearest face's normal, which reads wrong near an edge."""
-        RAYS = (Vector((1.0, 0.13, 0.07)).normalized(), Vector((-0.11, 1.0, 0.05)).normalized(), Vector((0.09, -0.04, 1.0)).normalized())
+        # seven rays in uneven directions, the majority deciding (0.4.0): with three, a ray grazing a thin open part (a
+        # trigger, a guard) flipped the answer for a point moved 0.0001 cm, and a finger read 1.46 cm in or 0.04 out
+        RAYS = tuple(Vector(v).normalized() for v in ((1.0, 0.13, 0.07), (-0.11, 1.0, 0.05), (0.09, -0.04, 1.0),
+                                                       (-0.71, -0.29, 0.53), (0.37, -0.83, -0.31), (-0.23, 0.41, -0.88),
+                                                       (0.61, 0.57, -0.47)))
 
         def __init__(self, bvh):
             self.bvh = bvh
@@ -515,7 +527,7 @@ class Lab:
             return n
 
         def inside(self, p):
-            return sum(self._crossings(p, d) % 2 for d in self.RAYS) >= 2
+            return sum(self._crossings(p, d) % 2 for d in self.RAYS) >= 4
 
         def nearest(self, p):
             loc, _nrm, _idx, d = self.bvh.find_nearest(p)
@@ -703,16 +715,119 @@ class Lab:
         rep_ = {"elbow_under_shoulder_cm": round(under, 1), "upper_arm_raised_deg": round(self._deg(upper, -up)),
                 "elbow_bend_deg": round(bend), "wrist_bend_deg": round(total), "wrist_flexion_deg": round(flex),
                 "wrist_radial_deg": round(dev)}
-        # the wrist's twist: the hand turned about the forearm's line against the forearm's bone, beyond the idle
-        # grip's. The radius turns over the ulna, so a hand's roll is the forearm's; a twist in the wrist joint itself
-        # wrings the skin between them (a forearm turned 154 degrees under a still hand passed before 0.3.1)
-        twist = self._wrist_twist(s)
-        if twist is not None:
-            rep_["wrist_twist_deg"] = round(twist)
-            if round(twist) > L["wrist_twist_max_deg"]:
-                bad.append("wrist twisted %.0f against the idle grip (at most %.0f): the hand's roll belongs to the forearm"
-                           % (twist, L["wrist_twist_max_deg"]))
+        # the forearm's rotation: pronation and supination, measured from thumb up against the elbow's hinge plane (the
+        # bones' bind does not enter it). The radius turns over the ulna, so a hand's roll is the forearm's
+        rot = self._forearm_rotation(s)
+        if rot is not None:
+            rep_["forearm_rotation_deg"] = round(rot)
+            if round(rot) > L["supination_deg"]:
+                bad.append("forearm supinated %.0f (at most %.0f)" % (rot, L["supination_deg"]))
+            if -round(rot) > L["pronation_deg"]:
+                bad.append("forearm pronated %.0f (at most %.0f)" % (-rot, L["pronation_deg"]))
+        if self._twist_bones(s):
+            # a rig with twist bones carries the roll along the forearm's skin: each link (the elbow's end, each twist
+            # bone, the wrist) turns only part of it. The whole roll in one link wrings the skin there
+            links, total = self._forearm_links(s)
+            rep_["forearm_roll_deg"] = round(total)
+            rep_["forearm_links_deg"] = {n: round(v) for n, v, _share in links}
+            for n, v, share in links:
+                if round(abs(v)) > L["forearm_link_max_deg"]:
+                    bad.append("forearm's %s link rolled %.0f (at most %.0f: the skin wrings there; its even share is %.0f)"
+                               % (n, abs(v), L["forearm_link_max_deg"], abs(share)))
+        else:
+            # without twist bones: the hand turned about the forearm's line against the forearm's bone, beyond the idle
+            # grip's (a forearm turned 154 degrees under a still hand passed before 0.3.1)
+            twist = self._wrist_twist(s)
+            if twist is not None:
+                rep_["wrist_twist_deg"] = round(twist)
+                if round(twist) > L["wrist_twist_max_deg"]:
+                    bad.append("wrist twisted %.0f against the idle grip (at most %.0f): the hand's roll belongs to the forearm"
+                               % (twist, L["wrist_twist_max_deg"]))
         return rep_, bad
+
+    # --- the forearm's roll, physically (0.4.0) ------------------------------------------------------------------
+    def _rest_turn(self, n):
+        """The bone's turn from its bind (rest) pose, in world terms: what the skin bound to it sees."""
+        pb = self.arm.pose.bones[n]
+        return (self.arm.matrix_world @ pb.matrix).to_quaternion() @ (self.arm.matrix_world @ pb.bone.matrix_local).to_quaternion().inverted()
+
+    @staticmethod
+    def _twist_about(q, axis):
+        """The signed turn of q about axis (degrees), q split as a swing after this twist."""
+        a = 2.0 * math.degrees(math.atan2(Vector((q.x, q.y, q.z)).dot(axis), q.w))
+        return (a + 180.0) % 360.0 - 180.0
+
+    def _twist_bones(self, s):
+        """The forearm's twist bones (its children other than the hand whose names hold "twist"), elbow to wrist, each
+        with its place along the forearm (0 the elbow, 1 the wrist)."""
+        lo, hn = self._n("lowerarm", s), self._n("hand", s)
+        if lo not in self.arm.pose.bones or hn not in self.arm.pose.bones:
+            return []
+        E, W = self._bw(lo).translation, self._bw(hn).translation
+        a = W - E
+        if a.length_squared < 1e-12:
+            return []
+        out = [(min(max((self.arm.matrix_world @ pb.head - E).dot(a) / a.length_squared, 0.0), 1.0), pb.name)
+               for pb in self.arm.pose.bones[lo].children if pb.name != hn and "twist" in pb.name.lower()]
+        return sorted(out)
+
+    def _forearm_rotation(self, s):
+        """+ supination, - pronation, degrees from thumb up against the elbow's hinge plane; None with the elbow near
+        straight (no hinge plane)."""
+        S = self._bw(self._n("upperarm", s)).translation
+        E = self._bw(self._n("lowerarm", s)).translation
+        W = self._bw(self._n("hand", s)).translation
+        fore = (W - E).normalized()
+        up = S - E
+        if fore.length < 1e-9 or up.length < 1e-9 or math.degrees(fore.angle(-up.normalized())) < 20.0:
+            return None
+        r = up - fore * up.dot(fore)
+        t = self._bw(self._n("finger", s, "index", "01")).translation - self._bw(self._n("finger", s, "pinky", "01")).translation
+        t = t - fore * t.dot(fore)
+        if r.length < 1e-9 or t.length < 1e-9:
+            return None
+        r, t = r.normalized(), t.normalized()
+        ang = math.degrees(math.atan2(r.cross(t).dot(fore), r.dot(t)))
+        return ang if s == "r" else -ang
+
+    def _forearm_links(self, s):
+        """([(link, roll, share)], total): each link's roll about the forearm against the skin's bind, and the roll it
+        carries when the roll is spread in proportion (the elbow's end forearm_elbow_share of it)."""
+        L, _fl = self._limits()
+        share0 = L["forearm_elbow_share"]
+        up, lo, hn = self._n("upperarm", s), self._n("lowerarm", s), self._n("hand", s)
+        a = (self._bw(hn).translation - self._bw(lo).translation).normalized()
+        rest_fore = (self.arm.matrix_world @ self.arm.pose.bones[hn].bone.head_local) - (self.arm.matrix_world @ self.arm.pose.bones[lo].bone.head_local)
+        v0 = (self._rest_turn(up) @ rest_fore).normalized()   # the forearm's line as the upper arm carries it, unbent
+        out = [("elbow", self._twist_about(self._rest_turn(lo) @ self._rest_turn(up).inverted(), v0))]
+        prev = lo
+        tb = self._twist_bones(s)
+        for _p, n in tb:
+            out.append((n, self._twist_about(self._rest_turn(n) @ self._rest_turn(prev).inverted(), a)))
+            prev = n
+        out.append(("wrist", self._twist_about(self._rest_turn(hn) @ self._rest_turn(prev).inverted(), a)))
+        total = sum(v for _n, v in out)
+        places = [0.0] + [p for p, _n in tb] + [1.0]
+        shares = [share0] + [(1.0 - share0) * (places[i + 1] - places[i]) for i in range(len(places) - 1)]
+        return [(n, v, total * sh) for (n, v), sh in zip(out, shares)], total
+
+    def _spread_roll(self, s):
+        """The forearm's roll spread along it: the elbow's end its share, each twist bone the share up to its place, the
+        hand left where it is. Nothing the eye sees of the hand or the elbow moves; the skin between turns evenly."""
+        L, _fl = self._limits()
+        share0 = L["forearm_elbow_share"]
+        lo, hn = self._n("lowerarm", s), self._n("hand", s)
+        H = self._bw(hn).copy()
+        for _ in range(3):        # the links are measured about lines that move a little as they turn
+            links, total = self._forearm_links(s)
+            E, W = self._bw(lo).translation, self._bw(hn).translation
+            a = (W - E).normalized()
+            self._turn_about(lo, a, links[0][2] - links[0][1], E)
+            self._set_world(hn, H)
+            for p, n in self._twist_bones(s):
+                now = self._twist_about(self._rest_turn(n) @ self._rest_turn(lo).inverted(), a)
+                self._turn_about(n, a, (1.0 - share0) * p * total - now, self._bw(n).translation)
+            self._set_world(hn, H)
 
     def _twist_change(self, s):
         """The hand's twist about the forearm's line against the forearm's bone, beyond the idle grip's, as a turn in
@@ -745,7 +860,11 @@ class Lab:
 
     def _roll_forearm(self, s):
         """The hand's twist moved into the forearm (the radius turns over the ulna), the hand left where it is: after a
-        hand is placed with a turn, the wrist joint only bends."""
+        hand is placed with a turn, the wrist joint only bends. With twist bones the roll is spread along them (0.4.0):
+        all of it in the forearm bone wrung the skin at the elbow instead of the wrist."""
+        if self._twist_bones(s):
+            self._spread_roll(s)
+            return
         q = self._twist_change(s)
         if q is None:
             return
