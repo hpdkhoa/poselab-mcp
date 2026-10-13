@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0
+
+Tools for fixing a hold for good, from ToangTown's weapon audit (2026-10-13): on its AK-47 the left palm was on the
+gun, but the forearm and sleeve filled the lower left of the view; on 13 guns that borrow another gun's arms the left
+hand missed the handguard.
+
+* `view_cover`: the share of the player's view the arms cover (all, the lower left third, the bottom middle third),
+  the arms rendered alone from the eye as a mask. ToangTown's game probe measures the same in the game.
+* `solve_grip`: searches a hand's hold. The palm goes on a mark, moved along the barrel; the elbow points toward each
+  of several poles; the hand rolls about the barrel (the forearm pronates or supinates with it). Each candidate settles
+  the palm onto the rifle's surface, then counts only if the palm holds the rifle (`grip`), nothing else clips
+  (declared contacts left out; the palm's own press is `grip`'s to judge), every arm and finger rule holds, and the view
+  stays within a budget. On the built-in sample it finds a hold the idle grip misses (the idle forearm is supinated
+  126 degrees, past 80): 2 cm forward, rolled 30 degrees, the elbow lower.
+* `retarget_clip`: a clip from another rig played with one hand held on this gun's own hold by arm IK, fingers mended;
+  a span where the hand leaves the gun (a reload) is kept as it is.
+* `check_set`: every check on a clip in one summary: the worst clearance and when, the frames that break an arm or
+  finger rule, the frames a hand is not holding.
+* `examples/tools_050.py` checks the four on the sample.
+
 ## 0.4.0
 
 The forearm's roll, physically. ToangTown's arm clips (2026-10-10) showed what 0.3.1's twist rule could not: it

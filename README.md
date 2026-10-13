@@ -39,6 +39,10 @@ goal in 0 of 60 samples, and turning and moving met every goal in 9 s.
 | `scan_clip` | every frame against checks; the worst value, when, and the time spans that fail |
 | `fix_clip` | mends what fails and reports the scan before and after, and what no fix can reach |
 | `save_clip` | writes a clip as `.pose.json` bone data and as FBX for a game engine |
+| `view_cover` | how much of the player's view the arms cover: all of it, its lower left and its bottom middle |
+| `solve_grip` | searches a hand's hold: the palm on a mark along the barrel, the elbow's pole and the hand's roll; keeps holds that grip, clear, keep the arm rules and the view budget |
+| `retarget_clip` | another rig's clip on this rig, with a hand held on this gun's own hold: shared motion, the gun's own grip |
+| `check_set` | every check on a clip in one summary for a gate: the worst clearance, the frames that break a rule, the frames a hand lets go |
 
 ### Frames and signs
 

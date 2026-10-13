@@ -231,6 +231,43 @@ def fix_clip(clip: str, checks: Checks, out: str | None = None, max_swing_deg: f
 
 
 @mcp.tool()
+def view_cover() -> dict:
+    """The share of the player's view the arms cover (all, its lower left third, its bottom middle third): the arms
+    rendered alone from the eye as a mask. A forearm or sleeve that fills the lower left hides the gun and the world."""
+    return worker.call("view_cover")
+
+
+@mcp.tool()
+def solve_grip(side: Side, mark: Point, along: Annotated[list[float], Field(description="[from_cm, to_cm] along the barrel from the mark")] = [-8.0, 8.0],
+               steps: int = 9, poles: Annotated[list[list[float] | None] | None, Field(description="elbow poles, arms frame cm; the idle elbow and four round it if left out")] = None,
+               view_budget: Annotated[dict | None, Field(description="{lower_left, bottom_middle}: the most of each third the arms may cover")] = None,
+               clearance_max_cm: float = 0.2, ignore: list[str] = [], frame: Frame = "gun",
+               rolls: Annotated[list[float], Field(description="the hand's roll about the barrel to try, degrees")] = [0.0, -30.0, 30.0, -60.0, 60.0]) -> dict:
+    """Searches a hand's hold on the rifle: the palm on mark (moved along the barrel), the elbow toward each pole. A hold
+    counts when the palm holds the rifle (grip), nothing clips past clearance_max_cm (ignore: declared contacts), every
+    arm and finger rule holds, and the view stays within view_budget. The nearest hold to the mark that counts wins and
+    the rig is left in it; the table shows what failed where."""
+    return worker.call("solve_grip", side=side, mark=mark, along=along, steps=steps, poles=poles, view_budget=view_budget,
+                       clearance_max_cm=clearance_max_cm, ignore=ignore, frame=frame, rolls=rolls)
+
+
+@mcp.tool()
+def retarget_clip(clip: str, side: Side, mark: Point | None = None, out: str | None = None, frame: Frame = "gun",
+                  keep_from_s: float | None = None, keep_to_s: float | None = None) -> dict:
+    """Plays another rig's clip on this rig with one hand held on this gun's own hold (its rest hold, or mark) by arm
+    IK, fingers mended: shared motion, the gun's own grip. keep_from_s..keep_to_s: a span the hand leaves the gun (a
+    reload), kept as the clip has it. Stores the result as out (default <clip>_retarget)."""
+    return worker.call("retarget_clip", clip=clip, side=side, mark=mark, out=out, frame=frame, keep_from_s=keep_from_s, keep_to_s=keep_to_s)
+
+
+@mcp.tool()
+def check_set(clip: str, ignore: list[str] = [], clearance_max_cm: float = 0.2, hold_sides: list[Side] = []) -> dict:
+    """Every check on a clip in one summary for a gate: the worst clearance and when, the frames that break an arm or
+    finger rule, the frames a hand in hold_sides is not holding, and each frame's numbers."""
+    return worker.call("check_set", clip=clip, ignore=ignore, clearance_max_cm=clearance_max_cm, hold_sides=hold_sides)
+
+
+@mcp.tool()
 def save_clip(clip: str, formats: list[Literal["pose.json", "fbx"]] = ["pose.json"],
               root_name: Annotated[str | None, Field(description="the armature's name in the FBX (Unreal reads it as the root bone)")] = None) -> dict:
     """Writes a clip to the output folder's clips/: pose.json bone data, and fbx for a game engine."""

@@ -35,7 +35,8 @@ VIEW_RIGHT, VIEW_FWD, VIEW_UP = Vector((-1.0, 0.0, 0.0)), Vector((0.0, -1.0, 0.0
 H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
-          "where", "distance", "clearance", "anatomy", "grip", "faces_eye", "visible", "screen", "solve", "render")
+          "where", "distance", "clearance", "anatomy", "grip", "faces_eye", "visible", "screen", "solve", "render",
+          "view_cover", "solve_grip", "retarget_clip", "check_set")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -1759,6 +1760,205 @@ class Lab:
         return {"clip": clip, "frames": len(frames), "fps": fps, "written": written}
 
     # --- pictures ---------------------------------------------------------------------------------------------
+    # --- the view the arms leave (0.5.0) ------------------------------------------------------------------------
+    def view_cover(self, size=(192, 108)):
+        """The share of the player's view the arms cover: all of it, its lower left third and its bottom middle third.
+        The arms render alone from the eye (90 degrees, 16:9) as a mask, the rifle hidden. A forearm or sleeve that fills
+        the lower left hides the gun's left side and the world; ToangTown's Game Probe measures the same in the game."""
+        self._need()
+        hidden = []
+        for o in self.sc.objects:
+            if o.type == 'MESH' and o not in self.meshes and not o.hide_render:
+                o.hide_render = True
+                hidden.append(o)
+        cam_data = bpy.data.cameras.get("poselab") or bpy.data.cameras.new("poselab")
+        cam = bpy.data.objects.get("poselab") or bpy.data.objects.new("poselab", cam_data)
+        if cam.name not in self.sc.collection.objects:
+            self.sc.collection.objects.link(cam)
+        cam_data.lens_unit = 'FOV'
+        cam_data.angle = math.radians(H_FOV)
+        cam_data.clip_start = 0.05
+        cam.location = self.eye
+        cam.rotation_euler = VIEW_FWD.to_track_quat('-Z', 'Y').to_euler()
+        self.sc.camera = cam
+        r = self.sc.render
+        keep = (r.engine, r.resolution_x, r.resolution_y, r.film_transparent, r.filepath, self.sc.display.render_aa)
+        r.engine = 'BLENDER_WORKBENCH'
+        r.resolution_x, r.resolution_y = size
+        r.film_transparent = True
+        self.sc.display.render_aa = 'OFF'
+        path = self._own(os.path.join(self.out_dir, "renders", "_view_cover.png"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        r.filepath = path
+        try:
+            bpy.ops.render.render(write_still=True)
+        finally:
+            for o in hidden:
+                o.hide_render = False
+            r.engine, r.resolution_x, r.resolution_y, r.film_transparent, r.filepath, self.sc.display.render_aa = keep
+        img = bpy.data.images.load(path, check_existing=False)
+        W, H = img.size
+        px = list(img.pixels)
+        bpy.data.images.remove(img)
+        total = ll = bm = 0
+        third = (W // 3) * (H // 3)
+        for y in range(H):                     # Blender's rows start at the bottom
+            for x in range(W):
+                if px[(y * W + x) * 4 + 3] <= 0.5:
+                    continue
+                total += 1
+                if y < H // 3:
+                    if x < W // 3:
+                        ll += 1
+                    elif x < 2 * W // 3:
+                        bm += 1
+        return {"total": round(total / float(W * H), 3), "lower_left": round(ll / float(third), 3),
+                "bottom_middle": round(bm / float(third), 3)}
+
+    # --- a hold searched for, with the view as a goal (0.5.0) ---------------------------------------------------
+    def solve_grip(self, side, mark, along=(-8.0, 8.0), steps=9, poles=None, view_budget=None, clearance_max_cm=0.2,
+                   ignore=(), frame="gun", rolls=(0.0, -30.0, 30.0, -60.0, 60.0)):
+        """Searches a hand's hold: its palm on a mark (gun frame, cm) moved along the barrel by along (cm, steps), each
+        with the elbow pointed toward each pole (arms frame, cm; the idle elbow and four around it if left out) and the
+        hand rolled about the barrel by each of rolls (degrees: the forearm pronates or supinates with it). A hold
+        counts when the hand holds the rifle with its palm (grip, hold: the palm's press within grip's own limit), nothing
+        else clips past clearance_max_cm (declared contacts in ignore), every arm and finger rule holds (anatomy), and the
+        view's lower left and bottom middle stay
+        within view_budget {lower_left, bottom_middle}. Of the holds that count, the one nearest the mark wins, then the
+        one that covers least of the view. The rig is left in it (snapshot 'solve_grip_start' holds the pose before)."""
+        self._need()
+        if side not in ("l", "r"):
+            raise ValueError("side must be l or r")
+        self.snapshot("save", "solve_grip_start")
+        hn = self._n("hand", side)
+        G = self._gun()
+        H0 = self._bw(hn).copy()
+        rel = G.inverted() @ H0                                   # the hand's turn against the gun, kept
+        mid = self._bw(self._n("finger", side, "middle", "01")).translation
+        palm_off = H0.inverted() @ H0.translation.lerp(mid, 0.5)   # the palm's middle in the hand's own space
+        target = self._point(mark, frame)
+        axis = (G.to_quaternion() @ Vector((0.0, -1.0, 0.0))).normalized()   # along the barrel (ue +Y is Blender -Y)
+        if poles is None:
+            e = self._to(self._bw(self._n("lowerarm", side)).translation, "arms")
+            poles = [None] + [[e.x + dx, e.y + dy, e.z + dz] for dx, dy, dz in ((0, 0, -15), (15, 0, -10), (-15, 0, -10), (0, 15, -15))]
+        rows, best = [], None
+        n = max(1, int(steps))
+        combos = [(i, pole, roll) for i in range(n) for pole in poles for roll in rolls]
+        for i, pole, roll in combos:
+            d = along[0] + (along[1] - along[0]) * (i / (n - 1) if n > 1 else 0.5)
+            if True:
+                self.snapshot("load", "solve_grip_start")
+                Gn = self._gun()
+                palm_goal = target + axis * d / 100.0
+                Hw = Gn @ rel
+                if roll:
+                    R = Quaternion(axis, math.radians(roll)).to_matrix().to_4x4()
+                    Hw = Matrix.Translation(palm_goal) @ R @ Matrix.Translation(-palm_goal) @ Matrix.LocRotScale(palm_goal - (Hw.to_quaternion() @ palm_off), Hw.to_quaternion(), Hw.to_scale())
+                wrist_goal = palm_goal - (Hw.to_quaternion() @ (palm_off * 1.0))
+                self._two_bone(side, wrist_goal, pole)
+                self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, Hw.to_quaternion(), self._unit()))
+                self._roll_forearm(side)
+                self._mend_hand(side)
+                # settle the palm on the rifle's surface: pressed in, the hand backs off along the palm's own direction
+                # (from inside, the grip reads a negative palm gap); a few rounds, the hand's turn kept
+                for _ in range(3):
+                    g = self.grip(side, hold=False)[side]
+                    gap = g.get("palm_gap_cm")
+                    if gap is None or -0.1 <= gap <= 0.4:
+                        break
+                    across, k = self._hand_frame(side)
+                    hw = self._bw(hn)
+                    mid_now = self._bw(self._n("finger", side, "middle", "01")).translation
+                    palm_dir = (across.cross((mid_now - hw.translation).normalized()) * k).normalized()
+                    move = palm_dir * ((gap - 0.15) / 100.0)          # toward the rifle if off it, away if pressed in
+                    self._two_bone(side, hw.translation + move, pole)
+                    self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, hw.to_quaternion(), self._unit()))
+                    self._roll_forearm(side)
+                g = self.grip(side, hold=True)[side]
+                # the palm's own press is grip's to judge (palm_max_cm, its capsule is rounder than a palm): clearance
+                # covers the forearm, the back of the hand and whatever the caller did not declare a contact
+                cr = self.clearance(parts="left" if side == "l" else "right", ignore=list(ignore) + ["palm*"], top=2)
+                c = cr["worst_cm"]
+                a = self.anatomy(side)[side]
+                v = self.view_cover()
+                over = None
+                if view_budget:
+                    over = max(v["lower_left"] - view_budget.get("lower_left", 1.0), v["bottom_middle"] - view_budget.get("bottom_middle", 1.0), 0.0)
+                ok = g["holding"] and not g["bad"] and c <= clearance_max_cm and not a["bad"] and (over is None or over <= 0.0)
+                row = {"along_cm": round(d, 1), "pole": pole, "roll_deg": roll, "holding": g["holding"], "palm_gap_cm": g["palm_gap_cm"],
+                       "clearance_cm": c, "clips": [x["segment"] for x in cr["contacts"]], "rules_broken": a["bad"][:3], "view": v, "ok": ok}
+                rows.append(row)
+                if ok and (best is None or (abs(d), abs(roll), v["lower_left"] + v["bottom_middle"]) < (abs(best["along_cm"]), abs(best["roll_deg"]), best["view"]["lower_left"] + best["view"]["bottom_middle"])):
+                    best = row
+                    self.snapshot("save", "solve_grip_best")
+        if best:
+            self.snapshot("load", "solve_grip_best")
+        else:
+            self.snapshot("load", "solve_grip_start")
+        return {"found": best is not None, "best": best, "tried": len(rows), "passed": sum(r["ok"] for r in rows),
+                "rows": sorted(rows, key=lambda r: (not r["ok"], abs(r["along_cm"]), abs(r["roll_deg"])))[:12]}
+
+    # --- shared motion, the gun's own grip (0.5.0) --------------------------------------------------------------
+    def retarget_clip(self, clip, side, mark=None, out=None, frame="gun", keep_from_s=None, keep_to_s=None):
+        """A donor rig's clip played on this rig with a hand held on this gun's own hold: each frame keeps the clip's
+        body, then the hand is put back where it holds the gun at rest (or on mark, gun frame) by arm IK, its turn
+        against the gun kept, its fingers mended. keep_from_s..keep_to_s: the span in which the hand lets go (a reload),
+        left as the clip has it. Stores the result as out (default clip + '_retarget')."""
+        self._need()
+        frames, fps = self._frames(clip)
+        hn = self._n("hand", side)
+        self.pose_idle()
+        G = self._gun()
+        rel = G.inverted() @ self._bw(hn)
+        if mark is not None:
+            p = self._point(mark, frame)
+            rel = Matrix.LocRotScale(G.inverted() @ p, rel.to_quaternion(), rel.to_scale())
+        made = []
+        for i, fr in enumerate(frames):
+            t = i / fps
+            self._apply(fr)
+            if keep_from_s is not None and keep_to_s is not None and keep_from_s <= t <= keep_to_s:
+                made.append(self._capture())
+                continue
+            Hw = self._gun() @ rel
+            self._two_bone(side, Hw.translation)
+            self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, Hw.to_quaternion(), self._unit()))
+            self._roll_forearm(side)
+            self._mend_hand(side)
+            made.append(self._capture())
+        name = out or clip + "_retarget"
+        self._store(name, made, fps, "retarget_clip(%s, %s)" % (clip, side))
+        return {"clip": name, "frames": len(made), "fps": fps}
+
+    # --- every check at once, for a gate (0.5.0) ----------------------------------------------------------------
+    def check_set(self, clip, ignore=(), clearance_max_cm=0.2, hold_sides=()):
+        """Every check on a clip, as one summary a gate can store: the worst clearance (declared contacts in ignore) and
+        when, the frames that break an arm or finger rule, and for each side in hold_sides the frames its hand is not
+        holding the rifle. Also each frame's numbers, for a table."""
+        self._need()
+        frames, fps = self._frames(clip)
+        worst, worst_t, breaks, not_holding = 0.0, 0.0, 0, {s_: 0 for s_ in hold_sides}
+        per = []
+        for i, fr in enumerate(frames):
+            self._apply(fr)
+            c = self.clearance(ignore=ignore)["worst_cm"]
+            a = self.anatomy()
+            b = len(a.get("l", {}).get("bad", [])) + len(a.get("r", {}).get("bad", []))
+            if c > worst:
+                worst, worst_t = c, i / fps
+            breaks += 1 if b else 0
+            row = {"t": round(i / fps, 3), "clearance_cm": c, "rules_broken": b}
+            if hold_sides:
+                g = self.grip("both", hold=False)
+                for s_ in hold_sides:
+                    if not g[s_]["holding"]:
+                        not_holding[s_] += 1
+                    row["holding_" + s_] = g[s_]["holding"]
+            per.append(row)
+        return {"clip": clip, "frames": len(frames), "clearance_worst_cm": round(worst, 2), "clearance_worst_s": round(worst_t, 3),
+                "clearance_over_frames": sum(1 for r in per if r["clearance_cm"] > clearance_max_cm),
+                "anatomy_break_frames": breaks, "not_holding_frames": not_holding, "per_frame": per}
+
     def render(self, views=("eye", "right", "left", "top"), size=(640, 360)):
         """Renders the pose: eye is the player's camera (90 degrees, 5 cm near plane); right, left, top and front
         look at the rifle from outside. Images go to the output folder."""
