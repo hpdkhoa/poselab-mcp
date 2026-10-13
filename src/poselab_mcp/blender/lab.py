@@ -1692,6 +1692,12 @@ class Lab:
                     if spread[i]:
                         self._swing_elbow(side, spread[i])
                     made = self._mend_hand(side, c.get("fingers", True)) if self._in(c, i / fps) else 0
+                    # the forearm's roll spread along its twist bones (0.4.0's rule), where a link rolls past its limit
+                    if self._in(c, i / fps) and self._twist_bones(side):
+                        rep_, bad_ = self._arm_report(side, self._limits()[0])
+                        if any("link rolled" in b for b in bad_):
+                            self._spread_roll(side)
+                            made += 1
                     if spread[i] or made:
                         frames[i] = self._capture()
                         changed.add(i)
