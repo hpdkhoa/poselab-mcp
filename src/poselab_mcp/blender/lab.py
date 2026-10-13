@@ -1933,11 +1933,12 @@ class Lab:
     # --- every check at once, for a gate (0.5.0) ----------------------------------------------------------------
     def check_set(self, clip, ignore=(), clearance_max_cm=0.2, hold_sides=()):
         """Every check on a clip, as one summary a gate can store: the worst clearance (declared contacts in ignore) and
-        when, the frames that break an arm or finger rule, and for each side in hold_sides the frames its hand is not
-        holding the rifle. Also each frame's numbers, for a table."""
+        when, the frames that break an arm or finger rule, the frames that break a grip rule (the back of a hand on the
+        rifle, a palm pressed too deep), and for each side in hold_sides the frames its hand is not holding the rifle.
+        Also each frame's numbers, for a table."""
         self._need()
         frames, fps = self._frames(clip)
-        worst, worst_t, breaks, not_holding = 0.0, 0.0, 0, {s_: 0 for s_ in hold_sides}
+        worst, worst_t, breaks, not_holding, grip_bad = 0.0, 0.0, 0, {s_: 0 for s_ in hold_sides}, 0
         per = []
         for i, fr in enumerate(frames):
             self._apply(fr)
@@ -1948,16 +1949,18 @@ class Lab:
                 worst, worst_t = c, i / fps
             breaks += 1 if b else 0
             row = {"t": round(i / fps, 3), "clearance_cm": c, "rules_broken": b}
-            if hold_sides:
-                g = self.grip("both", hold=False)
-                for s_ in hold_sides:
-                    if not g[s_]["holding"]:
-                        not_holding[s_] += 1
-                    row["holding_" + s_] = g[s_]["holding"]
+            g = self.grip("both", hold=False)
+            gb = len(g["l"]["bad"]) + len(g["r"]["bad"])
+            grip_bad += 1 if gb else 0
+            row["grip_rules_broken"] = gb
+            for s_ in hold_sides:
+                if not g[s_]["holding"]:
+                    not_holding[s_] += 1
+                row["holding_" + s_] = g[s_]["holding"]
             per.append(row)
         return {"clip": clip, "frames": len(frames), "clearance_worst_cm": round(worst, 2), "clearance_worst_s": round(worst_t, 3),
                 "clearance_over_frames": sum(1 for r in per if r["clearance_cm"] > clearance_max_cm),
-                "anatomy_break_frames": breaks, "not_holding_frames": not_holding, "per_frame": per}
+                "anatomy_break_frames": breaks, "grip_break_frames": grip_bad, "not_holding_frames": not_holding, "per_frame": per}
 
     def render(self, views=("eye", "right", "left", "top"), size=(640, 360)):
         """Renders the pose: eye is the player's camera (90 degrees, 5 cm near plane); right, left, top and front
