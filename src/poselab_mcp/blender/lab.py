@@ -1083,9 +1083,10 @@ class Lab:
         self._set_world(n, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
 
     def _clear_fingers(self, s, back_max_cm=0.1):
-        """A finger whose back is inside the rifle (curled past the surface: a hand moved onto a new hold keeps its old
-        curl) opens, a few degrees at a time from the tip inward, about its own hinge, until its back is clear or the
-        joint is at the open end of its range. Returns how many turns it made."""
+        """A finger whose back is inside the rifle (a hand moved onto a new hold keeps its old curl) turns, a few
+        degrees at a time from the tip inward, about its own hinge, until its back is clear: open first (curled past
+        the surface), else curled in (a trigger finger lying across another gun's guard closes onto the trigger),
+        each joint within its range. Returns how many turns it made."""
         if not self._has_fingers(s):
             return 0
         import re as _re
@@ -1104,20 +1105,25 @@ class Lab:
             for j in ["%02d" % x for x in range(min(k, 3), 0, -1)]:
                 fr, _b, planes = self._finger_report(s, FL)
                 curl = fr["%s_%s" % (fi, j)][0]
-                lo = FL[j][0]
-                if curl <= lo + 1.0:
-                    continue
+                lo, hi = FL[j][0], FL[j][1]
                 n = self._n("finger", s, fi, j)
                 M = self._bw(n)
                 head = M.translation.copy()
-                step = min(6.0, curl - lo - 1.0)
-                for sg in (1.0, -1.0):
-                    self._turn_about(n, planes[fi], step * sg, head)
-                    if self._finger_report(s, FL)[0]["%s_%s" % (fi, j)][0] < curl - 0.5 and \
-                            self._hand_contacts(s, tree)[3] < back_cm - 1e-4:
-                        moved = True
+                for want_open in (True, False):
+                    room = (curl - lo - 1.0) if want_open else (hi - curl - 1.0)
+                    if room <= 0.0:
+                        continue
+                    step = min(6.0, room)
+                    for sg in (1.0, -1.0):
+                        self._turn_about(n, planes[fi], step * sg, head)
+                        c2 = self._finger_report(s, FL)[0]["%s_%s" % (fi, j)][0]
+                        if ((c2 < curl - 0.5) if want_open else (c2 > curl + 0.5)) and lo <= c2 <= hi and \
+                                self._hand_contacts(s, tree)[3] < back_cm - 1e-4:
+                            moved = True
+                            break
+                        self._set_world(n, M)
+                    if moved:
                         break
-                    self._set_world(n, M)
                 if moved:
                     break
             if not moved:
@@ -1775,6 +1781,9 @@ class Lab:
                     if spread[i]:
                         self._swing_elbow(side, spread[i])
                     made = self._mend_hand(side, c.get("fingers", True)) if self._in(c, i / fps) else 0
+                    # a finger whose back is inside the rifle opens off it (a hand moved onto another gun's grip)
+                    if self._in(c, i / fps) and c.get("fingers", True):
+                        made += self._clear_fingers(side)
                     # the forearm's roll spread along its twist bones (0.4.0's rule), where a link rolls past its limit
                     if self._in(c, i / fps) and self._twist_bones(side):
                         rep_, bad_ = self._arm_report(side, self._limits()[0])
