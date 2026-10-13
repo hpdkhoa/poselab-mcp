@@ -7,7 +7,13 @@ gun, but the forearm and sleeve filled the lower left of the view; on 13 guns th
 hand missed the handguard.
 
 * `view_cover`: the share of the player's view the arms cover (all, the lower left third, the bottom middle third),
-  the arms rendered alone from the eye as a mask. ToangTown's game probe measures the same in the game.
+  the arms rendered alone from the eye as a mask, back faces culled as a game culls them. ToangTown's game probe
+  measures the same in the game (within about 0.06).
+* A rig whose idle FBX lacks bones the mesh is weighted to (an export that leaves out Manny's corrective bones, such
+  as upperarm_out_l or clavicle_scap_l) no longer leaves those vertices at rest: each orphaned group's weights go to
+  its nearest ancestor the idle armature has. `describe` lists them as `orphan_groups_adopted`. Before this, the
+  AKS-74U arms kept a shoulder inside the eye, and `view_cover` read the AK-47's lower left as 1.0 against 0.57 in
+  the game.
 * `solve_grip`: searches a hand's hold. The palm goes on a mark, moved along the barrel; the elbow points toward each
   of several poles; the hand rolls about the barrel (the forearm pronates or supinates with it). Each candidate settles
   the palm onto the rifle's surface, then counts only if the palm holds the rifle (`grip`), nothing else clips

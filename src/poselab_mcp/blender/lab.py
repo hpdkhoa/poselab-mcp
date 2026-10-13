@@ -70,6 +70,32 @@ def ue_back(v):
     return Vector((v[0], -v[1], v[2])) * 100.0
 
 
+def _adopt_orphans(mesh, full, arm):
+    """A mesh's vertex groups whose bone the driving armature lacks (an idle clip's export may leave out a skeleton's
+    corrective bones: Manny's upperarm_out_l, clavicle_scap_l, wrist_outer_l): Blender would leave those vertices at
+    rest, a shoulder inside the eye. Each such group's weights go to its nearest ancestor the armature has (the mesh's
+    own, full armature knows the chain), as the game moves an unkeyed bone: with its parent. The groups moved, by
+    ancestor."""
+    have = set(arm.data.bones.keys())
+    moved = {}
+    for vg in list(mesh.vertex_groups):
+        if vg.name in have or vg.name not in full.data.bones:
+            continue
+        up = full.data.bones[vg.name].parent
+        while up is not None and up.name not in have:
+            up = up.parent
+        if up is None:
+            continue
+        to = mesh.vertex_groups.get(up.name) or mesh.vertex_groups.new(name=up.name)
+        for v in mesh.data.vertices:
+            for g in v.groups:
+                if g.group == vg.index and g.weight > 0.0:
+                    to.add([v.index], g.weight, 'ADD')
+        moved.setdefault(up.name, []).append(vg.name)
+        mesh.vertex_groups.remove(vg)
+    return moved
+
+
 def _xyz(v, what):
     """Three numbers, or a clear error that names the argument."""
     if not isinstance(v, (list, tuple)) or len(v) != 3 or not all(isinstance(c, (int, float)) for c in v):
@@ -136,6 +162,7 @@ class Lab:
         bpy.ops.wm.read_factory_settings(use_empty=True)
         self.sc = bpy.context.scene
         self.names = dict(DEFAULT_BONES, **R.get("bones", {}))
+        self.orphans = {}
         if R.get("builtin"):
             from sample import build
             made = build()
@@ -193,6 +220,7 @@ class Lab:
             mw = mesh.matrix_world.copy()
             mesh.parent = self.arm
             mesh.matrix_world = mw
+            self.orphans = _adopt_orphans(mesh, old, self.arm)
             bpy.data.objects.remove(old)
             act = self.arm.animation_data.action
             self.sc.frame_set(int(act.frame_range[0]))
@@ -248,6 +276,7 @@ class Lab:
             "points": self.R.get("points", {}), "normals": self.R.get("normals", {}),
             "clips": {k: {"seconds": round(self._clip_len(k), 3), **self.clip_fit.get(k, {})} for k in self.clips},
             "parts": self.part_bones, "eye_arms_cm": list(self.R.get("eye", (0.0, 0.0, 160.0))),
+            "orphan_groups_adopted": self.orphans,
             "body_names": "bones by name, fingertips as <finger>_tip_<l|r>, rig points by name",
             "writes_only_to": self.out_dir,
         }
@@ -1769,8 +1798,10 @@ class Lab:
     # --- the view the arms leave (0.5.0) ------------------------------------------------------------------------
     def view_cover(self, size=(192, 108)):
         """The share of the player's view the arms cover: all of it, its lower left third and its bottom middle third.
-        The arms render alone from the eye (90 degrees, 16:9) as a mask, the rifle hidden. A forearm or sleeve that fills
-        the lower left hides the gun's left side and the world; ToangTown's Game Probe measures the same in the game."""
+        The arms render alone from the eye (90 degrees, 16:9) as a mask, the rifle hidden, their back faces culled as a
+        game culls them (a shoulder the near plane cuts open shows nothing inside). A forearm or sleeve that fills the
+        lower left hides the gun's left side and the world; ToangTown's Game Probe measures the same in the game (within
+        about 0.06 of it on the AKS-74U arms, 2026-10-13)."""
         self._need()
         hidden = []
         for o in self.sc.objects:
@@ -1789,6 +1820,9 @@ class Lab:
         self.sc.camera = cam
         r = self.sc.render
         keep = (r.engine, r.resolution_x, r.resolution_y, r.film_transparent, r.filepath, self.sc.display.render_aa)
+        shading = self.sc.display.shading
+        keep_cull = shading.show_backface_culling
+        shading.show_backface_culling = True
         r.engine = 'BLENDER_WORKBENCH'
         r.resolution_x, r.resolution_y = size
         r.film_transparent = True
@@ -1802,6 +1836,7 @@ class Lab:
             for o in hidden:
                 o.hide_render = False
             r.engine, r.resolution_x, r.resolution_y, r.film_transparent, r.filepath, self.sc.display.render_aa = keep
+            shading.show_backface_culling = keep_cull
         img = bpy.data.images.load(path, check_existing=False)
         W, H = img.size
         px = list(img.pixels)
