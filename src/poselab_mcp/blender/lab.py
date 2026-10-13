@@ -1905,17 +1905,23 @@ class Lab:
                 "rows": sorted(rows, key=lambda r: (not r["ok"], abs(r["along_cm"]), abs(r["roll_deg"])))[:12]}
 
     # --- shared motion, the gun's own grip (0.5.0) --------------------------------------------------------------
-    def retarget_clip(self, clip, side, mark=None, out=None, frame="gun", keep_from_s=None, keep_to_s=None):
+    def retarget_clip(self, clip, side, mark=None, out=None, frame="gun", keep_from_s=None, keep_to_s=None, hold="idle"):
         """A donor rig's clip played on this rig with a hand held on this gun's own hold: each frame keeps the clip's
         body, then the hand is put back where it holds the gun at rest (or on mark, gun frame) by arm IK, its turn
         against the gun kept, its fingers mended. keep_from_s..keep_to_s: the span in which the hand lets go (a reload),
-        left as the clip has it. Stores the result as out (default clip + '_retarget')."""
+        left as the clip has it. hold: 'idle' (the rig's idle hold) or 'current' (the hold the rig stands in now, as
+        solve_grip leaves it). Stores the result as out (default clip + '_retarget')."""
         self._need()
         frames, fps = self._frames(clip)
         hn = self._n("hand", side)
-        self.pose_idle()
+        if hold not in ("idle", "current"):
+            raise ValueError("hold must be idle or current")
+        if hold == "idle":
+            self.pose_idle()
         G = self._gun()
         rel = G.inverted() @ self._bw(hn)
+        fingers = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones
+                   if pb.name.endswith("_" + side) and any(f in pb.name for f in ("thumb", "index", "middle", "ring", "pinky"))}
         if mark is not None:
             p = self._point(mark, frame)
             rel = Matrix.LocRotScale(G.inverted() @ p, rel.to_quaternion(), rel.to_scale())
@@ -1929,6 +1935,10 @@ class Lab:
             Hw = self._gun() @ rel
             self._two_bone(side, Hw.translation)
             self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, Hw.to_quaternion(), self._unit()))
+            for name, (l, q) in fingers.items():           # the hold's own fingers
+                pb = self.arm.pose.bones[name]
+                pb.location, pb.rotation_quaternion = l, q
+            bpy.context.view_layer.update()
             self._roll_forearm(side)
             self._mend_hand(side)
             made.append(self._capture())

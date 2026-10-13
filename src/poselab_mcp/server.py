@@ -253,11 +253,12 @@ def solve_grip(side: Side, mark: Point, along: Annotated[list[float], Field(desc
 
 @mcp.tool()
 def retarget_clip(clip: str, side: Side, mark: Point | None = None, out: str | None = None, frame: Frame = "gun",
-                  keep_from_s: float | None = None, keep_to_s: float | None = None) -> dict:
+                  keep_from_s: float | None = None, keep_to_s: float | None = None,
+                  hold: Annotated[Literal["idle", "current"], Field(description="the rig's idle hold, or the hold it stands in now (after solve_grip)")] = "idle") -> dict:
     """Plays another rig's clip on this rig with one hand held on this gun's own hold (its rest hold, or mark) by arm
     IK, fingers mended: shared motion, the gun's own grip. keep_from_s..keep_to_s: a span the hand leaves the gun (a
     reload), kept as the clip has it. Stores the result as out (default <clip>_retarget)."""
-    return worker.call("retarget_clip", clip=clip, side=side, mark=mark, out=out, frame=frame, keep_from_s=keep_from_s, keep_to_s=keep_to_s)
+    return worker.call("retarget_clip", clip=clip, side=side, mark=mark, out=out, frame=frame, keep_from_s=keep_from_s, keep_to_s=keep_to_s, hold=hold)
 
 
 @mcp.tool()
