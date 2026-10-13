@@ -1908,7 +1908,57 @@ class Lab:
                     elif x < 2 * W // 3:
                         bm += 1
         return {"total": round(total / float(W * H), 3), "lower_left": round(ll / float(third), 3),
-                "bottom_middle": round(bm / float(third), 3)}
+                "bottom_middle": round(bm / float(third), 3), "hand_l_shown": self.hand_shown("l")}
+
+    def hand_shown(self, side="l"):
+        """How much of a hand the player sees: the share of the hand's own vertices (it and its fingers) that are inside
+        the view (90 degrees, 16:9) and nearest the eye along their line of sight, the arms and the rifle in the way.
+        A hand on top of a handguard shows about half of itself, one under it or below the view's edge little or none.
+        ToangTown's Game Probe measures the same (view.hand_l_shown)."""
+        self._need()
+        hand = self._n("hand", side)
+        bones = self.arm.data.bones
+        if hand not in bones:
+            return None
+        inside = {b.name for b in bones if b.name == hand or any(p.name == hand for p in b.parent_recursive)}
+        dg = bpy.context.evaluated_depsgraph_get()
+        verts, polys, mine = [], [], []
+        for ob in self.meshes:
+            ev = ob.evaluated_get(dg)
+            me = ev.to_mesh()
+            base = len(verts)
+            M = ob.matrix_world
+            names = {g.index: g.name for g in ob.vertex_groups}
+            for v, v0 in zip(me.vertices, ob.data.vertices):
+                verts.append(M @ v.co)
+                top = max(v0.groups, key=lambda g: g.weight, default=None)
+                if top is not None and top.weight > 0.0 and names.get(top.group) in inside:
+                    mine.append(base + v.index)
+            polys += [tuple(base + i for i in p.vertices) for p in me.polygons]
+            ev.to_mesh_clear()
+        if not mine:
+            return None
+        ev = self.rifle_mesh.evaluated_get(dg)
+        me = ev.to_mesh()
+        base = len(verts)
+        M = self.rifle_mesh.matrix_world
+        verts += [M @ v.co for v in me.vertices]
+        polys += [tuple(base + i for i in p.vertices) for p in me.polygons]
+        ev.to_mesh_clear()
+        bvh = BVHTree.FromPolygons(verts, polys)
+        tan_x = math.tan(math.radians(H_FOV) / 2.0)
+        tan_y = tan_x / ASPECT
+        seen = 0
+        for i in mine:
+            p = verts[i]
+            d = p - self.eye
+            ahead, right, up = d.dot(VIEW_FWD), d.dot(VIEW_RIGHT), d.dot(VIEW_UP)
+            if ahead < 0.01 or abs(right) >= ahead * tan_x or abs(up) >= ahead * tan_y:
+                continue
+            hit = bvh.ray_cast(self.eye, d.normalized(), d.length + 0.05)
+            if hit[0] is not None and abs((hit[0] - self.eye).length - d.length) <= 0.02:      # the first surface is its own (2 cm)
+                seen += 1
+        return round(seen / float(len(mine)), 3)
 
     # --- a hold searched for, with the view as a goal (0.5.0) ---------------------------------------------------
     def solve_grip(self, side, mark, along=(-8.0, 8.0), steps=9, poles=None, view_budget=None, clearance_max_cm=0.2,
@@ -1981,7 +2031,8 @@ class Lab:
                 v = self.view_cover()
                 over = None
                 if view_budget:
-                    over = max(v["lower_left"] - view_budget.get("lower_left", 1.0), v["bottom_middle"] - view_budget.get("bottom_middle", 1.0), 0.0)
+                    over = max(v["lower_left"] - view_budget.get("lower_left", 1.0), v["bottom_middle"] - view_budget.get("bottom_middle", 1.0),
+                               view_budget.get("hand_l_shown_min", 0.0) - (v.get("hand_l_shown") or 0.0), 0.0)
                 ok = g["holding"] and not g["bad"] and c <= clearance_max_cm and not a["bad"] and (over is None or over <= 0.0)
                 row = {"along_cm": round(d, 1), "pole": pole, "roll_deg": roll, "holding": g["holding"], "palm_gap_cm": g["palm_gap_cm"],
                        "clearance_cm": c, "clips": [x["segment"] for x in cr["contacts"]], "rules_broken": a["bad"][:3], "grip_bad": g["bad"][:3], "view": v, "ok": ok}

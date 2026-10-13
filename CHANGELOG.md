@@ -21,6 +21,9 @@ hand missed the handguard.
   right wrist past its limit in every frame.
 * A finger whose back is inside the rifle after a hand moves opens about its own hinge until it is clear
   (`solve_grip` and `retarget_clip`). `solve_grip`'s rows list `grip_bad`, the grip rules a candidate broke.
+* `hand_shown`: how much of a hand the player sees (its own vertices in the view and first along their line of
+  sight); `view_cover` reports `hand_l_shown`, and `solve_grip`'s `view_budget` takes `hand_l_shown_min`, so a hold
+  that clears the view cannot do it by losing the support hand. Within about 0.04 of ToangTown's game probe.
 * `solve_grip`: searches a hand's hold. The palm goes on a mark, moved along the barrel; the elbow points toward each
   of several poles; the hand rolls about the barrel (the forearm pronates or supinates with it). Each candidate settles
   the palm onto the rifle's surface, then counts only if the palm holds the rifle (`grip`), nothing else clips
