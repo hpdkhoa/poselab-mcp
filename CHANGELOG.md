@@ -14,6 +14,13 @@ hand missed the handguard.
   its nearest ancestor the idle armature has. `describe` lists them as `orphan_groups_adopted`. Before this, the
   AKS-74U arms kept a shoulder inside the eye, and `view_cover` read the AK-47's lower left as 1.0 against 0.57 in
   the game.
+* `retarget_clip` takes `gun_move` (move_gun's arguments, applied to every frame first, the other hand keeping its
+  hold) and `pole` (the elbow's direction, as `solve_grip`'s best gives it). Without the pole, every frame of a
+  retargeted clip lost the solved elbow and broke the forearm's supination limit.
+* `move_gun` keeps each kept hand's elbow pointing the way it pointed. The arm IK's default pole bent a run clip's
+  right wrist past its limit in every frame.
+* A finger whose back is inside the rifle after a hand moves opens about its own hinge until it is clear
+  (`solve_grip` and `retarget_clip`). `solve_grip`'s rows list `grip_bad`, the grip rules a candidate broke.
 * `solve_grip`: searches a hand's hold. The palm goes on a mark, moved along the barrel; the elbow points toward each
   of several poles; the hand rolls about the barrel (the forearm pronates or supinates with it). Each candidate settles
   the palm onto the rifle's surface, then counts only if the palm holds the rifle (`grip`), nothing else clips

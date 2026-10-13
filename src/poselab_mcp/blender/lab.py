@@ -450,10 +450,19 @@ class Lab:
 
     def move_gun(self, roll=0.0, swing=0.0, pitch=0.0, right=0.0, forward=0.0, up=0.0, pivot="stock", keep_hands=("l", "r")):
         """Moves the rifle from where it stands: roll about the bore, swing and pitch about the pivot, then a move in
-        the view (cm). The hands in keep_hands keep their hold (arm IK)."""
+        the view (cm). The hands in keep_hands keep their hold (arm IK), each elbow pointing the way it pointed (the
+        arm IK's default pole once bent a clip's right wrist past its limit in every frame: ToangTown's AK-47 run)."""
         self._need()
         G = self._gun()
         held = {s: G.inverted() @ self._bw(self._n("hand", s)) for s in keep_hands}
+        bend = {}
+        for s in keep_hands:
+            S0 = self._bw(self._n("upperarm", s)).translation
+            E0 = self._bw(self._n("lowerarm", s)).translation
+            W0 = self._bw(self._n("hand", s)).translation
+            line = W0 - S0
+            foot = S0 + line * (max(0.0, min(1.0, (E0 - S0).dot(line) / max(line.length_squared, 1e-12))))
+            bend[s] = (E0, E0 - foot, W0)
         barrel = (G.to_quaternion() @ Vector((0.0, -1.0, 0.0))).normalized()
         bore = self._point("bore") if "bore" in self.R.get("points", {}) else G.translation
         pv = self._point(pivot) if isinstance(pivot, str) else self._from(pivot, "gun")
@@ -470,7 +479,9 @@ class Lab:
         G = self._gun()
         for s, H in held.items():
             W = G @ H
-            miss[s] = round(self._two_bone(s, W.translation), 2)
+            E0, out, W0 = bend[s]
+            pole = E0 + out * 2.0 + (W.translation - W0) * 0.5 if out.length > 1e-5 else None
+            miss[s] = round(self._two_bone(s, W.translation, pole_world=pole), 2)
             hn = self._n("hand", s)
             self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, W.to_quaternion(), self._unit()))
             self._roll_forearm(s)
@@ -1070,6 +1081,49 @@ class Lab:
         q = Quaternion(axis, math.radians(deg))
         R = Matrix.Translation(pivot) @ q.to_matrix().to_4x4() @ Matrix.Translation(-pivot) @ M
         self._set_world(n, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
+
+    def _clear_fingers(self, s, back_max_cm=0.1):
+        """A finger whose back is inside the rifle (curled past the surface: a hand moved onto a new hold keeps its old
+        curl) opens, a few degrees at a time from the tip inward, about its own hinge, until its back is clear or the
+        joint is at the open end of its range. Returns how many turns it made."""
+        if not self._has_fingers(s):
+            return 0
+        import re as _re
+        _L, FL = self._limits()
+        tree = self._tree()
+        made = 0
+        for _ in range(16):
+            back_cm, seg = self._hand_contacts(s, tree)[3:5]
+            if back_cm <= back_max_cm or not seg:
+                break
+            m = _re.match(r"(index|middle|ring|pinky)(\d)", seg)
+            if not m:
+                break
+            fi, k = m.group(1), int(m.group(2))
+            moved = False
+            for j in ["%02d" % x for x in range(min(k, 3), 0, -1)]:
+                fr, _b, planes = self._finger_report(s, FL)
+                curl = fr["%s_%s" % (fi, j)][0]
+                lo = FL[j][0]
+                if curl <= lo + 1.0:
+                    continue
+                n = self._n("finger", s, fi, j)
+                M = self._bw(n)
+                head = M.translation.copy()
+                step = min(6.0, curl - lo - 1.0)
+                for sg in (1.0, -1.0):
+                    self._turn_about(n, planes[fi], step * sg, head)
+                    if self._finger_report(s, FL)[0]["%s_%s" % (fi, j)][0] < curl - 0.5 and \
+                            self._hand_contacts(s, tree)[3] < back_cm - 1e-4:
+                        moved = True
+                        break
+                    self._set_world(n, M)
+                if moved:
+                    break
+            if not moved:
+                break
+            made += 1
+        return made
 
     def _mend_hand(self, s, fingers=True):
         """The wrist back inside its limits (turned toward the forearm's line), then each finger joint back inside its
@@ -1917,6 +1971,7 @@ class Lab:
                     self._two_bone(side, hw.translation + move, pole)
                     self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, hw.to_quaternion(), self._unit()))
                     self._roll_forearm(side)
+                self._clear_fingers(side)
                 g = self.grip(side, hold=True)[side]
                 # the palm's own press is grip's to judge (palm_max_cm, its capsule is rounder than a palm): clearance
                 # covers the forearm, the back of the hand and whatever the caller did not declare a contact
@@ -1929,7 +1984,7 @@ class Lab:
                     over = max(v["lower_left"] - view_budget.get("lower_left", 1.0), v["bottom_middle"] - view_budget.get("bottom_middle", 1.0), 0.0)
                 ok = g["holding"] and not g["bad"] and c <= clearance_max_cm and not a["bad"] and (over is None or over <= 0.0)
                 row = {"along_cm": round(d, 1), "pole": pole, "roll_deg": roll, "holding": g["holding"], "palm_gap_cm": g["palm_gap_cm"],
-                       "clearance_cm": c, "clips": [x["segment"] for x in cr["contacts"]], "rules_broken": a["bad"][:3], "view": v, "ok": ok}
+                       "clearance_cm": c, "clips": [x["segment"] for x in cr["contacts"]], "rules_broken": a["bad"][:3], "grip_bad": g["bad"][:3], "view": v, "ok": ok}
                 rows.append(row)
                 if ok and (best is None or (abs(d), abs(roll), v["lower_left"] + v["bottom_middle"]) < (abs(best["along_cm"]), abs(best["roll_deg"]), best["view"]["lower_left"] + best["view"]["bottom_middle"])):
                     best = row
@@ -1942,12 +1997,16 @@ class Lab:
                 "rows": sorted(rows, key=lambda r: (not r["ok"], abs(r["along_cm"]), abs(r["roll_deg"])))[:12]}
 
     # --- shared motion, the gun's own grip (0.5.0) --------------------------------------------------------------
-    def retarget_clip(self, clip, side, mark=None, out=None, frame="gun", keep_from_s=None, keep_to_s=None, hold="idle"):
+    def retarget_clip(self, clip, side, mark=None, out=None, frame="gun", keep_from_s=None, keep_to_s=None, hold="idle",
+                      gun_move=None, pole=None):
         """A donor rig's clip played on this rig with a hand held on this gun's own hold: each frame keeps the clip's
         body, then the hand is put back where it holds the gun at rest (or on mark, gun frame) by arm IK, its turn
         against the gun kept, its fingers mended. keep_from_s..keep_to_s: the span in which the hand lets go (a reload),
         left as the clip has it. hold: 'idle' (the rig's idle hold) or 'current' (the hold the rig stands in now, as
-        solve_grip leaves it). Stores the result as out (default clip + '_retarget')."""
+        solve_grip leaves it). gun_move: move_gun's arguments (roll, swing, pitch, right, forward, up, pivot), applied to
+        each frame before the hand is placed, the other hand keeping its hold: a rifle carried lower or closer than the
+        clip has it. pole: where the elbow points (arms frame, cm), as solve_grip's best gives it; the arm IK's own
+        choice if left out. Stores the result as out (default clip + '_retarget')."""
         self._need()
         frames, fps = self._frames(clip)
         hn = self._n("hand", side)
@@ -1955,6 +2014,9 @@ class Lab:
             raise ValueError("hold must be idle or current")
         if hold == "idle":
             self.pose_idle()
+        other = "r" if side == "l" else "l"
+        move = dict(gun_move or {})
+        move.pop("keep_hands", None)
         G = self._gun()
         rel = G.inverted() @ self._bw(hn)
         fingers = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones
@@ -1969,8 +2031,10 @@ class Lab:
             if keep_from_s is not None and keep_to_s is not None and keep_from_s <= t <= keep_to_s:
                 made.append(self._capture())
                 continue
+            if any(v for k, v in move.items() if k != "pivot"):
+                self.move_gun(keep_hands=(other,), **move)
             Hw = self._gun() @ rel
-            self._two_bone(side, Hw.translation)
+            self._two_bone(side, Hw.translation, pole)
             self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, Hw.to_quaternion(), self._unit()))
             for name, (l, q) in fingers.items():           # the hold's own fingers
                 pb = self.arm.pose.bones[name]
@@ -1978,6 +2042,7 @@ class Lab:
             bpy.context.view_layer.update()
             self._roll_forearm(side)
             self._mend_hand(side)
+            self._clear_fingers(side)
             made.append(self._capture())
         name = out or clip + "_retarget"
         self._store(name, made, fps, "retarget_clip(%s, %s)" % (clip, side))
