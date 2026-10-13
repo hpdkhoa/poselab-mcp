@@ -1841,7 +1841,9 @@ class Lab:
         H0 = self._bw(hn).copy()
         rel = G.inverted() @ H0                                   # the hand's turn against the gun, kept
         mid = self._bw(self._n("finger", side, "middle", "01")).translation
-        palm_off = H0.inverted() @ H0.translation.lerp(mid, 0.5)   # the palm's middle in the hand's own space
+        # the palm's middle from the wrist, in the hand's turn (world units: an FBX armature's scale would otherwise
+        # stretch it a hundredfold)
+        palm_off = H0.to_quaternion().inverted() @ (H0.translation.lerp(mid, 0.5) - H0.translation)
         target = self._point(mark, frame)
         axis = (G.to_quaternion() @ Vector((0.0, -1.0, 0.0))).normalized()   # along the barrel (ue +Y is Blender -Y)
         if poles is None:
