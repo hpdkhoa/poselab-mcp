@@ -36,7 +36,7 @@ H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "faces_eye", "visible", "screen", "solve", "render",
-          "view_cover", "solve_grip", "retarget_clip", "check_set")
+          "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -2106,6 +2106,57 @@ class Lab:
             made.append(self._capture())
         name = out or clip + "_retarget"
         self._store(name, made, fps, "retarget_clip(%s, %s)" % (clip, side))
+        return {"clip": name, "frames": len(made), "fps": fps}
+
+    def shift_hand(self, clip, side, deltas, out=None):
+        """A clip with one hand moved, frame by frame, by deltas: [[seconds, [x, y, z]], ...] in the gun frame (cm),
+        straight lines between them (a hand that holds a part whose track changed follows the part's new path). The
+        hand keeps its turn against the gun, its elbow its direction, its fingers their curl; the wrist and fingers
+        are mended. Stores the result as out (default clip + '_shifted')."""
+        self._need()
+        frames, fps = self._frames(clip)
+        pts = sorted((float(t), Vector(_xyz(d, "delta"))) for t, d in deltas)
+        if not pts:
+            raise ValueError("deltas: at least one [seconds, [x, y, z]]")
+
+        def at(t):
+            if t <= pts[0][0]:
+                return pts[0][1]
+            for (t0, a), (t1, b) in zip(pts, pts[1:]):
+                if t <= t1:
+                    return a.lerp(b, (t - t0) / max(t1 - t0, 1e-9))
+            return pts[-1][1]
+        hn = self._n("hand", side)
+        made = []
+        for i, fr in enumerate(frames):
+            self._apply(fr)
+            d = at(i / fps)
+            if d.length > 1e-4:
+                G = self._gun()
+                H = self._bw(hn)
+                rel = G.inverted() @ H
+                move = G.to_quaternion() @ ue(d)          # gun frame cm to world
+                S0 = self._bw(self._n("upperarm", side)).translation
+                E0 = self._bw(self._n("lowerarm", side)).translation
+                line = H.translation - S0
+                foot = S0 + line * max(0.0, min(1.0, (E0 - S0).dot(line) / max(line.length_squared, 1e-12)))
+                out_dir = E0 - foot
+                pole = E0 + out_dir * 2.0 + move * 0.5 if out_dir.length > 1e-5 else None
+                fingers = {pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones
+                           if pb.name.endswith("_" + side) and any(f in pb.name for f in ("thumb", "index", "middle", "ring", "pinky"))}
+                self._two_bone(side, H.translation + move, pole_world=pole)
+                W = G @ rel
+                self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, W.to_quaternion(), self._unit()))
+                for name, (l, q) in fingers.items():
+                    pb = self.arm.pose.bones[name]
+                    pb.location, pb.rotation_quaternion = l, q
+                bpy.context.view_layer.update()
+                self._roll_forearm(side)
+                self._mend_hand(side)
+                self._clear_fingers(side)
+            made.append(self._capture())
+        name = out or clip + "_shifted"
+        self._store(name, made, fps, "shift_hand(%s, %s)" % (clip, side))
         return {"clip": name, "frames": len(made), "fps": fps}
 
     # --- every check at once, for a gate (0.5.0) ----------------------------------------------------------------

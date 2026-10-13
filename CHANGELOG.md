@@ -24,6 +24,8 @@ hand missed the handguard.
 * `hand_shown`: how much of a hand the player sees (its own vertices in the view and first along their line of
   sight); `view_cover` reports `hand_l_shown`, and `solve_grip`'s `view_budget` takes `hand_l_shown_min`, so a hold
   that clears the view cannot do it by losing the support hand. Within about 0.04 of ToangTown's game probe.
+* `shift_hand`: a hand moved frame by frame by given offsets in the gun frame (a hand that holds a part whose track
+  changed follows its new path), its turn, elbow direction and finger curl kept, then mended.
 * `solve_grip`: searches a hand's hold. The palm goes on a mark, moved along the barrel; the elbow points toward each
   of several poles; the hand rolls about the barrel (the forearm pronates or supinates with it). Each candidate settles
   the palm onto the rifle's surface, then counts only if the palm holds the rifle (`grip`), nothing else clips

@@ -264,6 +264,15 @@ def retarget_clip(clip: str, side: Side, mark: Point | None = None, out: str | N
 
 
 @mcp.tool()
+def shift_hand(clip: str, side: Side, deltas: Annotated[list, Field(description="[[seconds, [x, y, z]], ...]: the hand's move in the gun frame (cm), straight lines between")],
+               out: str | None = None) -> dict:
+    """Moves one hand frame by frame by the given deltas (gun frame, cm): a hand that holds a part whose track changed
+    follows the part's new path. The hand keeps its turn against the gun, its elbow its direction, its fingers their
+    curl; the wrist and fingers are mended."""
+    return worker.call("shift_hand", clip=clip, side=side, deltas=deltas, out=out)
+
+
+@mcp.tool()
 def check_set(clip: str, ignore: list[str] = [], clearance_max_cm: float = 0.2, hold_sides: list[Side] = [],
               sides: Literal["both", "l", "r"] = "both") -> dict:
     """Every check on a clip in one summary for a gate: the worst clearance and when, the frames that break an arm or
