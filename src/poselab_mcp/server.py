@@ -261,10 +261,11 @@ def retarget_clip(clip: str, side: Side, mark: Point | None = None, out: str | N
 
 
 @mcp.tool()
-def check_set(clip: str, ignore: list[str] = [], clearance_max_cm: float = 0.2, hold_sides: list[Side] = []) -> dict:
+def check_set(clip: str, ignore: list[str] = [], clearance_max_cm: float = 0.2, hold_sides: list[Side] = [],
+              sides: Literal["both", "l", "r"] = "both") -> dict:
     """Every check on a clip in one summary for a gate: the worst clearance and when, the frames that break an arm or
     finger rule, the frames a hand in hold_sides is not holding, and each frame's numbers."""
-    return worker.call("check_set", clip=clip, ignore=ignore, clearance_max_cm=clearance_max_cm, hold_sides=hold_sides)
+    return worker.call("check_set", clip=clip, ignore=ignore, clearance_max_cm=clearance_max_cm, hold_sides=hold_sides, sides=sides)
 
 
 @mcp.tool()
