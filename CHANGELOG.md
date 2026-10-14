@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0
+
+A posing tool both an agent with Pose Lab's checks and an agent with renders alone can use, for the repair pilot in
+the paper "Measure, don't judge" (2026-10-14).
+
+* `turn_bone`: turns one bone by some degrees about an axis through its head, in a named frame; the bones below it
+  follow. It bends a finger joint, turns a wrist or turns an arm at the shoulder. It refuses the rifle's bone (use
+  `move_gun`). The reply gives the bone, the axis, the degrees and the frame, and no positions: an earlier version
+  returned the bone's head, and an agent with renders alone read joint positions from turns of zero degrees.
+* PoseFault repair (`benchmarks/posefault/repair_tasks.py`): `agent_bridge.py` serves `pf:` tasks, one PoseFault pose
+  each, under two conditions (vision, measured), and grades the final pose by `measure.py`'s rules. A task may name
+  its rig. In the pilot (30 poses from three ToangTown bases), agents with the checks repaired 19 of 27 faulty poses
+  and agents with renders alone 1 of 27; both left the 3 clean poses alone.
+
 ## 0.6.0
 
 Whether a hand really holds a part, from the paper "Measure, don't judge" (2026-10-14): a review by eye rejected

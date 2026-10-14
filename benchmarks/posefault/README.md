@@ -9,6 +9,7 @@ measures them? Each pose carries one fault that a script put in, at a known size
 |---|---|
 | `generate.py` | Blender script. It takes base poses, keeps each side that passes every rule, injects one fault per pose at each size, and writes the poses, the labels and four renders per pose. |
 | `measure.py` | Blender script, arm C. Pose Lab alone checks each pose: flagged (any rule broken on that side) and named (a flag names the injected fault). |
+| `repair_tasks.py` | Arm B, repair. An agent gets one pose in a live Pose Lab session through `benchmarks/agent_bridge.py` and must repair the fault on one side, or change nothing. Two conditions: vision (renders, `turn_bone`, `reach`, snapshots) and measured (the same plus anatomy, grip, clearance, where, distance). Pose Lab grades the final pose by `measure.py`'s rules. |
 | `judge.py` | Arm A. A VLM sees the four renders and answers in JSON with a fixed list of fault types. Backends: Anthropic API or a local Ollama model. |
 
 ## The faults
@@ -42,6 +43,7 @@ The benign controls and a check of the base renders by eye cover that.
 blender -b --factory-startup -P benchmarks/posefault/generate.py -- <rigs file> <out folder>
 blender -b --factory-startup -P benchmarks/posefault/measure.py -- <rigs file> <out folder>
 python benchmarks/posefault/judge.py <out folder> --backend anthropic --model claude-opus-5-5 --limit 5
+POSEFAULT_REPAIR=<list.json> python benchmarks/agent_bridge.py serve pf:r01 measured <port> <out folder>
 ```
 
 The ToangTown rigs (AR-15, AK-47 and M24 holds) are licensed and stay out of this repository. The built-in sample rig

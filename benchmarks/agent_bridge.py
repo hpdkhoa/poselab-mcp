@@ -33,12 +33,22 @@ SYSTEM = (
 )
 
 
+def task_set(task):
+    """The task table a task belongs to: tasks.py, or PoseFault repair (pf:<name>, posefault/repair_tasks.py)."""
+    if task.startswith("pf:"):
+        sys.path.insert(0, os.path.join(HERE, "posefault"))
+        from repair_tasks import CONDITIONS, TASKS
+    else:
+        from tasks import CONDITIONS, TASKS
+    return CONDITIONS, TASKS
+
+
 def serve(task, condition, port, out, trial=0):
     from mcp_stdio import PoseLab
-    from tasks import CONDITIONS, TASKS
+    CONDITIONS, TASKS = task_set(task)
     os.makedirs(out, exist_ok=True)
     lab = PoseLab()
-    lab.data("load_rig", rig="sample")
+    lab.data("load_rig", rig=TASKS[task].get("rig", "sample"))
     ctx = TASKS[task]["setup"](lab)
     by = {t["name"]: t for t in lab.tools}
     allowed = [n for n in CONDITIONS[condition] if n in by]
@@ -125,7 +135,7 @@ def call(port, tool, args):
 
 
 def prompt(task, condition, port):
-    from tasks import TASKS
+    _c, TASKS = task_set(task)
     cmd = '"%s" "%s" call %d' % (sys.executable.replace("\\", "/"), os.path.abspath(__file__).replace("\\", "/"), port)
     return "\n\n".join([
         "You are taking part in a benchmark episode. " + SYSTEM,

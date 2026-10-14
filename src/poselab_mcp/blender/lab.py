@@ -33,7 +33,7 @@ def smooth(a, b, t):
 
 VIEW_RIGHT, VIEW_FWD, VIEW_UP = Vector((-1.0, 0.0, 0.0)), Vector((0.0, -1.0, 0.0)), Vector((0.0, 0.0, 1.0))
 H_FOV, ASPECT = 90.0, 16.0 / 9.0
-PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "snapshot",
+PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "turn_bone", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand")
@@ -486,6 +486,29 @@ class Lab:
             self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, W.to_quaternion(), self._unit()))
             self._roll_forearm(s)
         return {"hands_off_their_hold_cm": miss, "barrel_off_deg": round(self._barrel_off(), 2)}
+
+    def turn_bone(self, bone, axis, degrees, frame="gun"):
+        """One bone turned by degrees about an axis through its head; the bones below it follow, nothing else moves.
+        axis: a direction in the frame (gun, arms or view). The two signs turn opposite ways."""
+        self._need()
+        n = self._bone(bone)
+        if n == self.names["gun"]:
+            raise ValueError("turn the rifle with move_gun, not turn_bone")
+        a = Vector(_xyz(axis, "axis"))
+        if a.length < 1e-9:
+            raise ValueError("the axis has no length")
+        if frame == "gun":
+            d = self._gun().to_quaternion() @ ue(a)
+        elif frame == "arms":
+            d = ue(a)
+        elif frame == "view":
+            d = VIEW_RIGHT * a.x + VIEW_FWD * a.y + VIEW_UP * a.z
+        else:
+            raise ValueError("frame must be gun, arms or view")
+        head = self._bw(n).translation.copy()
+        self._turn_about(n, d.normalized(), float(degrees), head)
+        # no positions in the reply: a pose tool that answered where a joint sits would be a measuring tool
+        return {"bone": n, "degrees": float(degrees), "axis": r2(Vector(a).normalized(), 3), "frame": frame}
 
     def reach(self, side, target, frame="gun", pole=None):
         """A wrist to a point by arm IK; the hand keeps its turn. pole: where the elbow points (arms frame, cm)."""

@@ -27,6 +27,7 @@ goal in 0 of 60 samples, and turning and moving met every goal in 9 s.
 | `pose_idle`, `pose_clip`, `move_part`, `snapshot` | put the rig in a pose: a clip at a time, the carrier drawn back, saved poses |
 | `move_gun` | roll, swing, pitch and move the rifle; the hands keep their hold by arm IK |
 | `reach` | a wrist onto a point by arm IK (try elbow poles to clear a forearm) |
+| `turn_bone` | one bone turned about an axis through its head: a finger joint, a wrist, a whole arm |
 | `where`, `distance` | positions in a named frame |
 | `clearance` | how deep the rifle sits inside a forearm, palm or finger, measured to its surface, and where |
 | `anatomy` | each arm against the human arm's limits: elbow, wrist and each finger joint, and every rule a pose breaks |

@@ -91,6 +91,15 @@ def reach(side: Side, target: Point, frame: Frame = "gun",
 
 
 @mcp.tool()
+def turn_bone(bone: str, axis: Annotated[list[float], Field(description="[x, y, z]: the axis's direction in the frame")],
+              degrees: float, frame: Frame = "gun") -> dict:
+    """Turns one bone by degrees about an axis through its head; the bones below it follow and nothing else moves. Use
+    it to bend or straighten a finger joint, turn a wrist, or turn a whole arm at the shoulder. bone: a bone's name (an
+    unknown name lists them all). The two signs of degrees turn opposite ways. The rifle does not move: use move_gun."""
+    return worker.call("turn_bone", bone=bone, axis=axis, degrees=degrees, frame=frame)
+
+
+@mcp.tool()
 def snapshot(action: Literal["save", "load"], name: str) -> dict:
     """Saves or loads a named pose (the arms and the rifle's parts)."""
     return worker.call("snapshot", action=action, name=name)
