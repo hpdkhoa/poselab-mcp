@@ -116,7 +116,13 @@ Each finger segment's palm side is the side it curls toward. The thumb's pad fac
 toward the palm side's depth only. The reply gives each hand's `touching` (some part within `hold_within_cm`),
 `holding` (touching, the palm facing the rifle and its surface within `palm_within_cm`), `palm_gap_cm`,
 `palm_faces_rifle`, `palm_contact_cm`, `back_contact_cm`, where the back contact is, and `bad`. With `hold` true, a hand
-that is not holding breaks a rule. `solve` takes `{"type": "grip"}` as a goal and `scan_clip` as a check. On the sample
+that is not holding breaks a rule.
+
+A hand meant to hold a part (a magazine, a grip) must also pinch it: with `grasp` true, the thumb and a finger must
+touch it (skin within `contact_cm`, 0.3) from opposite sides, their directions from its surface at least
+180 - 2 atan(`friction`) degrees apart (127 at friction 0.5). The reply gives `grasping`, `grasp_opposition_deg` and
+`digits_touching`. A hand resting on the rifle, or one that hooks a handle, is not meant to pinch: leave `grasp` off.
+`solve` takes `{"type": "grip"}` as a goal and `scan_clip` as a check. On the sample
 rig, a hand turned 180 degrees about its forearm fails it. So does the idle grip: the left thumb sits 2.8 cm inside the
 handguard, the right palm presses 1.2 cm into the pistol grip, and the trigger finger's back sits 0.8 cm inside the
 trigger guard. The sample stays as it is, so the benchmark's numbers keep their meaning.

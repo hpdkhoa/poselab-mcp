@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0
+
+Whether a hand really holds a part, from the paper "Measure, don't judge" (2026-10-14): a review by eye rejected
+ToangTown's M24 magazine hold because the thumb does not wrap the magazine, and no rule saw it.
+
+* `grip` takes `grasp`: a hand meant to hold a part must pinch it between the thumb and a finger (an antipodal grasp).
+  A digit touches when its skin is within `contact_cm` (0.3) of the rifle; the thumb and a touching finger grasp
+  when their directions from the rifle's surface are at least 180 - 2 atan(`friction`) degrees apart (127 at the
+  default 0.5, skin on metal or polymer). Every reply now gives each hand's `grasping`, `grasp_opposition_deg` (the
+  widest thumb to finger angle) and `digits_touching`. On the M24 hold the thumb and three fingers touch the
+  magazine 52 degrees apart: not a grasp.
+* PoseFault: bases whose hand is meant to hold a part get the grasp rule and two faults, `thumb_off` and
+  `fingers_open` (30, 45, 60 degrees); a new base, ToangTown's AK empty reload at 2.4 s, right hand on the grip.
+  `generate.py --bases` adds a base to a set without making the others again.
+
 ## 0.5.0
 
 Tools for fixing a hold for good, from ToangTown's weapon audit (2026-10-13): on its AK-47 the left palm was on the
