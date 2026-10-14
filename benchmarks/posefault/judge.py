@@ -32,7 +32,12 @@ NAMED = {
     "middle_hyper": ("finger_hyperextended",),
     "palm_clip": ("hand_in_object",),
     "elbow_high": ("elbow_high",),
+    "thumb_off": ("other",),
+    "fingers_open": ("other",),
 }
+# The prompt has no grasp type (it stays as PoseFault v1 asked it). A grasp fault counts as named by an "other" fault
+# whose note speaks of the hold: one of these words (fixed 2026-10-14, before any answer on a grasp fault).
+GRASP_WORDS = ("grip", "grasp", "hold", "wrap", "thumb")
 PROMPT = """You review a pose for a first-person game: two arms hold a rifle. The four pictures show one pose from the
 player's eye, from the left, from the right and from the top. Check the {side_word} arm and hand only.
 
@@ -84,7 +89,8 @@ def parse(text):
     if not isinstance(ans, dict):
         return None
     faults = [f for f in ans.get("faults", []) if isinstance(f, dict)]
-    return {"faulty": bool(ans.get("faulty")) or bool(faults), "types": [str(f.get("type", "")).strip() for f in faults]}
+    return {"faulty": bool(ans.get("faulty")) or bool(faults), "types": [str(f.get("type", "")).strip() for f in faults],
+            "notes": [(str(f.get("type", "")).strip(), (str(f.get("where", "")) + " " + str(f.get("note", ""))).lower()) for f in faults]}
 
 
 def grade(labels, answers):
@@ -95,7 +101,11 @@ def grade(labels, answers):
             continue
         p = a.get("parsed")
         flagged = bool(p and p["faulty"])
-        named = bool(lab["faulty"] and p and any(t in NAMED[lab["fault"]] for t in p["types"]))
+        if lab["faulty"] and lab["fault"] in ("thumb_off", "fingers_open"):
+            notes = (parse(a.get("answer", "")) or {}).get("notes", [])
+            named = any(t == "other" and any(w in n for w in GRASP_WORDS) for t, n in notes)
+        else:
+            named = bool(lab["faulty"] and p and any(t in NAMED[lab["fault"]] for t in p["types"]))
         rows.append({"id": lab["id"], "fault": lab["fault"], "faulty": lab["faulty"], "flagged": flagged, "named": named,
                      "unparsed": p is None})
     by = defaultdict(lambda: [0, 0, 0])

@@ -2,6 +2,7 @@
 inside Blender, on Pose Lab's lab itself:
 
     blender -b --factory-startup -P benchmarks/posefault/generate.py -- <rigs file or ""> <output folder> [--no-render]
+        [--bases rig-clip-side,...]
 
 For each base (a rig, a clip or the idle grip, a time, a side), the script first measures the base with Pose Lab. A
 side that already breaks a rule is not used as a base: its report goes to bases.jsonl with used false. On each clean
@@ -25,6 +26,8 @@ RIGS = ARGS[0] if ARGS and ARGS[0] else None
 OUT = os.path.realpath(ARGS[1] if len(ARGS) > 1 else os.path.join(HERE, "out"))
 RENDER = "--no-render" not in ARGS
 VIEWS = ("eye", "left", "right", "top")
+# --bases a,b: only these bases (rig-clip-side), to add a base to a set without making the others again
+ONLY = set(ARGS[ARGS.index("--bases") + 1].split(",")) if "--bases" in ARGS else None
 
 # The bases: (rig, clip or "idle", seconds, sides). A rig missing from the rigs file is skipped.
 BASES = [
@@ -36,7 +39,13 @@ BASES = [
     ("ak", "check", 0.5, ("l", "r")),
     ("ak", "charge", 0.3, ("l", "r")),
     ("m24", "good", 0.0, ("l",)),
+    ("ak", "reload_empty", 2.4, ("r",)),
 ]
+
+# Bases whose hand is meant to hold a part: the grasp rule applies to them and the grasp faults are injected. In
+# ToangTown's AK reload the right hand stays on the grip while the left changes the magazine; in the M24 hold the left
+# hand holds the magazine. The check and charge hands rest on the rifle or hook a handle, which is not a pinch.
+GRASP_BASES = {"ak-reload_empty-r", "m24-good-l"}
 
 # The faults and their sizes. kind: the rule family a correct finding names (anatomy, grip, clearance). Each size sits
 # clearly past the working limit it breaks (wrist 30 off the forearm, twist 30, a middle joint 15 out of plane and 5
@@ -54,31 +63,36 @@ FAULTS = [
 ]
 # Small changes inside every limit: a finding on these is a false alarm.
 BENIGN = [("wrist_nudge", 8.0), ("index_curl", 8.0), ("hand_back", 0.3)]
+# The grasp faults (added 2026-10-14, after the eye check of PoseFault v1), on grasp bases only: the digits turned off
+# the part the hand should hold, so it is no longer pinched between the thumb and the fingers. thumb_off: the thumb
+# turned at its first joint about the hand's long axis, the way that takes its tip off the rifle. fingers_open: each
+# finger uncurled at its knuckle.
+GRASP_FAULTS = [("thumb_off", "grasp", (30.0, 45.0, 60.0)), ("fingers_open", "grasp", (30.0, 45.0, 60.0))]
 
 
-def clean_side(L, s):
+def clean_side(L, s, grasp=False):
     a = L.anatomy(side=s)
-    g = L.grip(side=s)
+    g = L.grip(side=s, grasp=grasp)
     c = L.clearance(parts=s, ignore=("index", "middle", "ring", "pinky", "thumb", "palm"))
     bad = list(a[s]["bad"]) + list(g[s]["bad"]) + (["forearm %.2f cm inside the rifle" % c["worst_cm"]] if c["worst_cm"] > 0.1 else [])
     return bad, {"anatomy": a[s], "grip": g[s], "forearm_clearance": c}
 
 
-def clean_up(L, s, max_pull_cm=2.0):
+def clean_up(L, s, max_pull_cm=2.0, grasp=False):
     """A base from a game pose that breaks rules: the hand's twist moved into the forearm, the wrist and fingers turned
     back inside their ranges (Pose Lab's own mend), then the hand pulled off the rifle 0.25 cm at a time, at most
     max_pull_cm, until the side passes. Returns (pull in cm, the rules still broken)."""
     L._roll_forearm(s)
     L._mend_hand(s)
     L._place_rifle()
-    bad, _ = clean_side(L, s)
+    bad, _ = clean_side(L, s, grasp)
     pull = 0.0
     while bad and pull < max_pull_cm - 1e-9:
         inject(L, s, "hand_back", 0.25)
         L._mend_hand(s)
         L._place_rifle()
         pull += 0.25
-        bad, _ = clean_side(L, s)
+        bad, _ = clean_side(L, s, grasp)
     return pull, bad
 
 
@@ -181,6 +195,21 @@ def inject(L, s, name, size):
         S = L._bw(L._n("upperarm", s)).translation
         L._two_bone(s, W + u * move, pole_world=E + (E - (S + W) / 2.0))
         keep_hand(L, s, H)
+    elif name == "thumb_off":
+        n = L._n("finger", s, "thumb", "01")
+        piv, M = L._bw(n).translation.copy(), L._bw(n).copy()
+        tried = []
+        for sg in (1.0, -1.0):
+            L._turn_about(n, long_, size * sg, piv)
+            _co, d = L._tree().nearest(L._tip("thumb", s))
+            tried.append((d if d is not None else -1.0, sg))
+            L._set_world(n, M)
+        L._turn_about(n, long_, size * max(tried)[1], piv)
+    elif name == "fingers_open":
+        for f in ("index", "middle", "ring", "pinky"):
+            n = L._n("finger", s, f, "01")
+            # - uncurls: the curl axis finger_turn uses (+ toward the palm)
+            L._turn_about(n, across * (-1.0 if s == "l" else 1.0), -size, L._bw(n).translation)
     elif name == "elbow_high":
         H = L._bw(hand).copy()
         G = L._gun()
@@ -223,12 +252,15 @@ def main():
             pose_base()
             base_frame = L._capture()
             for s in sides:
-                L._apply(base_frame)
-                game_bad, rep = clean_side(L, s)
-                pull, bad = (0.0, []) if not game_bad else clean_up(L, s)
-                side_frame = L._capture()
                 base_id = "%s-%s-%s" % (rig, clip, s)
-                bases_fh.write(json.dumps({"base": base_id, "rig": rig, "clip": clip, "seconds": sec, "side": s,
+                if ONLY is not None and base_id not in ONLY:
+                    continue
+                grasp = base_id in GRASP_BASES
+                L._apply(base_frame)
+                game_bad, rep = clean_side(L, s, grasp)
+                pull, bad = (0.0, []) if not game_bad else clean_up(L, s, grasp=grasp)
+                side_frame = L._capture()
+                bases_fh.write(json.dumps({"base": base_id, "rig": rig, "clip": clip, "seconds": sec, "side": s, "grasp": grasp,
                                            "game_pose_bad": game_bad, "mended": bool(game_bad), "pull_cm": pull,
                                            "used": not bad, "bad": bad, "game_report": rep}) + "\n")
                 bases_fh.flush()
@@ -239,14 +271,14 @@ def main():
                 if bad:
                     continue
                 common = {"base": base_id, "rig": rig, "clip": clip, "seconds": sec, "side": s, "mended": bool(game_bad),
-                          "pull_cm": pull}
+                          "pull_cm": pull, "grasp": grasp}
                 L._apply(side_frame)
                 save(L, base_id + "-clean", dict(common, fault=None, kind=None, size=None, faulty=False), labels_fh)
                 for name, size in BENIGN:
                     L._apply(side_frame)
                     inject(L, s, name, size)
                     save(L, "%s-%s" % (base_id, name), dict(common, fault=name, kind=None, size=size, faulty=False), labels_fh)
-                for name, kind, sizes in FAULTS:
+                for name, kind, sizes in FAULTS + (GRASP_FAULTS if grasp else []):
                     for size in sizes:
                         L._apply(side_frame)
                         inject(L, s, name, size)

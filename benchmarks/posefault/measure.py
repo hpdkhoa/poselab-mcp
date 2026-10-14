@@ -30,12 +30,17 @@ NAMES = {
     "middle_hyper": ("middle middle joint bent",),
     "palm_clip": ("inside the palm side", "inside the back", "inside the rifle"),
     "elbow_high": ("elbow",),
+    "thumb_off": ("does not grasp",),
+    "fingers_open": ("does not grasp",),
 }
+# the bases whose hand is meant to hold a part (generate.py GRASP_BASES): the grasp rule applies to them. A label from
+# generate.py says so itself; an older label (PoseFault v1) is looked up here.
+GRASP_BASES = {"ak-reload_empty-r", "m24-good-l"}
 
 
-def flags(L, s):
+def flags(L, s, grasp=False):
     a = L.anatomy(side=s)
-    g = L.grip(side=s)
+    g = L.grip(side=s, grasp=grasp)
     c = L.clearance(parts=s, ignore=("index", "middle", "ring", "pinky", "thumb", "palm"))
     out = list(a[s]["bad"]) + list(g[s]["bad"])
     if c["worst_cm"] > 0.1:
@@ -54,7 +59,7 @@ def main():
             loaded = lab_["rig"]
         with open(os.path.join(DIR, "poses", lab_["id"] + ".pose.json")) as fh:
             L._apply(json.load(fh)["frames"][0])
-        bad = flags(L, lab_["side"])
+        bad = flags(L, lab_["side"], lab_.get("grasp", lab_["base"] in GRASP_BASES))
         named = bool(lab_["faulty"]) and any(w in b.lower() for b in bad for w in NAMES[lab_["fault"]])
         rows.append({"id": lab_["id"], "fault": lab_["fault"], "faulty": lab_["faulty"], "size": lab_["size"],
                      "flagged": bool(bad), "named": named, "bad": bad})
