@@ -650,8 +650,46 @@ class Lab:
                         palm_cm, palm_seg = depth, name
         return near, palm_cm, palm_seg, back_cm, back_seg, back_pt
 
+    def _grasp(self, s, tree, contact_cm=0.3, friction=0.5):
+        """Whether the hand pinches the rifle between the thumb and a finger (an antipodal grasp): each digit's point
+        nearest the rifle (its two outer segments), touching when its skin is within contact_cm of the surface, and
+        the direction from the surface to it. Thumb and finger hold the part between them when those directions are
+        at least 180 - 2 atan(friction) degrees apart: each pad pushes inside its friction cone (skin on metal or
+        polymer, friction about 0.5: 127 degrees). Returns (grasping, the widest thumb to finger angle or None, the
+        digits touching)."""
+        need = 180.0 - 2.0 * math.degrees(math.atan(friction))
+        segs = {x[0]: x for x in self._segments(s)}
+        dirs = {}
+        for fi in FINGERS:
+            best = None
+            for j in (2, 3):
+                seg = segs.get("%s%d_%s" % (fi, j, s))
+                if seg is None:
+                    continue
+                _n, a, b, r = seg
+                n = max(2, int((b - a).length / 0.003))
+                for i in range(n + 1):
+                    p = a.lerp(b, i / n)
+                    q, d = tree.nearest(p)
+                    if q is None:
+                        continue
+                    gap = (d - r) * 100.0
+                    if best is None or gap < best[0]:
+                        u = (p - q) if d >= 0.0 else (q - p)
+                        best = (gap, u.normalized() if u.length > 1e-9 else None)
+            if best is not None and best[0] <= contact_cm and best[1] is not None:
+                dirs[fi] = best[1]
+        touching = sorted(dirs)
+        if "thumb" not in dirs:
+            return False, None, touching
+        angles = [math.degrees(dirs["thumb"].angle(v)) for f, v in dirs.items() if f != "thumb"]
+        if not angles:
+            return False, None, touching
+        top = max(angles)
+        return top >= need, round(top), touching
+
     def grip(self, side="both", back_max_cm=0.1, palm_max_cm=1.0, hold_within_cm=1.0, palm_within_cm=1.5, hold=False,
-             frame="gun"):
+             frame="gun", grasp=False, contact_cm=0.3, friction=0.5):
         """How each hand touches the rifle: the palm side or the back. A hand holds with its palm and the palm sides
         of its fingers; the rifle inside the back of the hand or the back of a finger is a physical error that
         clearance with palms and fingers ignored never shows. For each hand: palm_faces_rifle (the palm's direction
@@ -663,7 +701,10 @@ class Lab:
         contacts count toward the palm side only (its pad faces sideways). touching: some part of the hand within
         hold_within_cm. holding: touching, the palm facing the rifle and the palm's own surface within palm_within_cm of
         it (palm_gap_cm, below 0 pressed in); a fingertip on the rifle with the palm off it is touching, not holding.
-        hold true: a hand that is not holding breaks a rule."""
+        hold true: a hand that is not holding breaks a rule. grasping: the thumb and a finger pinch the rifle from
+        opposite sides (_grasp: each within contact_cm, their directions from the surface at least 180 - 2 atan(friction)
+        degrees apart; grasp_opposition_deg the widest thumb to finger angle, digits_touching the digits on the rifle).
+        grasp true: a hand that is not grasping breaks a rule (a hand meant to hold a part, not one resting on it)."""
         self._need()
         if side not in ("both", "l", "r"):
             raise ValueError("side must be both, l or r, got %r" % (side,))
@@ -691,6 +732,13 @@ class Lab:
                        "the palm faces away from it" if facing <= 0.0 else
                        "only the fingers touch it: the palm is %.1f cm off (at most %.1f)" % (palm_gap, palm_within_cm))
                 bad.append("does not hold the rifle: " + why)
+            grasping, opp, digits = self._grasp(s_, tree, contact_cm, friction)
+            if grasp and not grasping:
+                need = 180.0 - 2.0 * math.degrees(math.atan(friction))
+                why = ("the thumb is off it (more than %.1f cm)" % contact_cm if "thumb" not in digits else
+                       "no finger on it with the thumb" if opp is None else
+                       "the thumb and fingers do not oppose (%d degrees apart, at least %.0f)" % (opp, need))
+                bad.append("does not grasp the rifle: " + why)
             if palm_cm > palm_max_cm:
                 bad.append("rifle %.2f cm inside the palm side of %s (at most %.2f)" % (palm_cm, palm_seg, palm_max_cm))
             if back_cm > back_max_cm:
@@ -698,7 +746,8 @@ class Lab:
             rep_ = {"holding": holding, "touching": touching, "gap_cm": round(near, 2) if near is not None else None,
                     "palm_gap_cm": round(palm_gap, 2) if palm_gap is not None else None,
                     "palm_faces_rifle": round(facing, 2), "palm_contact_cm": round(palm_cm, 2),
-                    "back_contact_cm": round(back_cm, 2), "bad": bad}
+                    "back_contact_cm": round(back_cm, 2), "grasping": grasping, "grasp_opposition_deg": opp,
+                    "digits_touching": digits, "bad": bad}
             if back_seg:
                 rep_["back_contact"] = {"segment": back_seg, "rifle_point": r2(self._to(back_pt, frame), 1)}
             out[s_] = rep_

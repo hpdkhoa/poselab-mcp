@@ -138,7 +138,8 @@ def anatomy(side: Literal["both", "l", "r"] = "both", fingers: bool = True) -> d
 
 @mcp.tool()
 def grip(side: Literal["both", "l", "r"] = "both", back_max_cm: float = 0.1, palm_max_cm: float = 1.0,
-         hold_within_cm: float = 1.0, palm_within_cm: float = 1.5, hold: bool = False, frame: Frame = "gun") -> dict:
+         hold_within_cm: float = 1.0, palm_within_cm: float = 1.5, hold: bool = False, frame: Frame = "gun",
+         grasp: bool = False, contact_cm: float = 0.3, friction: float = 0.5) -> dict:
     """How each hand touches the rifle: with the palm or with the back. A hand holds with its palm and the palm sides of
     its fingers. The back of the hand toward the rifle, or the rifle inside the back of the hand or of a finger, is a
     physical error; clearance with palms and fingers ignored never shows it. For each hand: touching (some part within
@@ -148,9 +149,14 @@ def grip(side: Literal["both", "l", "r"] = "both", back_max_cm: float = 0.1, pal
     back_contact_cm (the deepest rifle point inside the hand on each side), and bad: every rule broken. ok false
     lists them. The palm side may press in up to palm_max_cm (the capsules are rounder than a palm); the back side
     only up to back_max_cm. hold true: a hand that is not holding breaks a rule (use it to check a hand really holds
-    something). Fix a wrong-side hold by turning the hand or the grip, not by moving a finger through the rifle."""
+    something). Fix a wrong-side hold by turning the hand or the grip, not by moving a finger through the rifle.
+    grasping: the thumb and a finger pinch the rifle from opposite sides, each within contact_cm of it and their
+    directions from its surface at least 180 - 2 atan(friction) degrees apart (127 at friction 0.5);
+    grasp_opposition_deg is the widest thumb to finger angle, digits_touching the digits on the rifle. grasp true: a
+    hand that is not grasping breaks a rule (use it for a hand meant to hold a part, such as a magazine)."""
     return worker.call("grip", side=side, back_max_cm=back_max_cm, palm_max_cm=palm_max_cm,
-                       hold_within_cm=hold_within_cm, palm_within_cm=palm_within_cm, hold=hold, frame=frame)
+                       hold_within_cm=hold_within_cm, palm_within_cm=palm_within_cm, hold=hold, frame=frame,
+                       grasp=grasp, contact_cm=contact_cm, friction=friction)
 
 
 @mcp.tool()
