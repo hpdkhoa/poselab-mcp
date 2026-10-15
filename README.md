@@ -1,8 +1,18 @@
-# Pose Lab
+<h1 align="center">Pose Lab</h1>
 
 <!-- mcp-name: io.github.hpdkhoa/poselab-mcp -->
 
-**Measured spatial answers for posing first-person arms and a rifle in Blender, over MCP.**
+<p align="center"><strong>Measured spatial answers for posing first-person arms and a rifle in Blender.</strong></p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="pyproject.toml"><img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776ab?logo=python&logoColor=white"></a>
+  <a href="https://pypi.org/project/poselab-mcp/"><img alt="PyPI: poselab-mcp" src="https://img.shields.io/pypi/v/poselab-mcp?label=PyPI&logo=pypi&logoColor=white&color=3775a9"></a>
+  <a href="https://registry.modelcontextprotocol.io/v0/servers?search=poselab-mcp"><img alt="MCP Registry: poselab-mcp" src="https://img.shields.io/badge/MCP%20Registry-poselab--mcp-6f42c1"></a>
+  <a href="https://www.blender.org/download/"><img alt="Blender: tested 5.2" src="https://img.shields.io/badge/Blender-tested%205.2-e87d0d?logo=blender&logoColor=white"></a>
+  <a href="#what-it-gives-a-model"><img alt="tools: 31" src="https://img.shields.io/badge/tools-31-orange"></a>
+  <a href="#benchmark"><img alt="PoseFault: benchmark" src="https://img.shields.io/badge/PoseFault-benchmark-orange"></a>
+</p>
 
 ![The built-in sample rig: four Blender views of first-person arms holding a rifle](https://raw.githubusercontent.com/hpdkhoa/poselab-mcp/main/docs/sample-rig.png)
 
