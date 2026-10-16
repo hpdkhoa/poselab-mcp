@@ -169,6 +169,25 @@ def grip(side: Literal["both", "l", "r"] = "both", back_max_cm: float = 0.1, pal
 
 
 @mcp.tool()
+def purpose(targets: Annotated[dict, Field(description='{"l": {"point": a rig point or [x, y, z], "act": "hold"|"pull"|"press"|"rest"|"reach", "within_cm": optional}, "r": {...}}')],
+            target_cm: float = 3.0, contact_cm: float = 0.3, friction: float = 0.5, curl_free_deg: float = 120.0,
+            free_gap_cm: float = 2.0, hook_curl_deg: float = 60.0, palm_within_cm: float = 1.5,
+            frame: Frame = "gun") -> dict:
+    """Whether each hand does something: every hand in an action holds, pulls, presses or rests on a part, or reaches
+    toward one, and a hand with no target breaks a rule. The part is the rifle's surface within target_cm of the point.
+    A target may give "within_cm" (the part's size around the point); a rig point on a moving part rides with it.
+    hold: the thumb and a finger pinch that part (grip's grasp rule kept to the part), or the hand wraps it (the palm
+    within palm_within_cm of it and two fingers hooked on it: a power grip). pull: a pinch, or a finger
+    hooked on it (its middle and end joints curled at least hook_curl_deg, its pad on the part). press: a digit touches
+    it. rest: some part of the hand touches it. reach: no contact yet. Every act: a finger curled more than
+    curl_free_deg over its three joints must have its pad within free_gap_cm of the rifle; a curl around nothing breaks
+    a rule. For each hand: target_gap_cm, digits_at_target, grasping, each finger's curl_total and pad_gap_cm, bad."""
+    return worker.call("purpose", targets=targets, target_cm=target_cm, contact_cm=contact_cm, friction=friction,
+                       curl_free_deg=curl_free_deg, free_gap_cm=free_gap_cm, hook_curl_deg=hook_curl_deg,
+                       palm_within_cm=palm_within_cm, frame=frame)
+
+
+@mcp.tool()
 def arm_ranges() -> dict:
     """The research behind anatomy's limits: for each joint of the arm (shoulder, elbow, forearm, wrist, finger
     knuckle, middle and end joints, thumb), the AAOS normal range (the 1965 table; tables_differ shows where other

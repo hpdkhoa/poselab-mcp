@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Every hand in an action has a target, from a review by eye of the repair pilot (2026-10-15): a repaired AK charge
+pose broke no rule, but its right hand pulled nothing and three of its fingers curled in the air.
+
+* `purpose`: each hand gets a target (a rig point or [x, y, z], an act, and the part's size around the point). hold:
+  a pinch (grip's grasp rule, kept to the part) or a wrap (the palm on the part and two fingers hooked on it). pull: a
+  pinch or a finger hooked on the part. press: a digit on it. rest: the hand on it. reach: no contact yet. A hand with
+  no target breaks a rule, and so does a finger curled more than 120 degrees over its three joints with its pad more
+  than 2 cm from the rifle, in every act. The grasp rule (`_grasp`) can now keep to the rifle's surface near a point.
+* A rig's `point_parts` ties a rig point to a moving part: a charging knob rides with the carrier.
+
 ## 0.7.0
 
 A posing tool both an agent with Pose Lab's checks and an agent with renders alone can use, for the repair pilot in

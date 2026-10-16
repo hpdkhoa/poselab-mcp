@@ -35,7 +35,7 @@ VIEW_RIGHT, VIEW_FWD, VIEW_UP = Vector((-1.0, 0.0, 0.0)), Vector((0.0, -1.0, 0.0
 H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "turn_bone", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
-          "where", "distance", "clearance", "anatomy", "grip", "faces_eye", "visible", "screen", "solve", "render",
+          "where", "distance", "clearance", "anatomy", "grip", "purpose", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
@@ -330,7 +330,10 @@ class Lab:
         if isinstance(p, str):
             pts = self.R.get("points", {})
             if p in pts:
-                return self._gun() @ ue(pts[p])
+                # a point on a moving part (the rig's "point_parts": a charging knob on the carrier) rides with it
+                part = self.R.get("point_parts", {}).get(p)
+                back = self.travel.get(part, 0.0) if part else 0.0
+                return self._gun() @ ue((pts[p][0], pts[p][1] - back, pts[p][2]))
             if "_tip_" in p:
                 f, side = p.split("_tip_")
                 return self._tip(f, side)
@@ -673,13 +676,14 @@ class Lab:
                         palm_cm, palm_seg = depth, name
         return near, palm_cm, palm_seg, back_cm, back_seg, back_pt
 
-    def _grasp(self, s, tree, contact_cm=0.3, friction=0.5):
+    def _grasp(self, s, tree, contact_cm=0.3, friction=0.5, near=None, near_cm=None):
         """Whether the hand pinches the rifle between the thumb and a finger (an antipodal grasp): each digit's point
         nearest the rifle (its two outer segments), touching when its skin is within contact_cm of the surface, and
         the direction from the surface to it. Thumb and finger hold the part between them when those directions are
         at least 180 - 2 atan(friction) degrees apart: each pad pushes inside its friction cone (skin on metal or
         polymer, friction about 0.5: 127 degrees). Returns (grasping, the widest thumb to finger angle or None, the
-        digits touching)."""
+        digits touching). near, near_cm: only the rifle's surface within near_cm of the point near counts (a hand that
+        must pinch one part, not the rifle anywhere)."""
         need = 180.0 - 2.0 * math.degrees(math.atan(friction))
         segs = {x[0]: x for x in self._segments(s)}
         dirs = {}
@@ -694,7 +698,7 @@ class Lab:
                 for i in range(n + 1):
                     p = a.lerp(b, i / n)
                     q, d = tree.nearest(p)
-                    if q is None:
+                    if q is None or (near is not None and (q - near).length * 100.0 > near_cm):
                         continue
                     gap = (d - r) * 100.0
                     if best is None or gap < best[0]:
@@ -776,6 +780,109 @@ class Lab:
             out[s_] = rep_
             out["ok"] = out["ok"] and not bad
         return out
+
+    # --- what each hand is for (0.8.0) ---------------------------------------------------------------------------
+    ACTS = ("hold", "pull", "press", "rest", "reach")
+
+    def purpose(self, targets, target_cm=3.0, contact_cm=0.3, friction=0.5, curl_free_deg=120.0, free_gap_cm=2.0,
+                hook_curl_deg=60.0, palm_within_cm=1.5, frame="gun"):
+        """Every hand in an action works on a target: it holds, pulls, presses or rests on a part, or reaches toward
+        one. targets: {"l": {"point": a rig point or [x, y, z], "act": hold|pull|press|rest|reach, "within_cm": the
+        part's reach from the point (default target_cm)}, "r": {...}}; a hand with no target breaks a rule. The part is
+        the rifle's surface within within_cm of the point; a rig point on a moving part rides with it. hold: the thumb
+        and a finger pinch that part (grip's grasp rule, kept to the part), or the hand wraps it: the palm within
+        palm_within_cm of it and two fingers hooked on it (a power grip on a pistol grip or a handguard). pull: a pinch, or a hook: a finger whose
+        middle and end joints curl at least hook_curl_deg together with its pad on the part (a charging handle pulled
+        with two fingers, no thumb). press: a digit touches it (within
+        contact_cm). rest: some part of the hand touches it. reach: no contact yet. Every act: a finger (index to
+        pinky) curled more than curl_free_deg in all (its three joints) must have its pad within free_gap_cm of the
+        rifle; a curl around nothing breaks a rule (a hand reaching to grasp opens, it does not keep a fist). For each
+        hand: target_gap_cm (the hand's skin to the point), digits_at_target, grasping, fingers (curl_total, pad_gap_cm),
+        and bad."""
+        self._need()
+        if not isinstance(targets, dict):
+            raise ValueError('targets: {"l": {"point": ..., "act": ...}, "r": {...}}')
+        tree = self._tree()
+        _L, FL = self._limits()
+        need = 180.0 - 2.0 * math.degrees(math.atan(friction))
+        out = {"ok": True}
+        for s_ in ("l", "r"):
+            t = targets.get(s_)
+            bad, rep_ = [], {}
+            segs = [x for x in self._segments(s_) if not x[0].startswith("forearm")]
+            if t is not None:
+                act = t.get("act")
+                if act not in self.ACTS:
+                    raise ValueError("act must be one of %s, got %r" % (", ".join(self.ACTS), act))
+                name = t.get("point")
+                within = float(t.get("within_cm", target_cm))
+                p = self._point(name, frame)
+                label = ("the " + name) if isinstance(name, str) else "the point %s" % (list(name),)
+                gap = min(self._seg_point_cm(a, b, r, p) for _n, a, b, r in segs)
+                grasping, opp, digits = self._grasp(s_, tree, contact_cm, friction, near=p, near_cm=within)
+                rest = any(g is not None and g <= contact_cm for g in
+                           (self._seg_gap(tree, a, b, r, p, within) for _n, a, b, r in segs))
+                curls0, _b0, _p0 = self._finger_report(s_, FL)
+                hooks = [fi for fi in ("index", "middle", "ring", "pinky") if fi in digits
+                         and curls0["%s_02" % fi][0] + curls0["%s_03" % fi][0] >= hook_curl_deg]
+                palm = [self._seg_gap(tree, a, b, r, p, within) for n, a, b, r in segs if n == "palm_" + s_]
+                palm_gap = palm[0] if palm and palm[0] is not None else None
+                wrapping = palm_gap is not None and palm_gap <= palm_within_cm and len(hooks) >= 2
+                rep_.update({"target": name, "act": act, "target_gap_cm": round(gap, 2), "digits_at_target": digits,
+                             "grasping": grasping, "grasp_opposition_deg": opp, "hooking": hooks, "wrapping": wrapping,
+                             "palm_gap_cm": None if palm_gap is None else round(palm_gap, 2)})
+                if act == "pull" and not grasping and not hooks:
+                    bad.append("does not pull %s: no pinch and no finger hooked on it (digits on it: %s; the hand's skin "
+                               "%.1f cm from it)" % (label, ", ".join(digits) or "none", gap))
+                elif act == "hold" and not grasping and not wrapping:
+                    pinch = ("the thumb is not on it" if "thumb" not in digits else
+                             "no finger on it with the thumb" if opp is None else
+                             "the thumb and fingers %d degrees apart (at least %.0f)" % (opp, need))
+                    wrap = "the palm %s, %d fingers hooked on it (2 needed)" % (
+                        "off it" if palm_gap is None else "%.1f cm from it (at most %.1f)" % (palm_gap, palm_within_cm), len(hooks))
+                    bad.append("does not hold %s: no pinch (%s) and no wrap (%s)" % (label, pinch, wrap))
+                elif act == "press" and not digits:
+                    bad.append("presses nothing at %s (no digit within %.1f cm of it; the hand %.1f cm away)"
+                               % (label, contact_cm, gap))
+                elif act == "rest" and not rest:
+                    bad.append("does not rest on %s (the hand %.1f cm from it)" % (label, gap))
+            else:
+                bad.append("has no target: every hand in an action holds, pulls, presses, rests on or reaches for a part")
+            curls, _b, _pl = self._finger_report(s_, FL)
+            fingers = {}
+            for fi in ("index", "middle", "ring", "pinky"):
+                total = sum(curls["%s_%s" % (fi, j)][0] for j in ("01", "02", "03"))
+                pads = [self._seg_gap(tree, a, b, r) for n, a, b, r in segs if n in ("%s2_%s" % (fi, s_), "%s3_%s" % (fi, s_))]
+                pad = min(g for g in pads if g is not None) if any(g is not None for g in pads) else None
+                fingers[fi] = {"curl_total": total, "pad_gap_cm": None if pad is None else round(pad, 2)}
+                if total > curl_free_deg and pad is not None and pad > free_gap_cm:
+                    bad.append("%s curled %d around nothing (its pad %.1f cm from the rifle, at most %.1f)"
+                               % (fi, total, pad, free_gap_cm))
+            rep_.update({"fingers": fingers, "bad": bad})
+            out[s_] = rep_
+            out["ok"] = out["ok"] and not bad
+        return out
+
+    @staticmethod
+    def _seg_point_cm(a, b, r, p):
+        """The skin of a capsule (a to b, radius r) to the point p, cm."""
+        ab = b - a
+        t = 0.0 if ab.length_squared < 1e-12 else max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+        return ((a + ab * t) - p).length * 100.0 - r * 100.0
+
+    @staticmethod
+    def _seg_gap(tree, a, b, r, near=None, near_cm=None):
+        """The capsule's skin to the rifle's surface, cm (below 0 inside), sampled every 3 mm; with near, only the
+        surface within near_cm of that point counts. None when nothing counts."""
+        n = max(2, int((b - a).length / 0.003))
+        best = None
+        for i in range(n + 1):
+            q, d = tree.nearest(a.lerp(b, i / n))
+            if q is None or (near is not None and (q - near).length * 100.0 > near_cm):
+                continue
+            g = (d - r) * 100.0
+            best = g if best is None else min(best, g)
+        return best
 
     # --- the human arm's limits --------------------------------------------------------------------------------
     def _limits(self):

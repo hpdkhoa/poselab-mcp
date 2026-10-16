@@ -40,6 +40,7 @@ goal in 0 of 60 samples, and turning and moving met every goal in 9 s.
 | `turn_bone` | one bone turned about an axis through its head: a finger joint, a wrist, a whole arm |
 | `where`, `distance` | positions in a named frame |
 | `clearance` | how deep the rifle sits inside a forearm, palm or finger, measured to its surface, and where |
+| `purpose` | every hand works on a target: holds (pinch or wrap), pulls (pinch or hook), presses, rests on or reaches for a part; no finger curled around nothing |
 | `anatomy` | each arm against the human arm's limits: elbow, wrist and each finger joint, and every rule a pose breaks |
 | `grip` | how each hand touches the rifle: with the palm, not the back of the hand; whether the palm itself holds it; how deep on each side |
 | `arm_ranges` | the research behind those limits: each joint's AAOS range, its functional range, the value checked, and the sources |
