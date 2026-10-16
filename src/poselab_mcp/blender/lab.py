@@ -912,10 +912,11 @@ class Lab:
     def hand_presses(self, side, tree=None, glove_cm=0.0, allow_cm=0.2, palm_allow_cm=0.4, other=True, soft=None):
         """How far the hand presses past what is allowed, into the gun and into the other hand, the glove's thickness
         counted on every capsule: (penalty, the worst presses [(segment, what, excess cm)]). The palm may press
-        palm_allow_cm (it holds the gun); soft: {segment prefix: cm} a style allows; the forearm is left out."""
+        palm_allow_cm (it holds the gun); soft: {segment prefix: cm} a style allows. The forearm counts against the gun
+        (a hand over the slide must not lay its forearm on the gun), not against the other hand."""
         tree = tree or self._tree()
         g = glove_cm / 100.0
-        mine = [x for x in self._segments(side) if not x[0].startswith("forearm")]
+        mine = list(self._segments(side))
         theirs = [x for x in self._segments({"l": "r", "r": "l"}[side]) if not x[0].startswith("forearm")] if other else []
         pen, worst = 0.0, []
         for name, a, b, r in mine:
@@ -929,6 +930,8 @@ class Lab:
             if deep > allow:
                 pen += 2.0 * (deep - allow) + (deep - allow) ** 2        # a small press counts too
                 worst.append((name, "gun", round(deep - allow, 2)))
+            if name.startswith("forearm"):
+                continue
             # skin on skin gives: a hand may press the other 0.5 cm (the support palm on the firing fingers' tips, 0.8)
             skin = max(allow, 0.8 if name.startswith("palm") else 0.5)
             for oname, oa, ob, orr in theirs:
