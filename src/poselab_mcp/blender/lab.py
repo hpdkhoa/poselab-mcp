@@ -1158,6 +1158,8 @@ class Lab:
         fx = arm.get("wrist_flexion_deg", 0.0)
         over += max(0.0, fx - (Lm["wrist_flexion_deg"] - m)) + max(0.0, -fx - (Lm["wrist_extension_deg"] - m))
         fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, self._thumb_limits())[1])
+        # the grip's own rules (the back of the hand toward the gun, a back or palm too deep): what a gate checks
+        fbad += len(self.grip(side, hold=False).get(side, {}).get("bad", []))
         palm_off = 3.0 if pg is None else max(0.0, pg - 0.2)
         score = 25.0 * pen + 10.0 * palm_off + 0.15 * over + 2.0 * (fbad + len(arm_bad)) + 4.0 * short
         return score, {"press": round(pen, 3), "worst": worst, "palm_gap_cm": None if pg is None else round(pg, 2),
