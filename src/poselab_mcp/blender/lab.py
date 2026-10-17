@@ -46,7 +46,12 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
 ARM_LIMITS = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension_deg": 70.0, "wrist_radial_deg": 20.0,
               "wrist_ulnar_deg": 30.0, "elbow_bend_max_deg": 150.0, "elbow_bend_min_deg": 5.0, "elbow_under_shoulder_cm": 2.0,
               "wrist_twist_max_deg": 30.0, "pronation_deg": 80.0, "supination_deg": 80.0, "forearm_link_max_deg": 50.0,
-              "forearm_elbow_share": 0.1}
+              "forearm_elbow_share": 0.1,
+              # the shoulder (AAOS normal values): flexion 180, extension 60, horizontal adduction 135 from the side
+              # (45 across the body past straight ahead), horizontal abduction 45 behind the side, internal rotation
+              # 70, external 90; measured against the view (a first-person rig's camera rides the head)
+              "shoulder_flexion_deg": 180.0, "shoulder_extension_deg": 60.0, "shoulder_cross_body_deg": 45.0,
+              "shoulder_behind_deg": 45.0, "shoulder_internal_deg": 70.0, "shoulder_external_deg": 90.0}
 # Each finger joint, + curling toward the palm: the knuckle (MCP, "01"), the middle joint (PIP, "02"), the end joint
 # (DIP, "03"): (least curl, most curl, most out of the finger's own plane), degrees. Below the least curl a joint is
 # bent backward (hyperextended); out of its plane the finger is twisted. A rig's "finger_limits" entry overrides them.
@@ -1096,13 +1101,15 @@ class Lab:
                         break
                     self._set_world(n, M)
 
-    def close_hand(self, side, plan, tree=None, glove_cm=0.0, other=True, steps=12, from_pose=False):
+    def close_hand(self, side, plan, tree=None, glove_cm=0.0, other=True, steps=12, from_pose=False, rules=None):
         """The digits posed by a plan {"index": {"pose": "straight", "curl": [a, b, c]} | {"pose": "wrap",
         "max_curl": [a, b, c]} | {"pose": "rest"}, ..., "thumb": ...}: straight ones set, wrapped ones closed a step
         at a time until their skin (and glove) meets the gun or the other hand, a step into either taken back; then
         the joints mended back in range and into their fingers' planes. from_pose: each wrapped finger starts from
         its curl now (a hold already placed): opened a step at a time while it is in the gun or the other hand, else
-        closed until it meets either."""
+        closed until it meets either. rules: contact rules; a wrapped finger with a rule of its own closes to the
+        step that best meets that rule (its pad laid on its region), pressing no deeper than allowed, instead of
+        stopping at its first touch."""
         tree = tree or self._tree()
         _L, FL = self._limits()
         TL = self._thumb_limits()
@@ -1144,6 +1151,23 @@ class Lab:
                         t, gap = t2, g2
                 self._wraps[fi] = t
                 continue
+            mine = [r_ for r_ in (rules or []) if r_["patch"].split(":")[0] == fi]
+            if mine:
+                vv = self._gun_verts()
+                best_ = None
+                for k in range(0, steps + 1):
+                    c3 = [4.0 + (m - 4.0) * k / steps for m in f["max_curl"]]
+                    for j, c in zip(("01", "02", "03"), c3):
+                        self._set_curl(side, fi, j, c, FL)
+                    gap = self._digit_gap(side, fi, tree, glove_cm, other)
+                    err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] for r_ in mine)
+                    sc_ = err + 4.0 * max(0.0, -gap - 0.15)
+                    if best_ is None or sc_ < best_[0] - 1e-6:
+                        best_ = (sc_, k, c3)
+                for j, c in zip(("01", "02", "03"), best_[2]):
+                    self._set_curl(side, fi, j, c, FL)
+                self._wraps[fi] = best_[1] / steps
+                continue
             prev = [4.0, 4.0, 4.0]
             for j, c in zip(("01", "02", "03"), prev):
                 self._set_curl(side, fi, j, c, FL)
@@ -1162,7 +1186,9 @@ class Lab:
                 prev = c3
             self._wraps[fi] = done
         t = (plan or {}).get("thumb")
-        if t and t.get("pose") == "to" and t.get("to_world") is not None:
+        if t and t.get("pose") == "to" and t.get("to_world") is not None and t.get("via_world") is not None:
+            self._thumb_via(side, Vector(t["via_world"]), Vector(t["to_world"]), TL)
+        elif t and t.get("pose") == "to" and t.get("to_world") is not None:
             # the base turned toward the point (it moves freely within its rules); the knuckle and end joint bent
             # only in their hinges (a grid of bends, the one that brings the tip nearest); the base once more
             tgt = Vector(t["to_world"])
@@ -1228,6 +1254,33 @@ class Lab:
         for fi in ("index", "middle", "ring", "pinky"):
             if abs(rep_["%s_03" % fi][1]) > FL["03"][2]:
                 self._set_curl(side, fi, "03", 2.0, FL)
+
+    def _thumb_via(self, side, via, target, TL, rounds=24, step_deg=6.0):
+        """The thumb laid along a path, as it wraps a pistol's backstrap: its base joint turned (a few degrees at a
+        time) until its knuckle (the thumb's MCP) sits on the waypoint via; then its knuckle and end joint bent in
+        their hinges (a grid) and the base nudged so the tip comes nearest the target. Returns the distances left."""
+        n1 = self._n("finger", side, "thumb", "01")
+        n2 = self._n("finger", side, "thumb", "02")
+        for _ in range(rounds):
+            head = self._bw(n1).translation.copy()
+            a, b = self._bw(n2).translation - head, via - head
+            if a.length < 1e-6 or b.length < 1e-6:
+                break
+            ang = math.degrees(a.angle(b))
+            if ang < 0.5:
+                break
+            self._turn_about(n1, a.cross(b).normalized(), min(step_deg, ang), head)
+            bpy.context.view_layer.update()
+        best = None
+        for b2 in (-5.0, 5.0, 15.0, 25.0, 35.0, 45.0, 55.0):
+            for b3 in (-10.0, 0.0, 15.0, 30.0, 45.0, 60.0):
+                self._set_thumb_bend(side, b2, b3, TL)
+                dd = (self._finger_tip("thumb", side) - target).length
+                if best is None or dd < best[0]:
+                    best = (dd, b2, b3)
+        self._set_thumb_bend(side, best[1], best[2], TL)
+        bpy.context.view_layer.update()
+        return {"via_left_cm": round((self._bw(n2).translation - via).length * 100, 2), "tip_left_cm": round(best[0] * 100, 2)}
 
     def _thumb_to(self, side, target, tree, glove_cm=0.0, other=True, rounds=14, step_deg=8.0, joints=("03", "02", "01"),
                   guard=True):
@@ -1513,6 +1566,82 @@ class Lab:
         out["ok"] = out["ok"] and closed
         return out
 
+    def hold_chain(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, thumb_point=None, rounds=8,
+                   step_cm=0.5, step_deg=6.0, clavicle_max_deg=16.0):
+        """A hold's contact rules met down the arm, as a body does: the digits close toward their rules within their
+        joint ranges; where one still falls short (at its limit), the hand moves and turns a step (the wrist inside
+        its ranges, the forearm's roll, the elbow and the shoulder following by the arm's reach, the clavicle
+        lending up to clavicle_max_deg when the arm is at full stretch); a step is kept only when the rules' error,
+        the presses and the arm's and digits' rules broken all fall together. Steps halve when none helps.
+        Returns the error before and after, the steps taken, and which limits bind at the end."""
+        self._need()
+        tree = self._tree()
+        Lm, FL = self._limits()
+        hn = self._n("hand", side)
+
+        def settle():
+            self.close_hand(side, plan, tree, glove_cm, other, rules=rules)
+            if thumb_point is not None:
+                self._set_thumb_bend(side, 10.0, 6.0, self._thumb_limits())
+                self._thumb_to(side, Vector(thumb_point), tree, glove_cm, other, joints=("01",), guard=False)
+            vv = self._gun_verts()
+            err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
+                      for r_ in rules)
+            pen = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)[0]
+            arm, abad = self._arm_report(side, Lm)
+            fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, self._thumb_limits())[1])
+            return 8.0 * err + 25.0 * pen + 3.0 * (len(abad) + fbad), err, abad
+
+        def put(M):
+            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            cn = "clavicle_" + side
+            if cn in self.arm.pose.bones and self._arm_report(side, Lm)[0].get("elbow_bend_deg", 90.0) < Lm["elbow_bend_min_deg"] + 5.0:
+                # at full stretch the shoulder blade reaches too, a little at a time
+                C = self._bw(cn).translation
+                S = self._bw(self._n("upperarm", side)).translation
+                ax = (S - C).cross(M.translation - C)
+                if ax.length > 1e-9:
+                    for deg in (4.0, 8.0, 12.0, clavicle_max_deg):
+                        self._turn_about(cn, ax.normalized(), 4.0, C)
+                        bpy.context.view_layer.update()
+                        self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+                        if self._arm_report(side, Lm)[0].get("elbow_bend_deg", 90.0) >= Lm["elbow_bend_min_deg"] + 5.0:
+                            break
+            bpy.context.view_layer.update()
+
+        H = self._bw(hn).copy()
+        put(H)
+        sc0, e0, _b0 = settle()
+        best = (sc0, H)
+        st_cm, st_deg = step_cm, step_deg
+        taken = 0
+        axes = (Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)))
+        for _r in range(rounds * 4):
+            improved = False
+            P = best[1].translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
+            moves = [Matrix.Translation(a * (sg * st_cm / 100.0)) @ best[1] for a in axes for sg in (1.0, -1.0)]
+            moves += [Matrix.Translation(P) @ Quaternion(a, math.radians(sg * st_deg)).to_matrix().to_4x4() @ Matrix.Translation(-P) @ best[1]
+                      for a in axes for sg in (1.0, -1.0)]
+            for M in moves:
+                self.snapshot("save", "_chain")
+                put(M)
+                sc, e, _b = settle()
+                if sc < best[0] - 1e-4:
+                    best = (sc, M)
+                    improved = True
+                    taken += 1
+                    self.snapshot("save", "_chain_best")
+                self.snapshot("load", "_chain")
+            if not improved:
+                st_cm, st_deg = st_cm / 2.0, st_deg / 2.0
+                if st_cm < 0.06:
+                    break
+        put(best[1])
+        sc1, e1, abad = settle()
+        binds = list(abad) + self._finger_report(side, FL)[1] + self._thumb_report(side, self._thumb_limits())[1]
+        return {"error_before": round(e0, 3), "error_after": round(e1, 3), "score_before": round(sc0, 2),
+                "score_after": round(sc1, 2), "steps": taken, "limits_at_end": binds[:6]}
+
     def thumb_search(self, side, point, glove_cm=0.0, other=True, frame="world", samples=220, refine=80, seed=3,
                      spread_deg=70.0, rule=None):
         """The thumb laid on a rest point (the firing thumb on the safety) by search: turns of its base joint within
@@ -1692,10 +1821,12 @@ class Lab:
         across, k = self._hand_frame(side)
         return (across.cross((mid - w).normalized()) * k).normalized()
 
-    def place_hand(self, side, anchors, facing=None, frame="world", facing_cm=3.0):
+    def place_hand(self, side, anchors, facing=None, frame="world", facing_cm=3.0, across=None):
         """The hand moved and turned as one rigid body so its named points (anchors: {web|knuckle|...: point}) land
         as close as they can on their points, and its palm faces facing (a direction), by a least-squares fit
-        (Kabsch). The arm reaches it. Returns each anchor's distance left (cm) and the reach short (cm)."""
+        (Kabsch). across: the way the line across the knuckles (little finger to index) should run, for a grip
+        the grip's own axis upward, so the fingers curl round it. The arm reaches it. Returns each anchor's
+        distance left (cm) and the reach short (cm)."""
         import numpy as np
         self._need()
         to_w = (lambda p: Vector(p)) if frame == "world" else (lambda p: self._point(p, frame))
@@ -1712,6 +1843,16 @@ class Lab:
             c1 = sum(dst, Vector()) / len(dst)
             src.append(c0 + self._palm_facing(side) * (facing_cm / 100.0))
             dst.append(c1 + fw * (facing_cm / 100.0))
+        if across is not None:
+            aw = Vector(across).normalized()
+            if frame == "gun":
+                aw = (self._gun().to_quaternion() @ ue(across)).normalized()
+            ah = self._hand_frame(side)[0]
+            c0 = sum(src, Vector()) / len(src)
+            c1 = sum(dst, Vector()) / len(dst)
+            for sg in (1.0, -1.0):
+                src.append(c0 + ah * (sg * facing_cm / 100.0))
+                dst.append(c1 + aw * (sg * facing_cm / 100.0))
         A = np.array([list(p) for p in src])
         Bm = np.array([list(p) for p in dst])
         ca, cb = A.mean(0), Bm.mean(0)
@@ -1764,7 +1905,8 @@ class Lab:
                 R = (Matrix.Translation((t1 * dx + t2 * dy + nrm * dz) / 100.0) @ Matrix.Translation(P0)
                      @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0)
                 short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
-                self.close_hand(side, plan, tree, glove_cm, other, from_pose=not anchors)
+                self.close_hand(side, plan, tree, glove_cm, other, from_pose=not anchors and not contact_rules,
+                                rules=contact_rules)
                 sc, why = self._hand_score(side, tree, glove_cm, other, soft, short)
                 if contact_rules:
                     vv_ = self._gun_verts()
@@ -2030,6 +2172,36 @@ class Lab:
                 if round(twist) > L["wrist_twist_max_deg"]:
                     bad.append("wrist twisted %.0f against the idle grip (at most %.0f): the hand's roll belongs to the forearm"
                                % (twist, L["wrist_twist_max_deg"]))
+        # the shoulder in its range, against the view's axes (right, forward, up); lat: the arm's own side
+        lat = VIEW_RIGHT if s == "r" else -VIEW_RIGHT
+        u = upper.normalized()
+        sf = math.degrees(math.atan2(u.dot(VIEW_FWD), -u.dot(VIEW_UP)))     # 0 hanging, 90 straight ahead, 180 up
+        rep_["shoulder_flexion_deg"] = round(sf)
+        if round(sf) > L["shoulder_flexion_deg"]:
+            bad.append("shoulder raised %.0f forward (at most %.0f)" % (sf, L["shoulder_flexion_deg"]))
+        if -round(sf) > L["shoulder_extension_deg"]:
+            bad.append("shoulder swung %.0f back (at most %.0f)" % (-sf, L["shoulder_extension_deg"]))
+        hz = Vector((u.dot(lat), u.dot(VIEW_FWD)))
+        if hz.length > 0.5:                       # the arm well off hanging: its swing in the horizontal plane means something
+            cross = math.degrees(math.atan2(-hz.x, hz.y))       # + across the body past straight ahead
+            rep_["shoulder_across_deg"] = round(cross)
+            if round(cross) > L["shoulder_cross_body_deg"]:
+                bad.append("upper arm %.0f across the body past straight ahead (at most %.0f)" % (cross, L["shoulder_cross_body_deg"]))
+            behind = math.degrees(math.atan2(-hz.y, hz.x))       # + behind the side
+            if round(behind) > L["shoulder_behind_deg"]:
+                bad.append("upper arm %.0f behind the side (at most %.0f)" % (behind, L["shoulder_behind_deg"]))
+        if bend >= 25.0:                          # the upper arm's own turn reads only with the elbow bent
+            ref = VIEW_FWD - u * VIEW_FWD.dot(u) if abs(u.dot(VIEW_FWD)) < 0.9 else VIEW_UP - u * VIEW_UP.dot(u)
+            fp = fore - u * fore.dot(u)
+            if ref.length > 1e-6 and fp.length > 1e-6:
+                ref, fp = ref.normalized(), fp.normalized()
+                rr = math.degrees(math.atan2(ref.cross(fp).dot(u), ref.dot(fp)))
+                internal = -rr if s == "r" else rr
+                rep_["shoulder_internal_rot_deg"] = round(internal)
+                if round(internal) > L["shoulder_internal_deg"]:
+                    bad.append("upper arm turned %.0f inward (at most %.0f)" % (internal, L["shoulder_internal_deg"]))
+                if -round(internal) > L["shoulder_external_deg"]:
+                    bad.append("upper arm turned %.0f outward (at most %.0f)" % (-internal, L["shoulder_external_deg"]))
         return rep_, bad
 
     # --- the forearm's roll, physically (0.4.0) ------------------------------------------------------------------
@@ -3509,7 +3681,14 @@ class Lab:
                 cam_data.angle = math.radians(40.0)
                 cam_data.clip_start = 0.01
                 cam.location = G @ ue(base + Vector(spots[v]))
-                zc = (cam.location - centre).normalized()
+                if ortho_cm:
+                    # straight on, the frame centred on the hold (the hands are below the bore)
+                    drop = G.to_quaternion() @ Vector((0.0, 0.0, -0.05))
+                    centre_v = centre + drop
+                    cam.location = cam.location + drop
+                else:
+                    centre_v = centre
+                zc = (cam.location - centre_v).normalized()
                 upv = G.to_quaternion() @ Vector((0.0, 0.0, 1.0))
                 if abs(upv.dot(zc)) > 0.95:
                     upv = G.to_quaternion() @ Vector((0.0, -1.0, 0.0))
