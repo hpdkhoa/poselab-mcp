@@ -209,6 +209,55 @@ class Lab:
                            if self._n(p, s) in self.arm.pose.bones}
         return self.describe()
 
+    def _edit_skeleton(self, edits):
+        """A rig's bone edits on the skeleton that drives its mesh (the arms copy's skin got the same): the four
+        fingers' joints moved out from their knuckles along each finger by edits["finger"], then every finger and
+        thumb bone ridden out along the palm (wrist joint to middle knuckle) by edits["palm"]."""
+        a = self.arm
+        Bb = lambda n: a.matrix_world @ a.data.bones[n].head_local      # noqa: E731
+        fingers = ("index", "middle", "ring", "pinky")
+        parts_ = ("index", "middle", "ring", "pinky", "thumb")
+        fk, pk = float(edits.get("finger", 1.0)), float(edits.get("palm", 1.0))
+        prev = bpy.context.view_layer.objects.active
+        bpy.context.view_layer.objects.active = a
+        if abs(fk - 1.0) > 1e-6:
+            heads = {(fi, sd): Bb("%s_01_%s" % (fi, sd)) for sd in ("l", "r") for fi in fingers if "%s_01_%s" % (fi, sd) in a.data.bones}
+            bpy.ops.object.mode_set(mode="EDIT")
+            Mi = a.matrix_world.inverted()
+            for (fi, sd), h01 in heads.items():
+                h01l = Mi @ h01
+                for j in ("01", "02", "03"):
+                    eb = a.data.edit_bones.get("%s_%s_%s" % (fi, j, sd))
+                    if eb is None:
+                        continue
+                    roll = eb.roll
+                    eb.head = h01l + (eb.head - h01l) * fk
+                    eb.tail = h01l + (eb.tail - h01l) * fk
+                    eb.roll = roll
+            bpy.ops.object.mode_set(mode="OBJECT")
+        if abs(pk - 1.0) > 1e-6:
+            fr = {}
+            for sd in ("l", "r"):
+                if "hand_" + sd in a.data.bones:
+                    H0, K0 = Bb("hand_" + sd), Bb("middle_01_" + sd)
+                    fr[sd] = (H0, (K0 - H0).normalized(), (K0 - H0).length)
+            bpy.ops.object.mode_set(mode="EDIT")
+            Mi, Mw = a.matrix_world.inverted(), a.matrix_world
+            for eb in a.data.edit_bones:
+                bits = eb.name.split("_")
+                if bits[-1] not in fr or bits[0] not in parts_:
+                    continue
+                H0, ax, ln = fr[bits[-1]]
+                st = lambda q_: ax * (min(max((q_ - H0).dot(ax), 0.0), ln) * (pk - 1.0))     # noqa: E731
+                roll = eb.roll
+                h, t = Mw @ eb.head, Mw @ eb.tail
+                eb.head = Mi @ (h + st(h))
+                eb.tail = Mi @ (t + st(t))
+                eb.roll = roll
+            bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.context.view_layer.objects.active = prev
+        bpy.context.view_layer.update()
+
     def _load_files(self, R):
         folder = os.path.join(os.path.dirname(os.path.abspath(self.rigs_file)), R["folder"])
         self.folder = folder
@@ -228,6 +277,12 @@ class Lab:
             mesh.matrix_world = mw
             self.orphans = _adopt_orphans(mesh, old, self.arm)
             bpy.data.objects.remove(old)
+            edits = R.get("bone_edits")
+            if isinstance(edits, str):
+                with open(os.path.join(folder, edits), encoding="utf-8") as fh:
+                    edits = json.load(fh)
+            if edits:
+                self._edit_skeleton(edits)
             act = self.arm.animation_data.action
             self.sc.frame_set(int(act.frame_range[0]))
             bpy.context.view_layer.update()
@@ -2064,6 +2119,17 @@ class Lab:
         for pb in self.arm.pose.bones:
             pb.matrix_basis = Matrix.Identity(4)
         bpy.context.view_layer.update()
+        # the fingers straight, as the survey measures a hand (a rig's rest pose curls them a little: a hand then
+        # reads short along its own line)
+        FL = self._limits()[1]
+        for s_ in (("l", "r") if side == "both" else (side,)):
+            for fi in ("index", "middle", "ring", "pinky"):
+                for j in ("01", "02", "03"):
+                    try:
+                        self._set_curl(s_, fi, j, 0.0, FL)
+                    except Exception:
+                        pass
+        bpy.context.view_layer.update()
         try:
             return self._body_size(side, ranges)
         finally:
@@ -2091,6 +2157,8 @@ class Lab:
             m = {"upper_arm_cm": round((E - S).length * 100, 2), "forearm_cm": round((W - E).length * 100, 2)}
             mid = [p for p, g in mine if g.startswith("middle")]
             m["hand_length_cm"] = round(max(((p - W).dot(along) for p in mid), default=0.0) * 100, 2)
+            m["palm_cm"] = round((K - W).length * 100, 2)
+            m["finger_cm"] = round(max(((p - K).length for p, g in mine if g.startswith("middle_02") or g.startswith("middle_03")), default=0.0) * 100, 2)
             # at the knuckles: the hand's own skin within 0.6 cm of the knuckle line, thumb left out
             kn = [p for p, g in handv if abs((p - K).dot(along)) < 0.006 and (p - K).length < 0.08]
             if kn:

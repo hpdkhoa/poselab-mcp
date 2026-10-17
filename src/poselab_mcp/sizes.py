@@ -29,6 +29,9 @@ _STATS = {
     "handcircumference": {"male": [21.23, 1.02, 18.9, 19.5, 21.2, 23.0, 23.7], "female": [18.66, 0.88, 16.7, 17.3, 18.7, 20.2, 20.7]},
     "wristcircumference": {"male": [17.59, 0.90, 15.6, 16.2, 17.6, 19.1, 19.8], "female": [15.48, 0.78, 13.8, 14.2, 15.4, 16.8, 17.4]},
     "forearmcircumferenceflexed": {"male": [31.01, 2.20, 26.3, 27.5, 31.0, 34.8, 36.5], "female": [26.41, 1.85, 22.5, 23.5, 26.3, 29.6, 31.3]},
+    "palmlength": {"male": [11.65, 0.62, 10.3, 10.7, 11.6, 12.7, 13.3], "female": [10.87, 0.59, 9.6, 10.0, 10.8, 11.9, 12.4]},
+    # hand length minus palm length, per person: the middle finger from its base crease to its tip
+    "fingerlength": {"male": [7.68, 0.63, 6.3, 6.7, 7.7, 8.7, 9.2], "female": [7.24, 0.60, 5.9, 6.3, 7.2, 8.3, 8.7]},
 }
 
 # what body_size measures on a rig, against which survey measure, and the landmark allowance (cm: the rig's value
@@ -44,6 +47,14 @@ MEASURES = {
     "hand_length_cm": {"ansur": "handlength", "below": 0.0, "above": 1.5,
                        "rig": "the wrist joint's centre to the farthest skin of the middle finger, along the hand",
                        "why": "the survey starts at the wrist's skin crease, about 1 cm past the wrist joint's centre"},
+    "palm_cm": {"ansur": "palmlength", "shift": -1.0, "below": 1.0, "above": 1.0,
+                "rig": "the wrist joint's centre to the middle finger's knuckle joint",
+                "why": "the survey runs from the wrist's crease (about 1 cm past the wrist joint) to the finger's base crease "
+                       "(about 2 cm past the knuckle joint): a rig's palm reads about 1 cm shorter, give or take 1"},
+    "finger_cm": {"ansur": "fingerlength", "shift": 2.0, "below": 1.0, "above": 1.0,
+                  "rig": "the middle finger's knuckle joint to its farthest skin, the finger straight",
+                  "why": "the survey's finger (hand length less palm length) starts at the base crease, about 2 cm past "
+                         "the knuckle joint: a rig's finger reads about 2 cm longer, give or take 1"},
     "hand_breadth_cm": {"ansur": "handbreadth", "below": 0.0, "above": 0.0,
                         "rig": "the skin's width across the knuckles, index to little finger, thumb left out",
                         "why": "the same landmarks as the survey (metacarpale II to V)"},
@@ -67,7 +78,8 @@ def ranges(sex):
     out = {}
     for k, m in MEASURES.items():
         mean, sd, p1, p5, p50, p95, p99 = _STATS[m["ansur"]][sex]
-        out[k] = {"low": round(p1 - m["below"], 2), "high": round(p99 + m["above"], 2), "p1": p1, "p5": p5, "p50": p50,
+        sh = m.get("shift", 0.0)
+        out[k] = {"low": round(p1 + sh - m["below"], 2), "high": round(p99 + sh + m["above"], 2), "p1": p1, "p5": p5, "p50": p50,
                   "p95": p95, "p99": p99, "mean": mean, "sd": sd, "survey": m["ansur"], "rig": m["rig"], "why": m["why"]}
     return out
 
@@ -77,5 +89,5 @@ def human_sizes():
     landmark allowance and why, and the full citation."""
     return {"male": ranges("male"), "female": ranges("female"), "rule": "a measure is regular from the 1st to the 99th "
             "percentile of the character's sex, widened only by the stated landmark allowance",
-            "not_covered": ["palm thickness (held by the hand's circumference)", "finger widths and lengths"],
+            "not_covered": ["palm thickness (held by the hand's circumference)", "finger widths; only the middle finger's length"],
             "sources": SOURCES}
