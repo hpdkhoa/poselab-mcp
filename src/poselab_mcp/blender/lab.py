@@ -640,7 +640,8 @@ class Lab:
                 pts = [f(fi, "01"), f(fi, "02"), f(fi, "03"), self._tip(fi, side)]
                 rf = fit.get("finger_" + fi, RADIUS["finger"]) if fit else RADIUS["finger"]
                 for i in range(3):
-                    out.append(("%s%d_%s" % (fi, i + 1, side), pts[i], pts[i + 1], rf))
+                    ri = fit.get("seg_%s%d" % (fi, i + 1), rf) if fit else rf
+                    out.append(("%s%d_%s" % (fi, i + 1, side), pts[i], pts[i + 1], ri))
         return out
 
     def _fitted_radii(self):
@@ -711,10 +712,30 @@ class Lab:
                     vv = fd.cross(uu)
                     got.setdefault("finger_" + fi, []).append(
                         self._hull_perimeter([(r.dot(uu), r.dot(vv)) for r in ring]) / (2 * math.pi))
+                # each segment its own girth: the first (a finger's base, the thumb's thick thenar) is wider
+                a1 = B(self._n("finger", s_, fi, "01"))
+                for sg, (pa, pb) in (("1", (a1, a2)), ("2", (a2, a3))):
+                    d_ = (pb - pa)
+                    if d_.length < 1e-6:
+                        continue
+                    d_ = d_.normalized()
+                    c_ = pa.lerp(pb, 0.5)
+                    rg = [p - c_ - d_ * (p - c_).dot(d_) for p, g in mine
+                          if g.startswith("%s_0%s" % (fi, sg)) and abs((p - c_).dot(d_)) < 0.004
+                          and (p - c_ - d_ * (p - c_).dot(d_)).length < 0.035]
+                    if len(rg) >= 6:
+                        uu = d_.orthogonal().normalized()
+                        vv = d_.cross(uu)
+                        got.setdefault("seg_%s%s" % (fi, sg), []).append(
+                            self._hull_perimeter([(r.dot(uu), r.dot(vv)) for r in rg]) / (2 * math.pi))
         base = {"forearm_elbow": RADIUS["forearm"], "forearm_wrist": RADIUS["forearm"], "palm": RADIUS["palm"],
                 "palm_index": RADIUS["palm"], "palm_pinky": RADIUS["palm"]}
         base.update({"finger_" + fi: RADIUS["finger"] for fi in FINGERS})
-        return {k: (max(got[k]) if got.get(k) else v) for k, v in base.items()}
+        out = {k: (max(got[k]) if got.get(k) else v) for k, v in base.items()}
+        for k, v in got.items():
+            if k.startswith("seg_") and v:
+                out[k] = max(v)
+        return out
 
     class Surface:
         """The rifle's surface: the closest point on its faces and the signed distance to it, negative inside. The
@@ -1340,6 +1361,16 @@ class Lab:
             if abs(rep_["%s_03" % fi][1]) > FL["03"][2]:
                 self._set_curl(side, fi, "03", 2.0, FL)
 
+    def _thumb_flex(self, side, j, deg):
+        """The thumb's joint j bent deg degrees as a pure hinge: a turn of the bone about its own flexion axis (across
+        the bone and its pad side), in its own frame, so a roll set before stays."""
+        n = self._n("finger", side, "thumb", j)
+        axes = self._thumb_report(side, self._thumb_limits())[2]
+        ax = axes.get(j)
+        if ax is None or ax.length < 1e-6:
+            return
+        self._turn_about(n, ax.normalized(), deg, self._bw(n).translation.copy())
+
     def _thumb_via(self, side, via, target, TL, rounds=24, step_deg=6.0):
         """The thumb laid along a path, as it wraps a pistol's backstrap: its base joint turned (a few degrees at a
         time) until its knuckle (the thumb's MCP) sits on the waypoint via; then its knuckle and end joint bent in
@@ -1371,9 +1402,15 @@ class Lab:
             if roll:
                 self._turn_about(n1, axis, float(roll), head)
             bpy.context.view_layer.update()
+            n2_, n3_ = self._n("finger", side, "thumb", "02"), self._n("finger", side, "thumb", "03")
+            q2_, q3_ = self.arm.pose.bones[n2_].rotation_quaternion.copy(), self.arm.pose.bones[n3_].rotation_quaternion.copy()
             for b2 in (-5.0, 5.0, 15.0, 25.0, 35.0, 45.0, 55.0):
                 for b3 in (-10.0, 0.0, 15.0, 30.0, 45.0, 60.0):
-                    self._set_thumb_bend(side, b2, b3, TL)
+                    self.arm.pose.bones[n2_].rotation_quaternion = q2_
+                    self.arm.pose.bones[n3_].rotation_quaternion = q3_
+                    self._thumb_flex(side, "02", b2)
+                    self._thumb_flex(side, "03", b3)
+                    bpy.context.view_layer.update()
                     dd = (self._finger_tip("thumb", side) - target).length * 100.0
                     gap = self._digit_gap(side, "thumb", tree, 0.0, False)
                     rules = len(self._thumb_report(side, TL)[1])
@@ -1386,7 +1423,11 @@ class Lab:
         if best[1]:
             self._turn_about(n1, axis, float(best[1]), head)
         bpy.context.view_layer.update()
-        self._set_thumb_bend(side, best[2], best[3], TL)
+        n2_, n3_ = self._n("finger", side, "thumb", "02"), self._n("finger", side, "thumb", "03")
+        self.arm.pose.bones[n2_].rotation_quaternion = q2_
+        self.arm.pose.bones[n3_].rotation_quaternion = q3_
+        self._thumb_flex(side, "02", best[2])
+        self._thumb_flex(side, "03", best[3])
         bpy.context.view_layer.update()
         best = (best[4] / 100.0, best[2], best[3], best[1])
         self._last_via = {"via_left_cm": round((self._bw(n2).translation - via).length * 100, 2), "tip_left_cm": round(best[0] * 100, 2),
@@ -1466,8 +1507,9 @@ class Lab:
                 if not x:
                     continue
                 d = (x[2] - x[1]).normalized()
-                bn = self._n("finger", side, "thumb", "0" + j if len(j) == 1 else j)
-                pad = self._bw(bn).to_quaternion() @ self._thumb_pad_axis(side)
+                jj = "0" + j if len(j) == 1 else j
+                bn = self._n("finger", side, "thumb", jj)
+                pad = self._bw(bn).to_quaternion() @ self._thumb_pad_axis(side, jj)
                 pad = (pad - d * pad.dot(d))
                 pad = pad.normalized() if pad.length > 1e-9 else facing
                 add(x[1], x[2], x[3], (lambda d_, p_=pad: -p_) if kind == "back" else (lambda d_, p_=pad: p_))
@@ -1491,19 +1533,21 @@ class Lab:
         ev.to_mesh_clear()
         return BVHTree.FromPolygons(vs, ps) if ps else None, vs
 
-    def _thumb_pad_axis(self, side):
+    def _thumb_pad_axis(self, side, j="03"):
         """The thumb pad's direction in the thumb's end bone's own frame, found once on the idle pose: of the bone's
         six local axes, the one that points most toward the opposing fingers (the middle finger's middle joint), the
         pad of an opposable thumb facing them. It then turns with the bone, its roll included."""
         cache = getattr(self, "_tpa", None) or {}
-        if side in cache:
-            return cache[side]
+        if (side, j) in cache:
+            return cache[(side, j)]
         self.snapshot("save", "_tpa")
         self.pose_idle()
-        n3 = self._n("finger", side, "thumb", "03")
+        n3 = self._n("finger", side, "thumb", j)
         M = self._bw(n3)
-        c = M.translation.lerp(self._finger_tip("thumb", side), 0.5)
-        d = (self._finger_tip("thumb", side) - M.translation).normalized()
+        nxt = {"01": "02", "02": "03"}.get(j)
+        endp = self._bw(self._n("finger", side, "thumb", nxt)).translation if nxt else self._finger_tip("thumb", side)
+        c = M.translation.lerp(endp, 0.5)
+        d = (endp - M.translation).normalized()
         want = self._bw(self._n("finger", side, "middle", "02")).translation - c
         want = (want - d * want.dot(d)).normalized()
         q = M.to_quaternion()
@@ -1515,7 +1559,7 @@ class Lab:
                 best = (sc, ax)
         self.snapshot("load", "_tpa")
         bpy.context.view_layer.update()
-        cache[side] = best[1]
+        cache[(side, j)] = best[1]
         self._tpa = cache
         return best[1]
 
@@ -1925,7 +1969,8 @@ class Lab:
         for fi, done in (getattr(self, "_wraps", None) or {}).items():
             loose += max(0.0, 0.5 - done) * 2.0
             loose += min(2.0, max(0.0, self._digit_gap(side, fi, tree, glove_cm, other) - 0.3))
-        score = (25.0 * pen + 10.0 * palm_off + 0.15 * over + 2.0 * (fbad + len(arm_bad)) + 4.0 * short
+        # an arm past its range (wrist, elbow, shoulder, forearm roll) is all but forbidden: no contact pays for it
+        score = (25.0 * pen + 10.0 * palm_off + 0.15 * over + 2.0 * fbad + 20.0 * len(arm_bad) + 4.0 * short
                  + 6.0 * loose + 10.0 * centre_off)
         return score, {"press": round(pen, 3), "worst": worst, "palm_gap_cm": None if pg is None else round(pg, 2),
                        "wrist_over_deg": round(over, 1), "rules": fbad + len(arm_bad), "short_cm": round(short, 2),
@@ -2590,11 +2635,17 @@ class Lab:
         if round(palmar) < TL["cmc_palmar_min_deg"]:
             bad.append("thumb base %.0f behind the palm (at most %.0f)" % (-palmar, -TL["cmc_palmar_min_deg"]))
         flex = (palm - across).normalized()          # a thumb bends across the palm toward the little finger
+        ray = self.R.get("thumb_hinge") == "ray"
         for i, j in ((0, "02"), (1, "03")):
             a, c = (pts[i + 1] - pts[i]), (pts[i + 2] - pts[i + 1])
             if a.length < 1e-9 or c.length < 1e-9:
                 continue
             a, c = a.normalized(), c.normalized()
+            if ray:
+                # the hinge fixed in the thumb's own ray: the bend's way is the pad side of the bone before the
+                # joint, which turns with it (an opposed thumb rolls its hinges with its metacarpal)
+                pn = self._n("finger", s, "thumb", "0%d" % (i + 1))
+                flex = (self._bw(pn).to_quaternion() @ self._thumb_pad_axis(s, "0%d" % (i + 1))).normalized()
             f_perp = flex - a * flex.dot(a)
             if f_perp.length < 1e-6:
                 continue
