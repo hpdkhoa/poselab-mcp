@@ -561,13 +561,89 @@ class Lab:
                 continue
             b = lambda part: self._bw(self._n(part, side)).translation
             f = lambda fi, j: self._bw(self._n("finger", side, fi, j)).translation
-            out.append(("forearm_" + side, b("lowerarm"), b("hand"), RADIUS["forearm"]))
-            out.append(("palm_" + side, b("hand"), f("middle", "01"), RADIUS["palm"]))
+            fit = self._fitted_radii()
+            if fit:
+                # capsules fitted to the rig's own skin (fit_capsules): the forearm in two halves (it tapers to the
+                # wrist), the palm as three spokes from the wrist to the index, middle and little finger knuckles
+                # (one line down its middle left its sides untested), each finger its own girth
+                E, H = b("lowerarm"), b("hand")
+                out.append(("forearm_" + side, E, E.lerp(H, 0.5), fit["forearm_elbow"]))
+                out.append(("forearmw_" + side, E.lerp(H, 0.5), H, fit["forearm_wrist"]))
+                out.append(("palm_" + side, H, f("middle", "01"), fit["palm"]))
+                out.append(("palmi_" + side, H, f("index", "01"), fit["palm"]))
+                out.append(("palmp_" + side, H, f("pinky", "01"), fit["palm"]))
+            else:
+                out.append(("forearm_" + side, b("lowerarm"), b("hand"), RADIUS["forearm"]))
+                out.append(("palm_" + side, b("hand"), f("middle", "01"), RADIUS["palm"]))
             for fi in FINGERS:
                 pts = [f(fi, "01"), f(fi, "02"), f(fi, "03"), self._tip(fi, side)]
+                rf = fit.get("finger_" + fi, RADIUS["finger"]) if fit else RADIUS["finger"]
                 for i in range(3):
-                    out.append(("%s%d_%s" % (fi, i + 1, side), pts[i], pts[i + 1], RADIUS["finger"]))
+                    out.append(("%s%d_%s" % (fi, i + 1, side), pts[i], pts[i + 1], rf))
         return out
+
+    def _fitted_radii(self):
+        """The capsules' radii fitted to this rig's skin when its rigs entry asks (fit_capsules), measured once on
+        the rest pose: the forearm's mean radius at a quarter and three quarters of its length, the palm's half
+        thickness at its middle, each finger's half thickness at its middle segment (m). None when not asked."""
+        if not self.R.get("fit_capsules"):
+            return None
+        key = (self.rig, id(self.arm))
+        if getattr(self, "_fit", None) and self._fit[0] == key:
+            return self._fit[1]
+        self._fit = (key, {})                       # guards the measure against calling itself
+        self.snapshot("save", "_fit_caps")
+        for pb in self.arm.pose.bones:
+            pb.matrix_basis = Matrix.Identity(4)
+        bpy.context.view_layer.update()
+        try:
+            fit = self._measure_radii()
+        finally:
+            self.snapshot("load", "_fit_caps")
+            bpy.context.view_layer.update()
+        self._fit = (key, fit)
+        return fit
+
+    def _measure_radii(self):
+        pts = self._skin_points()
+        got = {}
+        for s_ in ("l", "r"):
+            B = lambda n: self._bw(n).translation     # noqa: E731
+            E, W = B(self._n("lowerarm", s_)), B(self._n("hand", s_))
+            K = B(self._n("finger", s_, "middle", "01"))
+            I, Pk = B(self._n("finger", s_, "index", "01")), B(self._n("finger", s_, "pinky", "01"))
+            mine = [(p, g) for p, g in pts if g.endswith("_" + s_)]
+            arm = [p for p, g in mine if g.startswith("lowerarm") or g.startswith("hand")]
+            d = (W - E).normalized()
+            u = d.orthogonal().normalized()
+            v2 = d.cross(u)
+            for name, t in (("forearm_elbow", 0.25), ("forearm_wrist", 0.75)):
+                cc = E.lerp(W, t)
+                sl = [p for p in arm if abs((p - cc).dot(d)) < 0.005 and ((p - cc) - d * (p - cc).dot(d)).length < 0.08]
+                if len(sl) >= 8:
+                    got.setdefault(name, []).append(self._hull_perimeter([((p - cc).dot(u), (p - cc).dot(v2)) for p in sl]) / (2 * math.pi))
+            along = (K - W).normalized()
+            across = (I - Pk) - along * (I - Pk).dot(along)
+            across.normalize()
+            nrm = across.cross(along).normalized()
+            pm = W.lerp(K, 0.5)
+            pt = [(p - pm).dot(nrm) for p, g in mine if (g.startswith("hand") or "metacarpal" in g)
+                  and abs((p - pm).dot(along)) < 0.006 and abs((p - pm).dot(across)) < 0.015]
+            if pt:
+                got.setdefault("palm", []).append((max(pt) - min(pt)) / 2)
+            for fi in FINGERS:
+                a2, a3 = B(self._n("finger", s_, fi, "02")), B(self._n("finger", s_, fi, "03"))
+                fd = (a3 - a2).normalized()
+                fc = a2.lerp(a3, 0.5)
+                ring = [p - fc - fd * (p - fc).dot(fd) for p, g in mine if g.startswith(fi) and abs((p - fc).dot(fd)) < 0.003]
+                if len(ring) >= 6:
+                    uu = fd.orthogonal().normalized()
+                    vv = fd.cross(uu)
+                    got.setdefault("finger_" + fi, []).append(
+                        self._hull_perimeter([(r.dot(uu), r.dot(vv)) for r in ring]) / (2 * math.pi))
+        base = {"forearm_elbow": RADIUS["forearm"], "forearm_wrist": RADIUS["forearm"], "palm": RADIUS["palm"]}
+        base.update({"finger_" + fi: RADIUS["finger"] for fi in FINGERS})
+        return {k: (max(got[k]) if got.get(k) else v) for k, v in base.items()}
 
     class Surface:
         """The rifle's surface: the closest point on its faces and the signed distance to it, negative inside. The
@@ -747,7 +823,8 @@ class Lab:
             co, _d = tree.nearest(centre)
             facing = palm_dir.normalized().dot((co - centre).normalized()) if co is not None and (co - centre).length > 1e-9 else 0.0
             # the palm's own surface: the capsule's skin on the palm side of its bone line
-            _pc, palm_d = tree.nearest(centre + palm_dir.normalized() * RADIUS["palm"]) if palm_dir.length > 1e-9 else (None, None)
+            _pr = (self._fitted_radii() or {}).get("palm", RADIUS["palm"])
+            _pc, palm_d = tree.nearest(centre + palm_dir.normalized() * _pr) if palm_dir.length > 1e-9 else (None, None)
             palm_gap = palm_d * 100.0 if palm_d is not None else None
             touching = near is not None and near <= hold_within_cm
             holding = touching and facing > 0.0 and palm_gap is not None and palm_gap <= palm_within_cm
@@ -1272,7 +1349,7 @@ class Lab:
         t1 = nrm.orthogonal().normalized()
         t2 = nrm.cross(t1).normalized()
         tree = self._tree()
-        thick = RADIUS["palm"] * 100.0 + glove_cm - 0.15
+        thick = (self._fitted_radii() or {}).get("palm", RADIUS["palm"]) * 100.0 + glove_cm - 0.15
         self.snapshot("save", "_solve_hand")
         hn0 = self._n("hand", side)
         H0 = self._bw(hn0).copy()
@@ -1429,18 +1506,25 @@ class Lab:
             cap = {}
             pm = W.lerp(K, 0.5)
             pt = [(p - pm).dot(nrm) for p, g in handv if abs((p - pm).dot(along)) < 0.006 and abs((p - pm).dot(across)) < 0.015]
+            fit = self._fitted_radii() or {}
             if pt:
-                cap["palm"] = round(((max(pt) - min(pt)) / 2 - RADIUS["palm"]) * 100, 2)
+                cap["palm"] = round(((max(pt) - min(pt)) / 2 - fit.get("palm", RADIUS["palm"])) * 100, 2)
             c = E.lerp(W, 0.5)
             fr = [((p - c) - d * (p - c).dot(d)).length for p in arm if abs((p - c).dot(d)) < 0.005]
             if fr:
-                cap["forearm"] = round((sum(sorted(fr)[-max(1, len(fr) // 10):]) / max(1, len(fr) // 10) - RADIUS["forearm"]) * 100, 2)
+                # the mean radius at the middle (the capsule halves meet there)
+                rf_ = (fit.get("forearm_elbow", RADIUS["forearm"]) + fit.get("forearm_wrist", RADIUS["forearm"])) / 2
+                cap["forearm"] = round((self._hull_perimeter([((p - c).dot(u), (p - c).dot(v2)) for p in arm
+                                                               if abs((p - c).dot(d)) < 0.005]) / (2 * math.pi) - rf_) * 100, 2)
             a2, a3 = B(self._n("finger", s_, "index", "02")), B(self._n("finger", s_, "index", "03"))
             fd = (a3 - a2).normalized()
             fc = a2.lerp(a3, 0.5)
-            fv = [((p - fc) - fd * (p - fc).dot(fd)).length for p, g in mine if g.startswith("index") and abs((p - fc).dot(fd)) < 0.003]
-            if fv:
-                cap["finger"] = round((max(fv) - RADIUS["finger"]) * 100, 2)
+            fv = [p - fc - fd * (p - fc).dot(fd) for p, g in mine if g.startswith("index") and abs((p - fc).dot(fd)) < 0.003]
+            if len(fv) >= 6:
+                uu = fd.orthogonal().normalized()
+                vv = fd.cross(uu)
+                cap["finger"] = round((self._hull_perimeter([(r.dot(uu), r.dot(vv)) for r in fv]) / (2 * math.pi)
+                                       - fit.get("finger_index", RADIUS["finger"])) * 100, 2)
             bad = []
             for k, val in m.items():
                 rg = (ranges or {}).get(k)
