@@ -1271,16 +1271,42 @@ class Lab:
                 break
             self._turn_about(n1, a.cross(b).normalized(), min(step_deg, ang), head)
             bpy.context.view_layer.update()
+        # the metacarpal's roll about its own line sets the plane the thumb's hinges bend in: each roll (the knuckle
+        # stays on the waypoint) with a grid of bends; the try whose tip comes nearest, clear of the gun and within
+        # the thumb's rules, stays
+        head = self._bw(n1).translation.copy()
+        M1 = self._bw(n1)
+        axis = (self._bw(n2).translation - head)
+        axis = axis.normalized() if axis.length > 1e-9 else Vector((0, 0, 1))
+        tree = self._tree()
         best = None
-        for b2 in (-5.0, 5.0, 15.0, 25.0, 35.0, 45.0, 55.0):
-            for b3 in (-10.0, 0.0, 15.0, 30.0, 45.0, 60.0):
-                self._set_thumb_bend(side, b2, b3, TL)
-                dd = (self._finger_tip("thumb", side) - target).length
-                if best is None or dd < best[0]:
-                    best = (dd, b2, b3)
-        self._set_thumb_bend(side, best[1], best[2], TL)
+        closest = None
+        for roll in range(-90, 91, 15):
+            self._set_world(n1, M1)
+            if roll:
+                self._turn_about(n1, axis, float(roll), head)
+            bpy.context.view_layer.update()
+            for b2 in (-5.0, 5.0, 15.0, 25.0, 35.0, 45.0, 55.0):
+                for b3 in (-10.0, 0.0, 15.0, 30.0, 45.0, 60.0):
+                    self._set_thumb_bend(side, b2, b3, TL)
+                    dd = (self._finger_tip("thumb", side) - target).length * 100.0
+                    gap = self._digit_gap(side, "thumb", tree, 0.0, False)
+                    rules = len(self._thumb_report(side, TL)[1])
+                    sc = dd + 6.0 * max(0.0, -gap - 0.05) + 10.0 * rules
+                    if best is None or sc < best[0]:
+                        best = (sc, roll, b2, b3, dd)
+                    if closest is None or dd < closest[0]:
+                        closest = (round(dd, 2), roll, b2, b3, round(gap, 2), self._thumb_report(side, TL)[1][:3])
+        self._set_world(n1, M1)
+        if best[1]:
+            self._turn_about(n1, axis, float(best[1]), head)
         bpy.context.view_layer.update()
-        return {"via_left_cm": round((self._bw(n2).translation - via).length * 100, 2), "tip_left_cm": round(best[0] * 100, 2)}
+        self._set_thumb_bend(side, best[2], best[3], TL)
+        bpy.context.view_layer.update()
+        best = (best[4] / 100.0, best[2], best[3], best[1])
+        self._last_via = {"via_left_cm": round((self._bw(n2).translation - via).length * 100, 2), "tip_left_cm": round(best[0] * 100, 2),
+                          "bend": [best[1], best[2]], "roll": best[3], "closest_try": closest}
+        return self._last_via
 
     def _thumb_to(self, side, target, tree, glove_cm=0.0, other=True, rounds=14, step_deg=8.0, joints=("03", "02", "01"),
                   guard=True):
@@ -1408,7 +1434,25 @@ class Lab:
         self._tpa = cache
         return best[1]
 
+    def _gun_key(self):
+        """A stamp of where the gun and its parts are: the rifle's place and its bones' turns."""
+        m = self.rifle_mesh.matrix_world
+        k = [round(x, 5) for row in m for x in row]
+        for pb in self.rifle_arm.pose.bones:
+            k.extend(round(x, 5) for row in pb.matrix_basis for x in row)
+        return hash(tuple(k))
+
     def _gun_verts(self):
+        key = self._gun_key()
+        c = getattr(self, "_gv_cache", None)
+        if c and c[0] == key:
+            return c[1]
+        vp = self._gun_verts_now()
+        self._gv_cache = (key, vp)
+        self._rb_cache = {}
+        return vp
+
+    def _gun_verts_now(self):
         dg = bpy.context.evaluated_depsgraph_get()
         ev = self.rifle_mesh.evaluated_get(dg)
         me = ev.to_mesh()
@@ -1424,8 +1468,15 @@ class Lab:
         point and the surface normal (world), whether the rule is met, and an error (0 when met)."""
         pts = self._patch_points(side, rule["patch"], glove_cm)
         vs, ps = verts or self._gun_verts()
-        sub = [ps[i] for i in rule["polys"] if i < len(ps)] if rule.get("polys") is not None else ps
-        bvh = BVHTree.FromPolygons(vs, sub) if sub else None
+        rk = (id(vs), rule.get("id"), len(rule.get("polys") or ()))
+        rbc = getattr(self, "_rb_cache", None)
+        if rbc is not None and rk in rbc:
+            bvh = rbc[rk]
+        else:
+            sub = [ps[i] for i in rule["polys"] if i < len(ps)] if rule.get("polys") is not None else ps
+            bvh = BVHTree.FromPolygons(vs, sub) if sub else None
+            if rbc is not None:
+                rbc[rk] = bvh
         if not pts or bvh is None:
             return {"id": rule.get("id"), "met": False, "error": 10.0, "why": "no patch or no region"}
         lo, hi = rule.get("gap_cm", [-0.05, 0.2])
@@ -1581,7 +1632,7 @@ class Lab:
 
         def settle():
             self.close_hand(side, plan, tree, glove_cm, other, rules=rules)
-            if thumb_point is not None:
+            if thumb_point is not None and not ((plan or {}).get("thumb") or {}).get("via_world"):
                 self._set_thumb_bend(side, 10.0, 6.0, self._thumb_limits())
                 self._thumb_to(side, Vector(thumb_point), tree, glove_cm, other, joints=("01",), guard=False)
             vv = self._gun_verts()
@@ -1796,7 +1847,8 @@ class Lab:
                        "loose": round(loose, 2), "wraps": {k: round(v, 2) for k, v in (getattr(self, "_wraps", None) or {}).items()}}
 
     def _anchor(self, side, name):
-        """A named point of the hand, in the world: web (between the thumb's base and the index knuckle), knuckle
+        """A named point of the hand, in the world: web (between the thumb's base and the index knuckle), thumb_cmc
+        (the thumb's base joint), knuckle
         (the middle finger's), index_knuckle, pinky_knuckle, wrist, thumb_tip, middle_tip, palm (its middle)."""
         B = lambda n: self._bw(n).translation      # noqa: E731
         f = lambda fi, j: B(self._n("finger", side, fi, j))    # noqa: E731
@@ -1804,6 +1856,8 @@ class Lab:
             return f("thumb", "01").lerp(f("index", "01"), 0.5)
         if name == "knuckle":
             return f("middle", "01")
+        if name == "thumb_cmc":
+            return f("thumb", "01")
         if name in ("index_knuckle", "pinky_knuckle"):
             return f(name.split("_")[0], "01")
         if name == "wrist":
