@@ -36,7 +36,8 @@ H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "turn_bone", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
-          "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size")
+          "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size", "place_hand",
+          "thumb_search")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -570,8 +571,8 @@ class Lab:
                 out.append(("forearm_" + side, E, E.lerp(H, 0.5), fit["forearm_elbow"]))
                 out.append(("forearmw_" + side, E.lerp(H, 0.5), H, fit["forearm_wrist"]))
                 out.append(("palm_" + side, H, f("middle", "01"), fit["palm"]))
-                out.append(("palmi_" + side, H, f("index", "01"), fit["palm"]))
-                out.append(("palmp_" + side, H, f("pinky", "01"), fit["palm"]))
+                out.append(("palmi_" + side, H, f("index", "01"), fit.get("palm_index", fit["palm"])))
+                out.append(("palmp_" + side, H, f("pinky", "01"), fit.get("palm_pinky", fit["palm"])))
             else:
                 out.append(("forearm_" + side, b("lowerarm"), b("hand"), RADIUS["forearm"]))
                 out.append(("palm_" + side, b("hand"), f("middle", "01"), RADIUS["palm"]))
@@ -631,6 +632,15 @@ class Lab:
                   and abs((p - pm).dot(along)) < 0.006 and abs((p - pm).dot(across)) < 0.015]
             if pt:
                 got.setdefault("palm", []).append((max(pt) - min(pt)) / 2)
+            # the palm's edges are thinner than its middle: each side spoke its own half thickness at its middle
+            for name, Kx in (("palm_index", I), ("palm_pinky", Pk)):
+                ax = (Kx - W).normalized()
+                cm_ = W.lerp(Kx, 0.5)
+                side_ = nrm.cross(ax).normalized()
+                pe = [(p - cm_).dot(nrm) for p, g in mine if (g.startswith("hand") or "metacarpal" in g)
+                      and abs((p - cm_).dot(ax)) < 0.006 and abs((p - cm_).dot(side_)) < 0.01]
+                if pe:
+                    got.setdefault(name, []).append((max(pe) - min(pe)) / 2)
             for fi in FINGERS:
                 a2, a3 = B(self._n("finger", s_, fi, "02")), B(self._n("finger", s_, fi, "03"))
                 fd = (a3 - a2).normalized()
@@ -641,7 +651,8 @@ class Lab:
                     vv = fd.cross(uu)
                     got.setdefault("finger_" + fi, []).append(
                         self._hull_perimeter([(r.dot(uu), r.dot(vv)) for r in ring]) / (2 * math.pi))
-        base = {"forearm_elbow": RADIUS["forearm"], "forearm_wrist": RADIUS["forearm"], "palm": RADIUS["palm"]}
+        base = {"forearm_elbow": RADIUS["forearm"], "forearm_wrist": RADIUS["forearm"], "palm": RADIUS["palm"],
+                "palm_index": RADIUS["palm"], "palm_pinky": RADIUS["palm"]}
         base.update({"finger_" + fi: RADIUS["finger"] for fi in FINGERS})
         return {k: (max(got[k]) if got.get(k) else v) for k, v in base.items()}
 
@@ -1152,8 +1163,21 @@ class Lab:
             self._wraps[fi] = done
         t = (plan or {}).get("thumb")
         if t and t.get("pose") == "to" and t.get("to_world") is not None:
+            # the base turned toward the point (it moves freely within its rules); the knuckle and end joint bent
+            # only in their hinges (a grid of bends, the one that brings the tip nearest); the base once more
+            tgt = Vector(t["to_world"])
             self._set_thumb_bend(side, 10.0, 6.0, TL)
-            self._thumb_to(side, Vector(t["to_world"]), tree, glove_cm, other, joints=("01",))
+            self._thumb_to(side, tgt, tree, glove_cm, other, joints=("01",), guard=False)
+            for _round in range(2):
+                best = None
+                for b2 in (0.0, 15.0, 30.0, 45.0):
+                    for b3 in (0.0, 20.0, 40.0, 60.0):
+                        self._set_thumb_bend(side, b2, b3, TL)
+                        dd = (self._finger_tip("thumb", side) - tgt).length
+                        if best is None or dd < best[0]:
+                            best = (dd, b2, b3)
+                self._set_thumb_bend(side, best[1], best[2], TL)
+                self._thumb_to(side, tgt, tree, glove_cm, other, joints=("01",), guard=False)
         elif t and t.get("pose") == "straight":
             self._set_thumb_bend(side, t["curl"][1], t["curl"][2], TL)
         elif t and t.get("pose") == "wrap":
@@ -1205,7 +1229,8 @@ class Lab:
             if abs(rep_["%s_03" % fi][1]) > FL["03"][2]:
                 self._set_curl(side, fi, "03", 2.0, FL)
 
-    def _thumb_to(self, side, target, tree, glove_cm=0.0, other=True, rounds=14, step_deg=8.0, joints=("03", "02", "01")):
+    def _thumb_to(self, side, target, tree, glove_cm=0.0, other=True, rounds=14, step_deg=8.0, joints=("03", "02", "01"),
+                  guard=True):
         """The thumb's tip brought to a rest point (the firing thumb on the safety): its joints, tip to base, each
         turned about its head toward the point by at most step_deg a round (cyclic coordinate descent); a turn that
         breaks a thumb rule, or puts the thumb deeper into the gun or the other hand, is undone. Returns the tip's
@@ -1228,13 +1253,67 @@ class Lab:
                 g0 = self._digit_gap(side, "thumb", tree, glove_cm, other)
                 self._turn_about(n, axis.normalized(), ang, head)
                 if (len(self._thumb_report(side, TL)[1]) > rules0
-                        or self._digit_gap(side, "thumb", tree, glove_cm, other) < min(g0, 0.0) - 0.05):
+                        or guard and self._digit_gap(side, "thumb", tree, glove_cm, other) < min(g0, 0.0) - 0.05):
                     self._set_world(n, M)
                     continue
                 moved = True
             if not moved:
                 break
         return (self._finger_tip("thumb", side) - target).length * 100.0
+
+    def thumb_search(self, side, point, glove_cm=0.0, other=True, frame="world", samples=220, refine=80, seed=3,
+                     spread_deg=70.0):
+        """The thumb laid on a rest point (the firing thumb on the safety) by search: turns of its base joint within
+        spread_deg of where it is, each with a few bends of its knuckle and end joint in their hinges; the try whose
+        tip lies nearest the point wins, while the thumb presses into the gun or the other hand no deeper than the
+        allowance (0.2 cm, glove counted) and breaks no thumb rule. Then refined round itself. Returns the tip's
+        distance left (cm), its gap to the gun (cm) and the rules broken."""
+        import random as _random
+        self._need()
+        rnd = _random.Random(seed)
+        tgt = Vector(point) if frame == "world" else self._point(point, frame)
+        tree = self._tree()
+        TL = self._thumb_limits()
+        n1 = self._n("finger", side, "thumb", "01")
+        head = self._bw(n1).translation.copy()
+        M0 = self._bw(n1)
+        bends = ((10.0, 6.0), (20.0, 15.0), (30.0, 30.0), (5.0, 40.0))
+
+        def score():
+            dd = (self._finger_tip("thumb", side) - tgt).length * 100.0
+            gap = self._digit_gap(side, "thumb", tree, glove_cm, other)
+            rules = len(self._thumb_report(side, TL)[1])
+            return dd + 6.0 * max(0.0, -gap - 0.05) + 10.0 * rules, dd, gap, rules
+
+        def put(q, b):
+            self._set_world(n1, M0)
+            R = Matrix.Translation(head) @ q.to_matrix().to_4x4() @ Matrix.Translation(-head) @ M0
+            self._set_world(n1, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
+            self._set_thumb_bend(side, b[0], b[1], TL)
+
+        def rand_q(deg):
+            ax = Vector((rnd.gauss(0, 1), rnd.gauss(0, 1), rnd.gauss(0, 1))).normalized()
+            return Quaternion(ax, math.radians(rnd.uniform(0.0, deg)))
+
+        best = None
+        for i in range(samples):
+            q = Quaternion() if i == 0 else rand_q(spread_deg)
+            for b in bends:
+                put(q, b)
+                sc = score()
+                if best is None or sc[0] < best[0][0]:
+                    best = (sc, q, b)
+        for _ in range(refine):
+            q = rand_q(12.0) @ best[1]
+            b = (best[2][0] + rnd.uniform(-8, 8), best[2][1] + rnd.uniform(-10, 10))
+            put(q, b)
+            sc = score()
+            if sc[0] < best[0][0]:
+                best = (sc, q, b)
+        put(best[1], best[2])
+        bpy.context.view_layer.update()
+        return {"left_cm": round(best[0][1], 2), "gap_cm": round(best[0][2], 2), "rules": best[0][3],
+                "bend": [round(x, 1) for x in best[2]]}
 
     def _thumb_base_clear(self, side, tree, glove_cm=0.0, other=True, steps=20):
         """The thumb's base joint turned, 3 degrees at a time about three axes, the way that opens the whole thumb's
@@ -1315,7 +1394,11 @@ class Lab:
         over += max(0.0, fx - (Lm["wrist_flexion_deg"] - m)) + max(0.0, -fx - (Lm["wrist_extension_deg"] - m))
         fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, self._thumb_limits())[1])
         # the grip's own rules (the back of the hand toward the gun, a back or palm too deep): what a gate checks
-        fbad += len(self.grip(side, hold=False).get(side, {}).get("bad", []))
+        _g = self.grip(side, hold=False).get(side, {})
+        fbad += len(_g.get("bad", []))
+        # and the palm's centre on the gun as the grip check measures it (holding needs it within 1.5 cm)
+        _pc = _g.get("palm_gap_cm")
+        centre_off = 3.0 if _pc is None else max(0.0, _pc - 1.2)
         palm_off = 3.0 if pg is None else max(0.0, pg - 0.2)
         # a hold holds: each finger the plan wraps closes at least half way round the gun and ends on it (a hand
         # standing beside the gun with its fingers straight touches nothing and presses nothing, yet holds nothing)
@@ -1324,13 +1407,77 @@ class Lab:
             loose += max(0.0, 0.5 - done) * 2.0
             loose += min(2.0, max(0.0, self._digit_gap(side, fi, tree, glove_cm, other) - 0.3))
         score = (25.0 * pen + 10.0 * palm_off + 0.15 * over + 2.0 * (fbad + len(arm_bad)) + 4.0 * short
-                 + 6.0 * loose)
+                 + 6.0 * loose + 10.0 * centre_off)
         return score, {"press": round(pen, 3), "worst": worst, "palm_gap_cm": None if pg is None else round(pg, 2),
                        "wrist_over_deg": round(over, 1), "rules": fbad + len(arm_bad), "short_cm": round(short, 2),
                        "loose": round(loose, 2), "wraps": {k: round(v, 2) for k, v in (getattr(self, "_wraps", None) or {}).items()}}
 
+    def _anchor(self, side, name):
+        """A named point of the hand, in the world: web (between the thumb's base and the index knuckle), knuckle
+        (the middle finger's), index_knuckle, pinky_knuckle, wrist, thumb_tip, middle_tip, palm (its middle)."""
+        B = lambda n: self._bw(n).translation      # noqa: E731
+        f = lambda fi, j: B(self._n("finger", side, fi, j))    # noqa: E731
+        if name == "web":
+            return f("thumb", "01").lerp(f("index", "01"), 0.5)
+        if name == "knuckle":
+            return f("middle", "01")
+        if name in ("index_knuckle", "pinky_knuckle"):
+            return f(name.split("_")[0], "01")
+        if name == "wrist":
+            return B(self._n("hand", side))
+        if name == "palm":
+            return B(self._n("hand", side)).lerp(f("middle", "01"), 0.5)
+        if name in ("thumb_tip", "middle_tip", "index_tip"):
+            return self._finger_tip(name.split("_")[0], side)
+        raise ValueError("no hand point %r" % name)
+
+    def _palm_facing(self, side):
+        hn = self._n("hand", side)
+        w = self._bw(hn).translation
+        mid = self._bw(self._n("finger", side, "middle", "01")).translation
+        across, k = self._hand_frame(side)
+        return (across.cross((mid - w).normalized()) * k).normalized()
+
+    def place_hand(self, side, anchors, facing=None, frame="world", facing_cm=3.0):
+        """The hand moved and turned as one rigid body so its named points (anchors: {web|knuckle|...: point}) land
+        as close as they can on their points, and its palm faces facing (a direction), by a least-squares fit
+        (Kabsch). The arm reaches it. Returns each anchor's distance left (cm) and the reach short (cm)."""
+        import numpy as np
+        self._need()
+        to_w = (lambda p: Vector(p)) if frame == "world" else (lambda p: self._point(p, frame))
+        tg = {k: to_w(v) for k, v in anchors.items()}
+        src, dst = [], []
+        for k, t in tg.items():
+            src.append(self._anchor(side, k))
+            dst.append(t)
+        if facing is not None:
+            fw = Vector(facing).normalized()
+            if frame == "gun":
+                fw = (self._gun().to_quaternion() @ ue(facing)).normalized()
+            c0 = sum(src, Vector()) / len(src)
+            c1 = sum(dst, Vector()) / len(dst)
+            src.append(c0 + self._palm_facing(side) * (facing_cm / 100.0))
+            dst.append(c1 + fw * (facing_cm / 100.0))
+        A = np.array([list(p) for p in src])
+        Bm = np.array([list(p) for p in dst])
+        ca, cb = A.mean(0), Bm.mean(0)
+        Hm = (A - ca).T @ (Bm - cb)
+        U, _S, Vt = np.linalg.svd(Hm)
+        dd = np.sign(np.linalg.det(Vt.T @ U.T))
+        D = np.diag([1.0, 1.0, dd])
+        Rm = Vt.T @ D @ U.T
+        R = Matrix([list(Rm[0]), list(Rm[1]), list(Rm[2])]).to_4x4()
+        T = Matrix.Translation(Vector(list(cb))) @ R @ Matrix.Translation(-Vector(list(ca)))
+        hn = self._n("hand", side)
+        M = T @ self._bw(hn)
+        short = self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+        bpy.context.view_layer.update()
+        left = {k: round((self._anchor(side, k) - t).length * 100.0, 2) for k, t in tg.items()}
+        return {"left_cm": left, "short_cm": round(short, 2)}
+
     def solve_hand(self, side, point, normal, plan=None, toward=None, glove_cm=0.0, frame="gun", span_cm=1.5,
-                   turn_deg=20.0, samples=40, refine=16, seed=1, other=True, soft=None, from_current=False, tilt_deg=None):
+                   turn_deg=20.0, samples=40, refine=16, seed=1, other=True, soft=None, from_current=False, tilt_deg=None,
+                   anchors=None, anchor_w=3.0):
         """The grasp solver: the hand placed on a hold as a whole. Around the palm laid on the point (facing into
         the surface's normal, its fingers toward the given way), places up to span_cm off along the surface and its
         normal and turns up to turn_deg about the normal (half that about the other two axes) are tried, the digits
@@ -1363,8 +1510,13 @@ class Lab:
                 R = (Matrix.Translation((t1 * dx + t2 * dy + nrm * dz) / 100.0) @ Matrix.Translation(P0)
                      @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0)
                 short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
-                self.close_hand(side, plan, tree, glove_cm, other, from_pose=True)
-                return self._hand_score(side, tree, glove_cm, other, soft, short)
+                self.close_hand(side, plan, tree, glove_cm, other, from_pose=not anchors)
+                sc, why = self._hand_score(side, tree, glove_cm, other, soft, short)
+                if anchors:
+                    off = {k: (self._anchor(side, k) - Vector(v)).length * 100.0 for k, v in anchors.items()}
+                    sc += anchor_w * sum(max(0.0, d - 0.5) for d in off.values())
+                    why = dict(why, anchors_cm={k: round(d, 2) for k, d in off.items()})
+                return sc, why
             n2 = (Quaternion(t1, math.radians(pa)) @ Quaternion(t2, math.radians(pb)) @ nrm).normalized()
             way = tw if tw is not None else None
             if way is not None:
@@ -2997,7 +3149,7 @@ class Lab:
         """Every check on a clip, as one summary a gate can store: the worst clearance (declared contacts in ignore) and
         when, the frames that break an arm or finger rule, the frames that break a grip rule (the back of a hand on the
         rifle, a palm pressed too deep), and for each side in hold_sides the frames its hand is not holding the rifle
-        (its palm on it and its thumb opposing its fingers on it).
+        (its palm on it, and its thumb opposing its fingers or two fingers wrapped onto it).
         sides: both, l or r (the side the clip is about: a magazine hold is the left hand's). rules: every distinct rule
         broken, with how many frames break it. Also each frame's numbers, for a table."""
         if sides not in ("both", "l", "r"):
@@ -3032,9 +3184,11 @@ class Lab:
             grip_bad += 1 if gb else 0
             row["grip_rules_broken"] = gb
             for s_ in hold_sides:
-                # holding: the palm on the gun facing it, and the thumb opposing the fingers on it (a palm laid flat
-                # on the gun with the fingers straight touches it but holds nothing)
-                held = g[s_]["holding"] and g[s_]["grasping"]
+                # holding: the palm on the gun facing it, and either the thumb opposing the fingers on it (a pinch)
+                # or two or more fingers wrapped onto it against the palm (a power grip, as a pistol is held); a
+                # palm laid flat on the gun with the fingers straight touches it but holds nothing
+                wrapped = [d for d in g[s_].get("digits_touching", []) if d != "thumb"]
+                held = g[s_]["holding"] and (g[s_]["grasping"] or len(wrapped) >= 2)
                 if not held:
                     not_holding[s_] += 1
                 row["holding_" + s_] = held
@@ -3044,9 +3198,11 @@ class Lab:
                 "anatomy_break_frames": breaks, "grip_break_frames": grip_bad, "not_holding_frames": not_holding,
                 "rules": dict(sorted(seen.items(), key=lambda kv: -kv[1])), "per_frame": per}
 
-    def render(self, views=("eye", "right", "left", "top"), size=(640, 360)):
+    def render(self, views=("eye", "right", "left", "top"), size=(640, 360), ortho_cm=None):
         """Renders the pose: eye is the player's camera (90 degrees, 5 cm near plane); right, left, top and front
-        look at the rifle from outside. Images go to the output folder."""
+        look at the rifle from outside. ortho_cm: those outside views straight on (orthographic), ortho_cm across,
+        so sizes compare true (a perspective view draws the hands, nearer the lens, bigger than the gun). Images go
+        to the output folder."""
         self._need()
         if not views:
             raise ValueError("views: at least one of eye, right, left, top, front")
@@ -3080,11 +3236,15 @@ class Lab:
         paths = []
         for v in views:
             if v == "eye":
+                cam_data.type = 'PERSP'
                 cam_data.angle = math.radians(H_FOV)
                 cam_data.clip_start = 0.05
                 cam.location = self.eye
                 cam.rotation_euler = VIEW_FWD.to_track_quat('-Z', 'Y').to_euler()
             elif v in spots:
+                cam_data.type = 'ORTHO' if ortho_cm else 'PERSP'
+                if ortho_cm:
+                    cam_data.ortho_scale = ortho_cm / 100.0
                 cam_data.angle = math.radians(40.0)
                 cam_data.clip_start = 0.01
                 cam.location = G @ ue(base + Vector(spots[v]))
