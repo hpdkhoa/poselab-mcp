@@ -1173,6 +1173,30 @@ class Lab:
             f = (plan or {}).get(fi)
             if not f or f.get("pose") == "rest":
                 continue
+            if f["pose"] == "posture":
+                # measured joint angles (a person's grasp); with a rule of its own the finger opens or closes up to
+                # tol degrees from them (the end joint two thirds as much) to meet it, pressing no deeper than allowed
+                base = list(f["curl"])
+                tol = float(f.get("tol", 15.0))
+                mine = [r_ for r_ in (rules or []) if r_["patch"].split(":")[0] == fi]
+                offs = [0.0] if not mine else [float(x) for x in range(-int(tol), int(tol) + 1, 5)]
+                best_ = None
+                vv = self._gun_verts() if mine else None
+                for dlt in offs:
+                    c3 = [base[0] + dlt, base[1] + dlt, base[2] + dlt * 2.0 / 3.0]
+                    for j, cc in zip(("01", "02", "03"), c3):
+                        self._set_curl(side, fi, j, cc, FL)
+                    if not mine:
+                        best_ = (0.0, c3)
+                        break
+                    gap = self._digit_gap(side, fi, tree, glove_cm, other)
+                    err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] for r_ in mine)
+                    sc_ = err + 4.0 * max(0.0, -gap - 0.15) + 0.01 * abs(dlt)
+                    if best_ is None or sc_ < best_[0]:
+                        best_ = (sc_, c3)
+                for j, cc in zip(("01", "02", "03"), best_[1]):
+                    self._set_curl(side, fi, j, cc, FL)
+                continue
             if f["pose"] == "straight":
                 for j, c in zip(("01", "02", "03"), f["curl"]):
                     self._set_curl(side, fi, j, c, FL)
@@ -1241,7 +1265,13 @@ class Lab:
                 prev = c3
             self._wraps[fi] = done
         t = (plan or {}).get("thumb")
-        if t and t.get("pose") == "to" and t.get("to_world") is not None and t.get("via_world") is not None:
+        if t and t.get("pose") == "posture":
+            # the measured bends (a person's thumb lies nearly straight along a pistol), then its base aimed so the
+            # tip comes to its rest point, a turn into the gun not taken
+            self._set_thumb_bend(side, t["curl"][1], t["curl"][2], TL)
+            if t.get("to_world") is not None:
+                self._thumb_to(side, Vector(t["to_world"]), tree, glove_cm, other, joints=("01",), guard=True)
+        elif t and t.get("pose") == "to" and t.get("to_world") is not None and t.get("via_world") is not None:
             self._thumb_via(side, Vector(t["via_world"]), Vector(t["to_world"]), TL)
         elif t and t.get("pose") == "to" and t.get("to_world") is not None:
             # the base turned toward the point (it moves freely within its rules); the knuckle and end joint bent
@@ -1663,7 +1693,7 @@ class Lab:
             if r_["need"] == "required" and not r_["met"]:
                 out["ok"] = False
         if wrap:
-            w = self._wrap((side,), wrap["polys"], glove_cm)
+            w = self._wrap(tuple(wrap.get("sides") or (side,)), wrap["polys"], glove_cm)
             out["wrap"] = {"share": round(w, 2), "min": wrap.get("min", 0.5), "met": w >= wrap.get("min", 0.5)}
             out["ok"] = out["ok"] and out["wrap"]["met"]
         tc = self._touches(tuple(closure_sides or (side,)), glove_cm)
@@ -1749,7 +1779,7 @@ class Lab:
                 "score_after": round(sc1, 2), "steps": taken, "limits_at_end": binds[:6]}
 
     def thumb_search(self, side, point, glove_cm=0.0, other=True, frame="world", samples=220, refine=80, seed=3,
-                     spread_deg=70.0, rule=None):
+                     spread_deg=70.0, rule=None, press_w=6.0):
         """The thumb laid on a rest point (the firing thumb on the safety) by search: turns of its base joint within
         spread_deg of where it is, each with a few bends of its knuckle and end joint in their hinges; the try whose
         tip lies nearest the point wins, while the thumb presses into the gun or the other hand no deeper than the
@@ -1772,7 +1802,7 @@ class Lab:
                 dd = 0.1 * dd + 10.0 * self._rule_eval(side, rule, glove_cm)["error"]   # the rule first, the point a guide
             gap = self._digit_gap(side, "thumb", tree, glove_cm, other)
             rules = len(self._thumb_report(side, TL)[1])
-            return dd + 6.0 * max(0.0, -gap - 0.05) + 10.0 * rules, dd, gap, rules
+            return dd + press_w * max(0.0, -gap - 0.05) + 10.0 * rules, dd, gap, rules
 
         def put(q, b):
             self._set_world(n1, M0)
@@ -1913,6 +1943,10 @@ class Lab:
             return f("middle", "01")
         if name == "thumb_cmc":
             return f("thumb", "01")
+        if name == "index_pip":
+            return f("index", "02")
+        if name == "middle_base":
+            return f("middle", "01").lerp(f("middle", "02"), 0.5)
         if name in ("index_knuckle", "pinky_knuckle"):
             return f(name.split("_")[0], "01")
         if name == "wrist":
