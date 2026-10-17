@@ -36,7 +36,7 @@ H_FOV, ASPECT = 90.0, 16.0 / 9.0
 PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_part", "move_gun", "reach", "turn_bone", "snapshot",
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
-          "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand")
+          "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -943,13 +943,16 @@ class Lab:
         worst.sort(key=lambda w: -w[2])
         return pen, worst[:4]
 
-    def _digit_gap(self, side, fi, tree, glove_cm=0.0, other=True):
-        """A digit's skin (and glove) to the nearest of the gun and the other hand, cm (below 0 when inside)."""
+    def _digit_gap(self, side, fi, tree, glove_cm=0.0, other=True, skip_base=False):
+        """A digit's skin (and glove) to the nearest of the gun and the other hand, cm (below 0 when inside).
+        skip_base: the knuckle's segment left out (curling cannot move it off the gun; the hand's place must)."""
         g = glove_cm / 100.0
         theirs = [x for x in self._segments({"l": "r", "r": "l"}[side]) if not x[0].startswith("forearm")] if other else []
         best = 99.0
         for name, a, b, r in self._segments(side):
             if not name.startswith(fi):
+                continue
+            if skip_base and name[len(fi):len(fi) + 1] == "1":
                 continue
             n = max(2, int((b - a).length / 0.004))
             for i in range(n + 1):
@@ -1005,14 +1008,17 @@ class Lab:
                         break
                     self._set_world(n, M)
 
-    def close_hand(self, side, plan, tree=None, glove_cm=0.0, other=True, steps=12):
+    def close_hand(self, side, plan, tree=None, glove_cm=0.0, other=True, steps=12, from_pose=False):
         """The digits posed by a plan {"index": {"pose": "straight", "curl": [a, b, c]} | {"pose": "wrap",
         "max_curl": [a, b, c]} | {"pose": "rest"}, ..., "thumb": ...}: straight ones set, wrapped ones closed a step
         at a time until their skin (and glove) meets the gun or the other hand, a step into either taken back; then
-        the joints mended back in range and into their fingers' planes."""
+        the joints mended back in range and into their fingers' planes. from_pose: each wrapped finger starts from
+        its curl now (a hold already placed): opened a step at a time while it is in the gun or the other hand, else
+        closed until it meets either."""
         tree = tree or self._tree()
         _L, FL = self._limits()
         TL = self._thumb_limits()
+        self._wraps = {}           # each wrapped digit: how far it closed (0 to 1 of its max) before it met something
         for fi in ("index", "middle", "ring", "pinky"):
             f = (plan or {}).get(fi)
             if not f or f.get("pose") == "rest":
@@ -1021,22 +1027,57 @@ class Lab:
                 for j, c in zip(("01", "02", "03"), f["curl"]):
                     self._set_curl(side, fi, j, c, FL)
                 continue
+            if from_pose:
+                rep0 = self._finger_report(side, FL)[0]
+                mx = f["max_curl"]
+                fr = [(rep0["%s_%s" % (fi, j)][0] - 4.0) / (m - 4.0) if abs(m - 4.0) > 1e-6 else 0.0
+                      for j, m in zip(("01", "02", "03"), mx)]
+                t = min(1.0, max(0.0, sum(fr) / 3.0))
+                at_t = lambda t_: [4.0 + (m - 4.0) * t_ for m in mx]      # noqa: E731
+                for j, c in zip(("01", "02", "03"), at_t(t)):
+                    self._set_curl(side, fi, j, c, FL)
+                gap = self._digit_gap(side, fi, tree, glove_cm, other, skip_base=True)
+                if gap < -0.1:
+                    while t > 0.0 and gap < -0.1:
+                        t = max(0.0, t - 1.0 / steps)
+                        for j, c in zip(("01", "02", "03"), at_t(t)):
+                            self._set_curl(side, fi, j, c, FL)
+                        gap = self._digit_gap(side, fi, tree, glove_cm, other, skip_base=True)
+                else:
+                    while t < 1.0 and gap > 0.05:
+                        t2 = min(1.0, t + 1.0 / steps)
+                        for j, c in zip(("01", "02", "03"), at_t(t2)):
+                            self._set_curl(side, fi, j, c, FL)
+                        g2 = self._digit_gap(side, fi, tree, glove_cm, other, skip_base=True)
+                        if g2 < -0.1:
+                            for j, c in zip(("01", "02", "03"), at_t(t)):
+                                self._set_curl(side, fi, j, c, FL)
+                            break
+                        t, gap = t2, g2
+                self._wraps[fi] = t
+                continue
             prev = [4.0, 4.0, 4.0]
             for j, c in zip(("01", "02", "03"), prev):
                 self._set_curl(side, fi, j, c, FL)
+            done = 1.0
             for k in range(1, steps + 1):
                 c3 = [4.0 + (m - 4.0) * k / steps for m in f["max_curl"]]
                 for j, c in zip(("01", "02", "03"), c3):
                     self._set_curl(side, fi, j, c, FL)
                 gap = self._digit_gap(side, fi, tree, glove_cm, other)
                 if gap <= 0.05:
+                    done = (k - (1 if gap < -0.1 else 0)) / steps
                     if gap < -0.1:
                         for j, c in zip(("01", "02", "03"), prev):
                             self._set_curl(side, fi, j, c, FL)
                     break
                 prev = c3
+            self._wraps[fi] = done
         t = (plan or {}).get("thumb")
-        if t and t.get("pose") == "straight":
+        if t and t.get("pose") == "to" and t.get("to_world") is not None:
+            self._set_thumb_bend(side, 10.0, 6.0, TL)
+            self._thumb_to(side, Vector(t["to_world"]), tree, glove_cm, other, joints=("01",))
+        elif t and t.get("pose") == "straight":
             self._set_thumb_bend(side, t["curl"][1], t["curl"][2], TL)
         elif t and t.get("pose") == "wrap":
             prev = (6.0, 4.0)
@@ -1086,6 +1127,37 @@ class Lab:
         for fi in ("index", "middle", "ring", "pinky"):
             if abs(rep_["%s_03" % fi][1]) > FL["03"][2]:
                 self._set_curl(side, fi, "03", 2.0, FL)
+
+    def _thumb_to(self, side, target, tree, glove_cm=0.0, other=True, rounds=14, step_deg=8.0, joints=("03", "02", "01")):
+        """The thumb's tip brought to a rest point (the firing thumb on the safety): its joints, tip to base, each
+        turned about its head toward the point by at most step_deg a round (cyclic coordinate descent); a turn that
+        breaks a thumb rule, or puts the thumb deeper into the gun or the other hand, is undone. Returns the tip's
+        distance left, cm."""
+        TL = self._thumb_limits()
+        rules0 = len(self._thumb_report(side, TL)[1])
+        for _ in range(rounds):
+            moved = False
+            for j in joints:
+                n = self._n("finger", side, "thumb", j)
+                head = self._bw(n).translation.copy()
+                a, b = self._finger_tip("thumb", side) - head, target - head
+                if a.length < 1e-6 or b.length < 1e-6:
+                    continue
+                axis = a.cross(b)
+                ang = min(step_deg, math.degrees(a.angle(b)))
+                if axis.length < 1e-9 or ang < 0.5:
+                    continue
+                M = self._bw(n)
+                g0 = self._digit_gap(side, "thumb", tree, glove_cm, other)
+                self._turn_about(n, axis.normalized(), ang, head)
+                if (len(self._thumb_report(side, TL)[1]) > rules0
+                        or self._digit_gap(side, "thumb", tree, glove_cm, other) < min(g0, 0.0) - 0.05):
+                    self._set_world(n, M)
+                    continue
+                moved = True
+            if not moved:
+                break
+        return (self._finger_tip("thumb", side) - target).length * 100.0
 
     def _thumb_base_clear(self, side, tree, glove_cm=0.0, other=True, steps=20):
         """The thumb's base joint turned, 3 degrees at a time about three axes, the way that opens the whole thumb's
@@ -1149,6 +1221,13 @@ class Lab:
             _n, a, b, r = palm
             pg = self._seg_gap(tree, a, b, r)
             pg = None if pg is None else pg - glove_cm
+            if other:
+                # a support palm rests on the firing hand's fingers wrapped round the grip: they are its surface too
+                for _on, oa, ob, orr in self._segments({"l": "r", "r": "l"}[side]):
+                    if _on.startswith("forearm"):
+                        continue
+                    d = (self._seg_seg(a, b, oa, ob) - r - orr) * 100.0 - 2.0 * glove_cm
+                    pg = d if pg is None else min(pg, d)
         arm, arm_bad = self._arm_report(side, Lm)
         # the wrist kept margin_deg inside its limits: a hold at the very limit breaks it as soon as the gun moves
         m = margin_deg
@@ -1161,18 +1240,28 @@ class Lab:
         # the grip's own rules (the back of the hand toward the gun, a back or palm too deep): what a gate checks
         fbad += len(self.grip(side, hold=False).get(side, {}).get("bad", []))
         palm_off = 3.0 if pg is None else max(0.0, pg - 0.2)
-        score = 25.0 * pen + 10.0 * palm_off + 0.15 * over + 2.0 * (fbad + len(arm_bad)) + 4.0 * short
+        # a hold holds: each finger the plan wraps closes at least half way round the gun and ends on it (a hand
+        # standing beside the gun with its fingers straight touches nothing and presses nothing, yet holds nothing)
+        loose = 0.0
+        for fi, done in (getattr(self, "_wraps", None) or {}).items():
+            loose += max(0.0, 0.5 - done) * 2.0
+            loose += min(2.0, max(0.0, self._digit_gap(side, fi, tree, glove_cm, other) - 0.3))
+        score = (25.0 * pen + 10.0 * palm_off + 0.15 * over + 2.0 * (fbad + len(arm_bad)) + 4.0 * short
+                 + 6.0 * loose)
         return score, {"press": round(pen, 3), "worst": worst, "palm_gap_cm": None if pg is None else round(pg, 2),
-                       "wrist_over_deg": round(over, 1), "rules": fbad + len(arm_bad), "short_cm": round(short, 2)}
+                       "wrist_over_deg": round(over, 1), "rules": fbad + len(arm_bad), "short_cm": round(short, 2),
+                       "loose": round(loose, 2), "wraps": {k: round(v, 2) for k, v in (getattr(self, "_wraps", None) or {}).items()}}
 
     def solve_hand(self, side, point, normal, plan=None, toward=None, glove_cm=0.0, frame="gun", span_cm=1.5,
-                   turn_deg=20.0, samples=40, refine=16, seed=1, other=True, soft=None):
+                   turn_deg=20.0, samples=40, refine=16, seed=1, other=True, soft=None, from_current=False, tilt_deg=None):
         """The grasp solver: the hand placed on a hold as a whole. Around the palm laid on the point (facing into
         the surface's normal, its fingers toward the given way), places up to span_cm off along the surface and its
         normal and turns up to turn_deg about the normal (half that about the other two axes) are tried, the digits
         closed by the plan for each; the place that presses least past what is allowed (into the gun and into the
         other hand, the glove counted), keeps the palm on the surface, and leaves the arm and the fingers within their
-        limits wins, then is refined round itself. Returns its score's parts; the hand is left there."""
+        limits wins, then is refined round itself. Returns its score's parts; the hand is left there.
+        from_current: the tries move and turn the hand from where it is now (about its palm's middle), keeping what
+        a placement before it set (the thumb's base across the gun), instead of laying the palm afresh."""
         import random as _random
         self._need()
         rnd = _random.Random(seed)
@@ -1185,10 +1274,20 @@ class Lab:
         tree = self._tree()
         thick = RADIUS["palm"] * 100.0 + glove_cm - 0.15
         self.snapshot("save", "_solve_hand")
+        hn0 = self._n("hand", side)
+        H0 = self._bw(hn0).copy()
+        P0 = H0.translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
 
         def place(p):
             self.snapshot("load", "_solve_hand")
             dx, dy, dz, yaw, pa, pb = p
+            if from_current:
+                q = Quaternion(nrm, math.radians(yaw)) @ Quaternion(t1, math.radians(pa)) @ Quaternion(t2, math.radians(pb))
+                R = (Matrix.Translation((t1 * dx + t2 * dy + nrm * dz) / 100.0) @ Matrix.Translation(P0)
+                     @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0)
+                short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
+                self.close_hand(side, plan, tree, glove_cm, other, from_pose=True)
+                return self._hand_score(side, tree, glove_cm, other, soft, short)
             n2 = (Quaternion(t1, math.radians(pa)) @ Quaternion(t2, math.radians(pb)) @ nrm).normalized()
             way = tw if tw is not None else None
             if way is not None:
@@ -1205,9 +1304,12 @@ class Lab:
 
         best = (None, None, None)
         tried = 0
-        cands = [(0.0,) * 6] + [(rnd.uniform(-span_cm, span_cm), rnd.uniform(-span_cm, span_cm), rnd.uniform(-0.3, 0.6 * span_cm),
-                                 rnd.uniform(-turn_deg, turn_deg), rnd.uniform(-turn_deg / 2, turn_deg / 2), rnd.uniform(-turn_deg / 2, turn_deg / 2))
-                                for _ in range(max(0, samples - 1))]
+        tl = turn_deg / 2 if tilt_deg is None else tilt_deg
+        # a wide turn (no finger direction to start from) is swept first: every 30 degrees about the face's normal
+        sweep = [(0.0, 0.0, 0.0, float(y), 0.0, 0.0) for y in range(-180, 180, 30)] if turn_deg >= 90.0 else []
+        cands = [(0.0,) * 6] + sweep + [(rnd.uniform(-span_cm, span_cm), rnd.uniform(-span_cm, span_cm), rnd.uniform(-0.3, 0.6 * span_cm),
+                                         rnd.uniform(-turn_deg, turn_deg), rnd.uniform(-tl, tl), rnd.uniform(-tl, tl))
+                                        for _ in range(max(0, samples - 1))]
         for p in cands:
             sc, why = place(p)
             tried += 1
@@ -1215,8 +1317,9 @@ class Lab:
                 best = (sc, p, why)
         for _ in range(refine):
             p0 = best[1]
+            tr = min(turn_deg, 30.0)
             p = (p0[0] + rnd.uniform(-0.3, 0.3) * span_cm, p0[1] + rnd.uniform(-0.3, 0.3) * span_cm, p0[2] + rnd.uniform(-0.15, 0.15) * span_cm,
-                 p0[3] + rnd.uniform(-0.3, 0.3) * turn_deg, p0[4] + rnd.uniform(-0.15, 0.15) * turn_deg, p0[5] + rnd.uniform(-0.15, 0.15) * turn_deg)
+                 p0[3] + rnd.uniform(-0.3, 0.3) * tr, p0[4] + rnd.uniform(-0.3, 0.3) * min(tl, 15.0), p0[5] + rnd.uniform(-0.3, 0.3) * min(tl, 15.0))
             sc, why = place(p)
             tried += 1
             if sc < best[0]:
@@ -1224,6 +1327,132 @@ class Lab:
         sc, why = place(best[1])
         return {"score": round(sc, 3), "move_cm": [round(v, 2) for v in best[1][:3]], "turn_deg": [round(v, 1) for v in best[1][3:]],
                 "tried": tried, **why}
+
+    # --- the body's sizes ---------------------------------------------------------------------------------------
+    @staticmethod
+    def _hull_perimeter(pts):
+        """The convex girth of 2D points (a tape round them), and the hull."""
+        p = sorted(set((round(x, 5), round(y, 5)) for x, y in pts))
+        if len(p) < 3:
+            return 0.0
+        cross = lambda o, a, b: (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])     # noqa: E731
+        lo, hi = [], []
+        for q in p:
+            while len(lo) >= 2 and cross(lo[-2], lo[-1], q) <= 0:
+                lo.pop()
+            lo.append(q)
+        for q in reversed(p):
+            while len(hi) >= 2 and cross(hi[-2], hi[-1], q) <= 0:
+                hi.pop()
+            hi.append(q)
+        h = lo[:-1] + hi[:-1]
+        return sum(math.dist(h[i], h[(i + 1) % len(h)]) for i in range(len(h)))
+
+    def _skin_points(self):
+        """Every skin vertex in the world as posed now, with the bone that weighs it most."""
+        dg = bpy.context.evaluated_depsgraph_get()
+        out = []
+        for ob in self.meshes:
+            names = {g.index: g.name for g in ob.vertex_groups}
+            ev = ob.evaluated_get(dg)
+            me = ev.to_mesh()
+            M = ev.matrix_world
+            for v, v0 in zip(me.vertices, ob.data.vertices):
+                if not v0.groups:
+                    continue
+                gmax = max(v0.groups, key=lambda x: x.weight)
+                out.append((M @ v.co, names.get(gmax.group, "")))
+            ev.to_mesh_clear()
+        return out
+
+    def body_size(self, side="both", ranges=None):
+        """The arm's and hand's sizes as built, in cm: the bones joint to joint (upper arm, forearm), the hand's length
+        to the farthest skin of its middle finger, the skin's breadth and girth at the knuckles (thumb left out), the
+        wrist's least girth and the forearm's most. ranges ({measure: {low, high, ...}}, from Pose Lab's human_sizes):
+        each measure outside its range is listed in bad. skin_vs_capsules: how far the drawn skin lies outside the
+        capsules clearance tests the body with (palm, forearm, fingers); past 0.3 cm the clearance checks miss clips
+        the picture shows, and that is listed in bad too. Measured on the rig's rest pose (fingers straight, as the
+        survey measures a hand); the pose is put back after."""
+        self._need()
+        self.snapshot("save", "_body_size")
+        for pb in self.arm.pose.bones:
+            pb.matrix_basis = Matrix.Identity(4)
+        bpy.context.view_layer.update()
+        try:
+            return self._body_size(side, ranges)
+        finally:
+            self.snapshot("load", "_body_size")
+            bpy.context.view_layer.update()
+
+    def _body_size(self, side, ranges):
+        pts = self._skin_points()
+        sides = ("l", "r") if side == "both" else (side,)
+        out = {"ok": True}
+        for s_ in sides:
+            B = lambda n: self._bw(n).translation     # noqa: E731
+            S, E, W = B(self._n("upperarm", s_)), B(self._n("lowerarm", s_)), B(self._n("hand", s_))
+            K = B(self._n("finger", s_, "middle", "01"))
+            I, Pk = B(self._n("finger", s_, "index", "01")), B(self._n("finger", s_, "pinky", "01"))
+            along = (K - W).normalized()
+            across = (I - Pk) - along * (I - Pk).dot(along)
+            across.normalize()
+            nrm = across.cross(along).normalized()
+            suf = "_" + s_
+            mine = [(p, g) for p, g in pts if g.endswith(suf)]
+            arm = [p for p, g in mine if g.startswith("lowerarm") or g.startswith("hand")]
+            handv = [(p, g) for p, g in mine if g.startswith("hand") or "metacarpal" in g or
+                     any(g.startswith(f) for f in ("index", "middle", "ring", "pinky"))]
+            m = {"upper_arm_cm": round((E - S).length * 100, 2), "forearm_cm": round((W - E).length * 100, 2)}
+            mid = [p for p, g in mine if g.startswith("middle")]
+            m["hand_length_cm"] = round(max(((p - W).dot(along) for p in mid), default=0.0) * 100, 2)
+            # at the knuckles: the hand's own skin within 0.6 cm of the knuckle line, thumb left out
+            kn = [p for p, g in handv if abs((p - K).dot(along)) < 0.006 and (p - K).length < 0.08]
+            if kn:
+                xs = [(p - K).dot(across) for p in kn]
+                m["hand_breadth_cm"] = round((max(xs) - min(xs)) * 100, 2)
+                m["hand_circumference_cm"] = round(self._hull_perimeter([((p - K).dot(across), (p - K).dot(nrm)) for p in kn]) * 100, 2)
+            # the forearm in slices from the elbow to the wrist
+            d = (W - E).normalized()
+            u = d.orthogonal().normalized()
+            v2 = d.cross(u)
+            girth = []
+            for k in range(1, 20):
+                t = k / 20.0
+                c = E.lerp(W, t)
+                sl = [p for p in arm if abs((p - c).dot(d)) < 0.005 and ((p - c) - d * (p - c).dot(d)).length < 0.08]
+                if len(sl) >= 8:
+                    girth.append((t, self._hull_perimeter([((p - c).dot(u), (p - c).dot(v2)) for p in sl]) * 100))
+            if girth:
+                m["forearm_circumference_cm"] = round(max((g for t, g in girth if t <= 0.5), default=0.0), 2)
+                m["wrist_circumference_cm"] = round(min((g for t, g in girth if t >= 0.8), default=0.0), 2)
+            # the drawn skin against the capsules clearance tests: the palm's thickness, the forearm's middle, a finger
+            cap = {}
+            pm = W.lerp(K, 0.5)
+            pt = [(p - pm).dot(nrm) for p, g in handv if abs((p - pm).dot(along)) < 0.006 and abs((p - pm).dot(across)) < 0.015]
+            if pt:
+                cap["palm"] = round(((max(pt) - min(pt)) / 2 - RADIUS["palm"]) * 100, 2)
+            c = E.lerp(W, 0.5)
+            fr = [((p - c) - d * (p - c).dot(d)).length for p in arm if abs((p - c).dot(d)) < 0.005]
+            if fr:
+                cap["forearm"] = round((sum(sorted(fr)[-max(1, len(fr) // 10):]) / max(1, len(fr) // 10) - RADIUS["forearm"]) * 100, 2)
+            a2, a3 = B(self._n("finger", s_, "index", "02")), B(self._n("finger", s_, "index", "03"))
+            fd = (a3 - a2).normalized()
+            fc = a2.lerp(a3, 0.5)
+            fv = [((p - fc) - fd * (p - fc).dot(fd)).length for p, g in mine if g.startswith("index") and abs((p - fc).dot(fd)) < 0.003]
+            if fv:
+                cap["finger"] = round((max(fv) - RADIUS["finger"]) * 100, 2)
+            bad = []
+            for k, val in m.items():
+                rg = (ranges or {}).get(k)
+                if rg and not (rg["low"] <= val <= rg["high"]):
+                    bad.append("%s %.1f cm outside the human range %.1f to %.1f (1st to 99th percentile%s)"
+                               % (k, val, rg["low"], rg["high"], ", landmark allowance counted" if rg["low"] != rg.get("p1") or rg["high"] != rg.get("p99") else ""))
+            for k, val in cap.items():
+                if val > 0.3:
+                    bad.append("the %s's skin lies %.1f cm outside the capsule clearance tests it with: the checks miss clips the picture shows" % (k, val))
+            out[s_] = {"measures": m, "skin_vs_capsules_cm": cap, "bad": bad}
+            out["ok"] = out["ok"] and not bad
+        return out
 
     # --- the human arm's limits --------------------------------------------------------------------------------
     def _limits(self):
@@ -2683,7 +2912,8 @@ class Lab:
     def check_set(self, clip, ignore=(), clearance_max_cm=0.2, hold_sides=(), sides="both"):
         """Every check on a clip, as one summary a gate can store: the worst clearance (declared contacts in ignore) and
         when, the frames that break an arm or finger rule, the frames that break a grip rule (the back of a hand on the
-        rifle, a palm pressed too deep), and for each side in hold_sides the frames its hand is not holding the rifle.
+        rifle, a palm pressed too deep), and for each side in hold_sides the frames its hand is not holding the rifle
+        (its palm on it and its thumb opposing its fingers on it).
         sides: both, l or r (the side the clip is about: a magazine hold is the left hand's). rules: every distinct rule
         broken, with how many frames break it. Also each frame's numbers, for a table."""
         if sides not in ("both", "l", "r"):
@@ -2718,9 +2948,12 @@ class Lab:
             grip_bad += 1 if gb else 0
             row["grip_rules_broken"] = gb
             for s_ in hold_sides:
-                if not g[s_]["holding"]:
+                # holding: the palm on the gun facing it, and the thumb opposing the fingers on it (a palm laid flat
+                # on the gun with the fingers straight touches it but holds nothing)
+                held = g[s_]["holding"] and g[s_]["grasping"]
+                if not held:
                     not_holding[s_] += 1
-                row["holding_" + s_] = g[s_]["holding"]
+                row["holding_" + s_] = held
             per.append(row)
         return {"clip": clip, "frames": len(frames), "clearance_worst_cm": round(worst, 2), "clearance_worst_s": round(worst_t, 3),
                 "clearance_over_frames": sum(1 for r in per if r["clearance_cm"] > clearance_max_cm),

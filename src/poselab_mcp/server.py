@@ -12,6 +12,7 @@ from pydantic import Field
 
 from . import __version__
 from .ranges import arm_ranges as _arm_ranges
+from .sizes import human_sizes as _human_sizes, ranges as _size_ranges
 from .sheet import sheet
 from .worker_client import Worker
 
@@ -194,6 +195,26 @@ def arm_ranges() -> dict:
     tables disagree), the range daily tasks use (Morrey 1981, Palmer 1985, Ryu 1991, Bain 2015), the value anatomy
     checks, and why it differs from the standard where it does. Full citations included. Needs no rig."""
     return _arm_ranges()
+
+
+@mcp.tool()
+def human_sizes() -> dict:
+    """The research behind body_size's rules: the arm's and hand's sizes for men and women from ANSUR II (the 2012
+    U.S. Army anthropometric survey, 4,082 men and 1,986 women): mean, SD and the 1st to 99th percentiles of the
+    upper arm, forearm, hand length and breadth, hand, wrist and forearm girth; what a rig is measured between, the
+    landmark allowance where a rig's joint centres differ from the survey's skin landmarks, and why. Needs no rig."""
+    return _human_sizes()
+
+
+@mcp.tool()
+def body_size(side: Literal["both", "l", "r"] = "both", sex: Literal["male", "female"] = "male") -> dict:
+    """The loaded arms against human sizes: no bone and no part of the skin may be of a size no adult has. Measures
+    the upper arm and forearm joint to joint, the hand's length (wrist joint to the middle finger's farthest skin),
+    the skin's breadth and girth at the knuckles, the wrist's and the forearm's girth, and lists every one outside the
+    1st to 99th percentile of the sex (ANSUR II; human_sizes gives the ranges and allowances). Also skin_vs_capsules:
+    how far the drawn skin lies outside the capsules clearance tests with; past 0.3 cm the checks pass poses whose
+    picture clips. Run it before posing a new character."""
+    return worker.call("body_size", side=side, ranges=_size_ranges(sex))
 
 
 @mcp.tool()
