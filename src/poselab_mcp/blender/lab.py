@@ -37,7 +37,7 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size", "place_hand",
-          "thumb_search")
+          "thumb_search", "contacts")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -1261,8 +1261,260 @@ class Lab:
                 break
         return (self._finger_tip("thumb", side) - target).length * 100.0
 
+    # --- contact rules: which skin touches which surface, measured ----------------------------------------------
+    PATCH_SEGS = {"pad": ("2", "3"), "tip": ("3",), "base": ("1",), "whole": ("1", "2", "3")}
+
+    def _patch_points(self, side, patch, glove_cm=0.0, n=5):
+        """A named patch of the hand's skin as surface points with their outward normals (world): a digit's pad
+        (the palm side of its middle and end segments), tip (the end segment's pad), base, back, whole; the palm
+        (its palm side), heel (the palm side near the wrist), web (the thumb's first segment). Each point lies on
+        the capsule's skin, the glove on it."""
+        digit, _, kind = patch.partition(":")
+        kind = kind or "pad"
+        segs = {x[0]: x for x in self._segments(side)}
+        g = glove_cm / 100.0
+        across, k = self._hand_frame(side)
+        facing = self._palm_facing(side)
+        out = []
+
+        def add(a, b, r, nrm_fn, t0=0.0, t1=1.0):
+            for i in range(n):
+                t = t0 + (t1 - t0) * (i + 0.5) / n
+                c = a.lerp(b, t)
+                nv = nrm_fn(b - a)
+                if nv.length > 1e-9:
+                    out.append((c + nv.normalized() * (r + g), nv.normalized()))
+
+        if digit in ("palm", "heel"):
+            for nm in ("palm_", "palmi_", "palmp_"):
+                x = segs.get(nm + side)
+                if x:
+                    add(x[1], x[2], x[3], lambda d: facing, 0.0, 0.5 if digit == "heel" else 1.0)
+            return out
+        if digit == "web":
+            x = segs.get("thumb1_" + side)
+            if x:
+                add(x[1], x[2], x[3], lambda d: (facing + across * (-k)).normalized())
+            return out
+        if digit == "thumb":
+            for j in self.PATCH_SEGS.get(kind, ("2", "3")):
+                x = segs.get("thumb%s_%s" % (j, side))
+                if not x:
+                    continue
+                d = (x[2] - x[1]).normalized()
+                bn = self._n("finger", side, "thumb", "0" + j if len(j) == 1 else j)
+                pad = self._bw(bn).to_quaternion() @ self._thumb_pad_axis(side)
+                pad = (pad - d * pad.dot(d))
+                pad = pad.normalized() if pad.length > 1e-9 else facing
+                add(x[1], x[2], x[3], (lambda d_, p_=pad: -p_) if kind == "back" else (lambda d_, p_=pad: p_))
+            return out
+        for j in self.PATCH_SEGS.get(kind if kind != "back" else "whole", ("2", "3")):
+            x = segs.get("%s%s_%s" % (digit, j, side))
+            if not x:
+                continue
+            pad_fn = (lambda d: (across.cross(d.normalized()) * k)) if kind != "back" else (lambda d: -(across.cross(d.normalized()) * k))
+            add(x[1], x[2], x[3], pad_fn)
+        return out
+
+    def _gun_bvh(self, polys=None):
+        """The gun's evaluated surface as a BVH, all of it or only the given polygons, with their normals."""
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = self.rifle_mesh.evaluated_get(dg)
+        me = ev.to_mesh()
+        M = self.rifle_mesh.matrix_world
+        vs = [M @ v.co for v in me.vertices]
+        ps = [tuple(p.vertices) for p in me.polygons] if polys is None else [tuple(me.polygons[i].vertices) for i in polys if i < len(me.polygons)]
+        ev.to_mesh_clear()
+        return BVHTree.FromPolygons(vs, ps) if ps else None, vs
+
+    def _thumb_pad_axis(self, side):
+        """The thumb pad's direction in the thumb's end bone's own frame, found once on the idle pose: of the bone's
+        six local axes, the one that points most toward the opposing fingers (the middle finger's middle joint), the
+        pad of an opposable thumb facing them. It then turns with the bone, its roll included."""
+        cache = getattr(self, "_tpa", None) or {}
+        if side in cache:
+            return cache[side]
+        self.snapshot("save", "_tpa")
+        self.pose_idle()
+        n3 = self._n("finger", side, "thumb", "03")
+        M = self._bw(n3)
+        c = M.translation.lerp(self._finger_tip("thumb", side), 0.5)
+        d = (self._finger_tip("thumb", side) - M.translation).normalized()
+        want = self._bw(self._n("finger", side, "middle", "02")).translation - c
+        want = (want - d * want.dot(d)).normalized()
+        q = M.to_quaternion()
+        best = None
+        for ax in (Vector((1, 0, 0)), Vector((-1, 0, 0)), Vector((0, 1, 0)), Vector((0, -1, 0)), Vector((0, 0, 1)), Vector((0, 0, -1))):
+            w = q @ ax
+            sc = w.dot(want)
+            if best is None or sc > best[0]:
+                best = (sc, ax)
+        self.snapshot("load", "_tpa")
+        bpy.context.view_layer.update()
+        cache[side] = best[1]
+        self._tpa = cache
+        return best[1]
+
+    def _gun_verts(self):
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = self.rifle_mesh.evaluated_get(dg)
+        me = ev.to_mesh()
+        M = self.rifle_mesh.matrix_world
+        vs = [M @ v.co for v in me.vertices]
+        ps = [tuple(p.vertices) for p in me.polygons]
+        ev.to_mesh_clear()
+        return vs, ps
+
+    def _rule_eval(self, side, rule, glove_cm=0.0, verts=None):
+        """One contact rule measured: the patch's surface point that best meets the region (gap and facing), its
+        gap (cm, below 0 inside), the facing angle (the patch's normal against the surface's, degrees), the touch
+        point and the surface normal (world), whether the rule is met, and an error (0 when met)."""
+        pts = self._patch_points(side, rule["patch"], glove_cm)
+        vs, ps = verts or self._gun_verts()
+        sub = [ps[i] for i in rule["polys"] if i < len(ps)] if rule.get("polys") is not None else ps
+        bvh = BVHTree.FromPolygons(vs, sub) if sub else None
+        if not pts or bvh is None:
+            return {"id": rule.get("id"), "met": False, "error": 10.0, "why": "no patch or no region"}
+        lo, hi = rule.get("gap_cm", [-0.05, 0.2])
+        fmax = rule.get("facing_max_deg", 45.0)
+        best = None
+        good = 0
+        for p, nv in pts:
+            q, nn, _i, _d = bvh.find_nearest(p)
+            if q is None:
+                continue
+            gap = (p - q).dot(nn) * 100.0
+            dist = (p - q).length * 100.0
+            gap = gap if abs(gap) > 1e-6 else dist
+            if gap > 0:
+                gap = dist                          # off the surface: the straight distance to it
+            ang = math.degrees(nv.angle(-nn)) if nv.length > 1e-9 else 180.0
+            err = max(0.0, gap - hi) + max(0.0, lo - gap) + max(0.0, ang - fmax) / 30.0
+            good += 1 if err <= 1e-6 else 0
+            if best is None or err < best[0]:
+                best = (err, gap, ang, q, nn)
+        if best is None:
+            return {"id": rule.get("id"), "met": False, "error": 10.0, "why": "region out of reach"}
+        err, gap, ang, q, nn = best
+        # how much of the patch lies on the region: a pad laid along a surface, not one point of it touching
+        share = good / len(pts)
+        need_share = rule.get("min_share", 0.0)
+        err += 2.0 * max(0.0, need_share - share)
+        return {"id": rule.get("id"), "patch": rule["patch"], "met": err <= 1e-6, "error": round(err, 3),
+                "gap_cm": round(gap, 2), "facing_deg": round(ang), "share": round(share, 2), "min_share": need_share,
+                "touch": q, "normal": nn}
+
+    def _touches(self, sides, glove_cm=0.0, within_cm=0.3):
+        """Where the hands touch the gun: each segment's nearest surface point within within_cm of its skin, with
+        the gun's outward normal there (world)."""
+        bvh, _vs = self._gun_bvh()
+        g = glove_cm / 100.0
+        out = []
+        for s_ in sides:
+            for name, a, b, r in self._segments(s_):
+                if name.startswith("forearm"):
+                    continue
+                best = None
+                for i in range(5):
+                    c = a.lerp(b, (i + 0.5) / 5)
+                    q, nn, _i, d = bvh.find_nearest(c)
+                    if q is None:
+                        continue
+                    gap = (d - r - g) * 100.0
+                    if best is None or gap < best[0]:
+                        best = (gap, q, nn)
+                if best and best[0] <= within_cm:
+                    out.append((name, best[1], best[2]))
+        return out
+
+    def _closure(self, touches, friction=0.5, length_cm=5.0, dirs=150, seed=11):
+        """Force closure from touches (point, outward normal): each contact pushes into the gun inside its friction
+        cone (6 edges); the wrenches (force, torque over length_cm) must surround the origin: for every direction
+        some wrench points along it. Sampled over dirs directions, so a near miss reads as a small margin. Returns
+        (closed, margin: the least best support over the directions, 0 when open)."""
+        import random as _random
+        if len(touches) < 2:
+            return False, 0.0
+        c0 = sum((t[1] for t in touches), Vector()) / len(touches)
+        L_ = length_cm / 100.0
+        W = []
+        for _n, q, nn in touches:
+            t1 = nn.orthogonal().normalized()
+            t2 = nn.cross(t1).normalized()
+            for k_ in range(6):
+                a_ = 2 * math.pi * k_ / 6
+                f = (-nn + (t1 * math.cos(a_) + t2 * math.sin(a_)) * friction).normalized()
+                tq = (q - c0).cross(f) / L_
+                W.append((f.x, f.y, f.z, tq.x, tq.y, tq.z))
+        rnd = _random.Random(seed)
+        worst = None
+        axes = [tuple((1.0 if i == j else 0.0) * sg for i in range(6)) for j in range(6) for sg in (1.0, -1.0)]
+        for i in range(dirs + len(axes)):
+            if i < len(axes):
+                d = axes[i]
+            else:
+                v = [rnd.gauss(0, 1) for _ in range(6)]
+                ln = math.sqrt(sum(x * x for x in v)) or 1.0
+                d = tuple(x / ln for x in v)
+            sup = max(sum(w[j] * d[j] for j in range(6)) for w in W)
+            worst = sup if worst is None or sup < worst else worst
+        return worst > 0.0, round(max(0.0, worst), 3)
+
+    def _wrap(self, side_set, polys, glove_cm=0.0, within_cm=0.3):
+        """The share of a band of the gun's surface (polygons) the hands cover: each polygon's centre within
+        within_cm of a hand's skin."""
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = self.rifle_mesh.evaluated_get(dg)
+        me = ev.to_mesh()
+        M = self.rifle_mesh.matrix_world
+        cs = [M @ me.polygons[i].center for i in polys if i < len(me.polygons)]
+        ev.to_mesh_clear()
+        if not cs:
+            return 0.0
+        segs = [x for s_ in side_set for x in self._segments(s_) if not x[0].startswith("forearm")]
+        g = glove_cm / 100.0
+        hit = 0
+        for c in cs:
+            for _n, a, b, r in segs:
+                ab = b - a
+                t = 0.0 if ab.length_squared < 1e-12 else max(0.0, min(1.0, (c - a).dot(ab) / ab.length_squared))
+                if ((a + ab * t) - c).length - r - g <= within_cm / 100.0:
+                    hit += 1
+                    break
+        return hit / len(cs)
+
+    def contacts(self, side, rules, glove_cm=0.0, friction=0.5, wrap=None, closure_sides=None, frame="gun"):
+        """Contact rules on a hold, measured, not looked at. rules: each {id, patch (thumb:pad, middle:tip, palm,
+        heel, web, index:back ...), polys (the region: the gun mesh's polygons), gap_cm [low, high] (skin to surface,
+        glove counted), facing_max_deg (the patch's normal against the surface's), need (required|optional)}. For
+        each: met, the gap, the facing, the touch point and surface normal (in frame). wrap: {polys, min} the share
+        of a band of the gun the hand covers. Force closure: whether the touches (friction friction) can hold the gun
+        against any slip or twist, with a margin. ok: every required rule met, wrap at least its min, closure."""
+        self._need()
+        out = {"rules": [], "ok": True}
+        verts = self._gun_verts()
+        for rule in rules:
+            r_ = self._rule_eval(side, rule, glove_cm, verts)
+            if "touch" in r_:
+                r_["touch"] = r2(self._to(r_["touch"], frame), 2) if frame != "world" else [round(x, 4) for x in r_["touch"]]
+                G = self._gun().to_quaternion()
+                r_["normal"] = r2(G.inverted() @ r_["normal"], 2) if frame == "gun" else [round(x, 3) for x in r_["normal"]]
+            r_["need"] = rule.get("need", "required")
+            out["rules"].append(r_)
+            if r_["need"] == "required" and not r_["met"]:
+                out["ok"] = False
+        if wrap:
+            w = self._wrap((side,), wrap["polys"], glove_cm)
+            out["wrap"] = {"share": round(w, 2), "min": wrap.get("min", 0.5), "met": w >= wrap.get("min", 0.5)}
+            out["ok"] = out["ok"] and out["wrap"]["met"]
+        tc = self._touches(tuple(closure_sides or (side,)), glove_cm)
+        closed, margin = self._closure(tc, friction)
+        out["closure"] = {"closed": closed, "margin": margin, "touches": len(tc), "friction": friction}
+        out["ok"] = out["ok"] and closed
+        return out
+
     def thumb_search(self, side, point, glove_cm=0.0, other=True, frame="world", samples=220, refine=80, seed=3,
-                     spread_deg=70.0):
+                     spread_deg=70.0, rule=None):
         """The thumb laid on a rest point (the firing thumb on the safety) by search: turns of its base joint within
         spread_deg of where it is, each with a few bends of its knuckle and end joint in their hinges; the try whose
         tip lies nearest the point wins, while the thumb presses into the gun or the other hand no deeper than the
@@ -1281,6 +1533,8 @@ class Lab:
 
         def score():
             dd = (self._finger_tip("thumb", side) - tgt).length * 100.0
+            if rule is not None:
+                dd = 0.1 * dd + 10.0 * self._rule_eval(side, rule, glove_cm)["error"]   # the rule first, the point a guide
             gap = self._digit_gap(side, "thumb", tree, glove_cm, other)
             rules = len(self._thumb_report(side, TL)[1])
             return dd + 6.0 * max(0.0, -gap - 0.05) + 10.0 * rules, dd, gap, rules
@@ -1477,7 +1731,7 @@ class Lab:
 
     def solve_hand(self, side, point, normal, plan=None, toward=None, glove_cm=0.0, frame="gun", span_cm=1.5,
                    turn_deg=20.0, samples=40, refine=16, seed=1, other=True, soft=None, from_current=False, tilt_deg=None,
-                   anchors=None, anchor_w=3.0):
+                   anchors=None, anchor_w=3.0, contact_rules=None, contact_w=8.0):
         """The grasp solver: the hand placed on a hold as a whole. Around the palm laid on the point (facing into
         the surface's normal, its fingers toward the given way), places up to span_cm off along the surface and its
         normal and turns up to turn_deg about the normal (half that about the other two axes) are tried, the digits
@@ -1512,6 +1766,13 @@ class Lab:
                 short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
                 self.close_hand(side, plan, tree, glove_cm, other, from_pose=not anchors)
                 sc, why = self._hand_score(side, tree, glove_cm, other, soft, short)
+                if contact_rules:
+                    vv_ = self._gun_verts()
+                    ev_ = [self._rule_eval(side, r_, glove_cm, vv_) for r_ in contact_rules]
+                    cerr = sum(e["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
+                               for e, r_ in zip(ev_, contact_rules))
+                    sc += contact_w * cerr
+                    why = dict(why, contacts={e["id"]: e["error"] for e in ev_})
                 if anchors:
                     off = {k: (self._anchor(side, k) - Vector(v)).length * 100.0 for k, v in anchors.items()}
                     sc += anchor_w * sum(max(0.0, d - 0.5) for d in off.values())
