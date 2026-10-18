@@ -746,45 +746,76 @@ class HoldMixin:
         Fq = self._obj_frame(mark["part"]).to_quaternion()
         return list(Fq.inverted() @ acc.normalized()), round(n_open / float(max(1, n_all)), 3)
 
-    def seed_hold(self, side, mark, palm_dir=None, roll_deg=0.0, along_cm=0.0):
-        """A first place for a hand on its mark, from the run's geometry alone: the web at the run's inner end on
-        the palm's side, the palm facing into the run, the knuckles' line along its axis (toward the inner end),
-        turned roll_deg about the axis from palm_dir (object frame; without one, roll_deg from the run's own u),
-        along_cm further from the inner end (a support hand under the other).
-        Returns place_hand's answer."""
+    def seed_hold(self, side, mark, palm_dir=None, roll_deg=0.0, along_cm=0.0, flip=False):
+        """A first place for a hand on its mark, from the run's geometry alone: the hand turned so its palm faces
+        into the run from palm_dir (object frame; without one the run's own u), turned roll_deg about the run's
+        axis, and its knuckles' line (little finger to index) runs along the axis toward the inner end; then
+        moved so the palm's middle sits a palm's thickness off the surface, at the height where the web meets its
+        point (a grip's web under its overhang) or, with no web point, at the run's middle; along_cm further from
+        the inner end; flip: the knuckles' line the other way (the index toward the outer end). Returns where the
+        hand went."""
         run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
         RW = self._run_world(run)
         F = self._obj_frame(mark["part"])
         ax = RW["axis"]
         if (RW["inner"] - RW["outer"]).dot(ax) < 0:
             ax = -ax
+        if flip:
+            ax = -ax                                  # the index toward the other end (a round handle has no top)
         pd = (F.to_quaternion() @ Vector(palm_dir)).normalized() if palm_dir is not None else (F.to_quaternion() @ Vector(run["u"])).normalized()
         pd = (pd - ax * pd.dot(ax)).normalized()
         pd = Quaternion(ax, math.radians(roll_deg)) @ pd
-        # the section near the web and the one at mid hand, their surface on the palm's side
-        secs = RW["sections"]
-        top = min(secs, key=lambda s_: (s_[0] - RW["inner"]).length)
-        mid = min(secs, key=lambda s_: abs((s_[0] - RW["inner"]).length - 0.045))
-        edge = lambda s_: max(s_[1], key=lambda p: (p - s_[0]).dot(pd))         # noqa: E731
+        hn = self._n("hand", side)
+        # the turn: the hand's palm facing and knuckle line onto -pd and ax
+        f0 = self._palm_facing(side)
+        a0 = (self._bw(self._n("finger", side, "index", "01")).translation
+              - self._bw(self._n("finger", side, "pinky", "01")).translation)      # the knuckles, little finger to index
+        a0 = (a0 - f0 * a0.dot(f0)).normalized()
+        cur = Matrix((f0, a0, f0.cross(a0))).transposed()
+        f1, a1 = -pd, ax
+        tgt = Matrix((f1, a1, f1.cross(a1))).transposed()
+        Rm = (tgt @ cur.transposed()).to_4x4()
+        H = self._bw(hn).copy()
+        pc = H.translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
+        M = Matrix.Translation(pc) @ Rm @ Matrix.Translation(-pc) @ H
+        self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+        bpy.context.view_layer.update()
+        # the move: the palm's middle a palm's thickness off the surface on the palm's side, at its height
         palm_r = (self._fitted_radii() or {}).get("palm", 0.018)
-        web_t = edge(top) + pd * 0.004 - ax * (0.005 + along_cm / 100.0)
-        if getattr(self, "_part_P", {}).get(mark["part"]) is not None:
-            # the web up under the part's step (the tang), as the reader finds it on the palm's side
+        secs = RW["sections"]
+        web_t = None
+        if getattr(self, "_part_P", {}).get(mark["part"]) is not None and palm_dir is not None:
             wp, _past = self.web_point(mark, list(F.to_quaternion().inverted() @ pd))
-            web_t = F @ Vector(wp) + pd * 0.004 - ax * (0.003 + along_cm / 100.0)
-        palm_t = edge(mid) + pd * palm_r - ax * (along_cm / 100.0)
-        across = ax if side == "r" else ax           # the knuckles' line (little finger to index) runs toward the inner end
-        return self.place_hand(side, {"web": list(web_t), "palm": list(palm_t)}, facing=list(-pd), frame="world", across=list(across))
+            web_t = F @ Vector(wp)
+        pc = self._bw(hn).translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
+        web = self._anchor(side, "web")
+        hgt = lambda q: (q - RW["inner"]).dot(ax)         # noqa: E731  (height along the run, from its inner end)
+        if web_t is not None:
+            # the palm's middle as far below the web as it is now, the web just under its point
+            h_pc = hgt(web_t) - 0.004 - (hgt(web) - hgt(pc))
+        else:
+            h_pc = hgt(secs[len(secs) // 2][0])
+        h_pc -= along_cm / 100.0
+        at = min(secs, key=lambda s_: abs(hgt(s_[0]) - h_pc))
+        edge = max(at[1], key=lambda q: (q - at[0]).dot(pd))
+        goal = at[0] + pd * ((edge - at[0]).dot(pd) + palm_r) + ax * (h_pc - hgt(at[0]))
+        M = Matrix.Translation(goal - pc) @ self._bw(hn)
+        short = self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+        bpy.context.view_layer.update()
+        return {"short_cm": round(short, 2), "roll_deg": roll_deg}
 
     def hold_object(self, side, marks, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=5,
-                    sigma_cm=1.0, sigma_deg=8.0, close=None, wrap=None):
+                    sigma_cm=1.0, sigma_deg=8.0, close=None, wrap=None, settle=True):
         """A hand's hold searched over the whole arm, from where it is now: the hand's place (3) and turn (3), the
         elbow's swing (1), the shoulder girdle (2: forward, up), each finger's bend (4) and the thumb's base turn
         (3) and two bends (2), by an evolution strategy; each try scored by its purposes (hold_purposes), its
         presses into the object and the other hand, and the body's rules (each broken all but forbidden). close:
         {finger: [3 bends]} the fingers start from (else as they are). wrap: {finger: "wrap" | "straight"}: each
         try closes those fingers until their skin meets the object or the other hand (as real fingers close on a
-        handle), the straight ones laid straight; their bends are then not searched. Returns the score's parts."""
+        handle), the straight ones laid straight; their bends are then not searched. settle: each try first slides
+        the hand until its palm's skin meets the object (palm first, then the fingers close), and a try whose palm
+        cannot reach it is thrown out. Returns the score's parts and the time a try takes."""
+        import time as _time
         import random as _random
         self._need()
         rnd = _random.Random(seed)
@@ -833,6 +864,10 @@ class HoldMixin:
             if abs(x[6]) > 0.5:
                 self._swing_elbow(side, max(-40.0, min(40.0, x[6])))
                 bpy.context.view_layer.update()
+            settled = (None, 0.0)
+            if settle:
+                settled = self.settle_palm(side)
+            self._settled = settled
             for k_, fi in enumerate(fins):
                 if plan and fi in plan:
                     continue
@@ -846,7 +881,8 @@ class HoldMixin:
                     for j in ("01", "02", "03"):
                         self._set_curl(side, fi, j, 0.0, FL)
                 bpy.context.view_layer.update()
-                self.close_hand(side, plan, tree, glove_cm, other)
+                self.close_hand(side, plan, tree, glove_cm, other, mend=False)
+                self.relax_fingers(side, tuple(plan))       # then opened by the skin until it presses nothing
             tv = Vector(x[13:16])
             if tv.length > 1e-6:
                 head = self._bw(n1).translation.copy()
@@ -863,9 +899,17 @@ class HoldMixin:
             return short
 
         def score(x):
+            t0 = _time.time()
             short = apply(x)
             sc, why = self._hold_score(side, marks, glove_cm, other, soft, tree)
+            gap, _touch = getattr(self, "_settled", (None, 0.0))
+            if settle and (gap is None or gap > 1.5):
+                sc += 500.0 + 10.0 * (gap or 10.0)        # the palm could not reach the object: no hold
+            why["palm_gap_cm"] = gap
+            times.append(_time.time() - t0)
             return sc + 4.0 * short, why
+
+        times = []
 
         mean = [0.0] * dim
         s0 = score(mean)
@@ -888,7 +932,7 @@ class HoldMixin:
         sc, why = score(best[1])
         return {"score": round(sc, 2), "start_score": round(s0[0], 2), "x": [round(v, 2) for v in best[1]],
                 "shoulder_deg": list(getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))),
-                "evaluations": generations * pop + 2, **why}
+                "evaluations": generations * pop + 2, "try_s": round(sum(times) / max(1, len(times)), 3), **why}
 
     # --- the gate --------------------------------------------------------------------------------------------
     def hold_gate(self, marks, sides=("r", "l"), glove_cm=0.0, skin=True):

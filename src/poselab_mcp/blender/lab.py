@@ -1190,7 +1190,8 @@ class Lab(HoldMixin, ContactMixin):
                         break
                     self._set_world(n, M)
 
-    def close_hand(self, side, plan, tree=None, glove_cm=0.0, other=True, steps=12, from_pose=False, rules=None):
+    def close_hand(self, side, plan, tree=None, glove_cm=0.0, other=True, steps=12, from_pose=False, rules=None,
+                   mend=True):
         """The digits posed by a plan {"index": {"pose": "straight", "curl": [a, b, c]} | {"pose": "wrap",
         "max_curl": [a, b, c]} | {"pose": "rest"}, ..., "thumb": ...}: straight ones set, wrapped ones closed a step
         at a time until their skin (and glove) meets the gun or the other hand, a step into either taken back; then
@@ -1337,7 +1338,8 @@ class Lab(HoldMixin, ContactMixin):
                         self._set_thumb_bend(side, *prev, TL)
                     break
                 prev = b
-        self._mend_hand(side)
+        if mend:
+            self._mend_hand(side)                 # (the hold search keeps the wrist itself: it passes mend=False)
         self._end_joints_flat(side, FL)
         self._thumb_base_clear(side, tree, glove_cm, other)
         bpy.context.view_layer.update()
