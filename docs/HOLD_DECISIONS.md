@@ -55,6 +55,8 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-19 | Conforming finger closure on the skin (numpy, one read): the knuckle leads, a touching segment stops its own joint and those behind it; replaces the capsule closing and the skin relax | The fingers stopped at their first touch and hovered; a try went from 0.72 to 0.38 s |
 | 2026-10-19 | Soft tissue give: a press counts only past the tissue's give (palm 0.3 cm, finger and thumb pads, web and palm edge 0.15, elsewhere 0.05); the palm settle and the closing may sink into it | Rigid meshes do not squash; a real grip's contact area comes from flattened palm and pads. The purposes' area thresholds were not changed |
 | 2026-10-19 | A power wrap's cover is the share of the run's surface covered over the stretch the hand spans, not over the whole run | A long handle is not held less for being long (a 30 cm bat handle could never reach 30% over its whole length) |
+| 2026-10-19 | A clip frame where a hand rests on its home hold is not repaired: it is the hold, searched and gated | The per-frame repair still scored with the old capsule ruler and moved held hands off the gun (two rulers again). Open: move the repair onto the contact ruler |
+| 2026-10-19 | A hand placed first is not charged for the other hand in its rest pose; the index line's up runs from the run's outer end to its inner end | Scoring faults found on the M1911 seed |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 
@@ -77,5 +79,11 @@ reason. Read it before changing the hold code, and check each change against it.
   thumb 1.67, cover 41% over the hand's span, press 0.34 cm2 at 0.06 cm, wrist 14, forearm 33; the third of three
   starts passed; a try 0.36 s.
 - The contact areas the purposes ask for are first estimates; set them from holds the owner accepts.
-- Not yet: the M1911 idle on the new search, the other clips, the working holds
+- The M1911 idle on the new search (2026-10-19): a two-hand grip that looks right (firing hand high, fingers round
+  the front strap, index along the frame over the guard; support hand over the firing fingers, both thumbs forward
+  on the support side). The gate still fails on details. Firing hand: web 0/0.3 cm2, cover 22%/30%, index 34 deg
+  off the guard line (15), thumb 19 deg off the index (15), thumb pad 0/0.8. Support: palm 3.5/4 cm2, panel cover
+  15%/20%, thumb 30 deg off. Both shoulders at their limits (support back 20, both down 8): the stance may be far.
+  A try 0.38 to 0.44 s on the gun; the idle run 18 minutes.
+- Not yet: the other clips, the working holds
   (magazine, slide) on purposes, the skin check baseline, the game check loop.

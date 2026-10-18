@@ -625,9 +625,9 @@ class HoldMixin:
         thru = (F.to_quaternion() @ Vector(op["through"])).normalized()
         ld = (e1 - e0)
         ld = (ld - thru * ld.dot(thru)).normalized()
-        upw = (F.to_quaternion() @ Vector(run["axis"])).normalized()
-        if (F @ Vector(run["inner"]) - e0).dot(upw) < 0:
-            upw = -upw
+        # up the grip: from the run's outer end to its inner end (the run may end below the opening, so the way
+        # from the edge to the inner end is not always up)
+        upw = (F @ Vector(run["inner"]) - F @ Vector(run["outer"])).normalized()
         upw = (upw - ld * upw.dot(ld) - thru * upw.dot(thru)).normalized()     # in the side view, square to the edge
         pts = [self._bw(self._n("finger", side, "index", j)).translation for j in ("02", "03")] + [self._finger_tip("index", side)]
         offs = [(p - e0).dot(upw) * 100.0 for p in pts]
@@ -673,16 +673,17 @@ class HoldMixin:
                 "wrist_max_deg": P["wrist_max_deg"], "roll_deg": round(roll, 1), "elbow_deg": round(el, 1),
                 "clavicle_deg": [round(x, 1) for x in cl], "arm_rules_broken": bad}
 
-    def hold_purposes(self, side, marks, glove_cm=0.0):
+    def hold_purposes(self, side, marks, glove_cm=0.0, other=True):
         """Every purpose the marks give this hand, judged on the contact model (contactlab.contact_purposes): the
-        drawn skin against the object's labelled surface and the other hand. One ruler for the search and the gate."""
-        return self.contact_purposes(side, marks, glove_cm)
+        drawn skin against the object's labelled surface and, with other, the other hand (a hand placed first is
+        not charged for the other hand still hanging in its rest pose). One ruler for the search and the gate."""
+        return self.contact_purposes(side, marks, glove_cm, other=other)
 
     # --- the hold search: the whole arm, the purposes as the score ------------------------------------------------
     def _hold_score(self, side, marks, glove_cm, other, soft, tree):
         """The search's score is the gate's ruler: each purpose's error (the contact pairs, the presses on the drawn
         skin, the comfort) 10, each body rule broken 200."""
-        res = self.hold_purposes(side, marks, glove_cm)
+        res = self.hold_purposes(side, marks, glove_cm, other=other)
         perr = sum(r["error"] for r in res)
         FL = self._limits()[1]
         TL = self._thumb_limits()
@@ -866,8 +867,8 @@ class HoldMixin:
                 else:
                     plan[fi] = {"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} if how == "wrap" else {"pose": "straight", "curl": [0.0, 0.0, 3.0]}
             for k_, fi in enumerate(fins):
-                if fi in wrap:
-                    scale[9 + k_] = 0.0
+                if fi in wrap and wrap[fi] == "wrap":
+                    scale[9 + k_] = 0.0          # closed by contact; a straight (extended) finger keeps its bend searched
             if "thumb" in wrap:
                 scale[16:18] = [0.0, 0.0]          # the thumb's bends come from its closing; its base is searched
 
@@ -901,10 +902,11 @@ class HoldMixin:
             self._settled = settled
             t_ = lap("settle", t_)
             for k_, fi in enumerate(fins):
-                if plan and fi in plan:
+                if plan and fi in plan and plan[fi].get("pose") != "straight":
                     continue
                 d = x[9 + k_]
-                c3 = [base[fi][0] + d, base[fi][1] + d, base[fi][2] + d * 2.0 / 3.0]
+                b3 = plan[fi]["curl"] if plan and fi in plan else base[fi]
+                c3 = [b3[0] + d, b3[1] + d * 0.5, b3[2] + d * 0.3]
                 for j, cc in zip(("01", "02", "03"), c3):
                     self._set_curl(side, fi, j, cc, FL)
             tv = Vector(x[13:16])
@@ -925,7 +927,7 @@ class HoldMixin:
                 # the fingers (and a wrapping thumb, its base turned) opened, then closed until they meet the
                 # object or the other hand, then opened by the skin until they press nothing
                 for fi in plan:
-                    if fi == "thumb":
+                    if fi == "thumb" or plan[fi].get("pose") == "straight":
                         continue
                     for j in ("01", "02", "03"):
                         self._set_curl(side, fi, j, 0.0, FL)
@@ -934,9 +936,6 @@ class HoldMixin:
                 if conform:
                     # every joint closes, a touching segment stops the joints behind it (the skin, in numpy)
                     straight = [fi for fi, p_ in plan.items() if p_.get("pose") == "straight"]
-                    for fi in straight:
-                        for j, cc in zip(("01", "02", "03"), plan[fi]["curl"]):
-                            self._set_curl(side, fi, j, cc, FL)
                     if "thumb" in plan:
                         self._set_thumb_bend(side, 6.0, 4.0, TL)
                     bpy.context.view_layer.update()
@@ -989,7 +988,7 @@ class HoldMixin:
                 "try_parts_s": {k: round(v / max(1, len(times)), 3) for k, v in prof.items()}, **why}
 
     # --- the gate --------------------------------------------------------------------------------------------
-    def hold_gate(self, marks, sides=("r", "l"), glove_cm=0.0, skin=True):
+    def hold_gate(self, marks, sides=("r", "l"), glove_cm=0.0, skin=True, other=True):
         """Does each hand do its job: every purpose its marks give met, no no-touch contact, every joint in its
         comfort band, no body rule broken, and (skin) the drawn skin out of the object and the other hand. A hand
         the marks give a hold that is off its part fails. Returns per hand its results and pass, and pass."""
@@ -997,7 +996,7 @@ class HoldMixin:
         for side in sides:
             if not any(m.get("role") == "hold" and m.get("hand", side) == side for m in marks):
                 continue
-            res = self.hold_purposes(side, marks, glove_cm)
+            res = self.hold_purposes(side, marks, glove_cm, other=other)
             FL = self._limits()[1]
             TL = self._thumb_limits()
             body = self._finger_report(side, FL)[1] + self._thumb_report(side, TL)[1]

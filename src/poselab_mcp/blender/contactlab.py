@@ -916,13 +916,13 @@ class ContactMixin:
     def _short(got, need):
         return max(0.0, need - got) / need if need > 0 else 0.0
 
-    def contact_purposes(self, side, marks, glove_cm=0.0):
+    def contact_purposes(self, side, marks, glove_cm=0.0, other=True):
         """Every purpose the marks give this hand, judged on its contact pairs (one reading of contact_pairs):
         [{purpose, met, error, the areas measured, the areas asked}], with the press check and the comfort."""
         C = CONTACT_PURPOSES
         own, far = self._sides_named(side)
         cover_r = ["back", "front", own, far, "tang"] if own != "side_?" else ["back", "front", "side_a", "side_b", "tang", "end"]
-        cp = self.contact_pairs(side, other=True, cover_regions=cover_r)
+        cp = self.contact_pairs(side, other=other, cover_regions=cover_r)
         pa = self.pair_area
         res = []
         for m in marks:
