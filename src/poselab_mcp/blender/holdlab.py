@@ -592,35 +592,6 @@ class HoldMixin:
         ta, tb = sorted(((a - RW["inner"]).dot(ax), (b - RW["inner"]).dot(ax)))
         return [s_ for s_ in RW["sections"] if ta - 0.01 <= (s_[0] - RW["inner"]).dot(ax) <= tb + 0.01]
 
-    def purpose_power_wrap(self, side, mark, glove_cm=0.0):
-        P = PURPOSES["power_wrap"]
-        run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
-        RW = self._run_world(run)
-        segs = [s_ for s_ in self._segments(side) if not s_[0].startswith("forearm")]
-        g = glove_cm / 100.0
-        segs = [(n, a, b, r + g) for n, a, b, r in segs]
-        span = self._hand_span(side, RW) or RW["sections"]
-        pts = [p for _c, ring in span for p in ring]
-        # skin within band_cm of the surface counts: a finger's straight capsule stands off a curved grip between
-        # its joints by about 0.3 cm, and skin gives where it presses
-        cov = self._skin_covered(pts, self._hand_skin(side), P["band_cm"])
-        share = sum(cov) / float(len(cov)) if cov else 0.0
-        # the web (between the thumb's base and the index knuckle) against the run's inner end, on the palm's side
-        web = self._anchor(side, "web")
-        tgt = RW["inner"]
-        if mark.get("palm_dir") is not None and getattr(self, "_part_P", {}).get(mark["part"]) is not None:
-            if "_web" not in mark:
-                mark["_web"] = self.web_point(mark, mark["palm_dir"])[0]
-            tgt = self._obj_frame(mark["part"]) @ Vector(mark["_web"])
-        web_gap = (web - tgt).length * 100.0
-        palm = [s_ for s_ in segs if s_[0].startswith("palm")]
-        pg = min((self._seg_point_cm(a, b, r, p) for _n, a, b, r in palm for p in pts), default=99.0)
-        # the hand high on the part counts as much as its cover: 3 a cm the web is off its place
-        err = max(0.0, P["coverage_min"] - share) * 10.0 + 3.0 * max(0.0, web_gap - P["web_gap_max_cm"]) + max(0.0, pg - P["palm_gap_max_cm"])
-        return {"purpose": "power_wrap", "met": err <= 1e-6, "error": round(err, 3), "coverage": round(share, 3),
-                "coverage_min": P["coverage_min"], "web_gap_cm": round(web_gap, 2), "web_gap_max_cm": P["web_gap_max_cm"],
-                "palm_gap_cm": round(pg, 2), "sections": len(span), "covered_points": [p for p, c in zip(pts, cov) if c]}
-
     def _thumb_dir(self, side):
         t2 = self._bw(self._n("finger", side, "thumb", "02")).translation
         return (self._finger_tip("thumb", side) - t2).normalized()
@@ -669,73 +640,6 @@ class HoldMixin:
         return {"purpose": "index_extended", "met": err <= 1e-6, "error": round(err, 3), "offsets_cm": [round(o, 2) for o in offs],
                 "band_cm": P["band_cm"], "angle_deg": round(ang, 1), "angle_max_deg": P["angle_max_deg"], "gap_cm": round(gap, 2)}
 
-    def purpose_support(self, side, mark, glove_cm=0.0):
-        P = PURPOSES["support"]
-        other = "r" if side == "l" else "l"
-        run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
-        RW = self._run_world(run)
-        g = glove_cm / 100.0
-        mine = [(n, a, b, r + g) for n, a, b, r in self._segments(side) if not n.startswith("forearm")]
-        theirs = [(n, a, b, r + g) for n, a, b, r in self._segments(other) if not n.startswith("forearm")]
-        span = self._hand_span(other, RW) or RW["sections"]
-        pts = [p for _c, ring in span for p in ring]
-        by_other = self._skin_covered(pts, self._hand_skin(other), P["band_cm"])
-        open_pts = [p for p, c in zip(pts, by_other) if not c]
-        mine_on_open = self._skin_covered(open_pts, self._hand_skin(side), P["band_cm"]) if open_pts else []
-        open_cover = sum(mine_on_open) / float(len(mine_on_open)) if mine_on_open else 1.0
-        # the support fingers over the other hand's fingers: each support finger's middle and end segment within
-        # 0.5 cm of the other hand's middle, ring or little finger
-        over = 0
-        for fi in ("index", "middle", "ring", "pinky"):
-            segs_f = [x for x in mine if x[0].startswith(fi + "2") or x[0].startswith(fi + "3")]
-            near = False
-            for _n, a, b, r in segs_f:
-                for on, oa, ob, orr in theirs:
-                    if on[:-2].rstrip("0123456789") in ("middle", "ring", "pinky") and \
-                            (self._seg_seg(a, b, oa, ob) - r - orr) * 100.0 <= 0.5:
-                        near = True
-                        break
-                if near:
-                    break
-            over += int(near)
-        over_share = over / 4.0
-        ang = math.degrees(self._thumb_dir(side).angle(self._thumb_dir(other)))
-        err = (max(0.0, P["open_cover_min"] - open_cover) * 10.0 + max(0.0, P["over_share_min"] - over_share) * 6.0
-               + max(0.0, ang - P["thumb_angle_max_deg"]) / 10.0)
-        return {"purpose": "support", "met": err <= 1e-6, "error": round(err, 3), "open_cover": round(open_cover, 3),
-                "open_cover_min": P["open_cover_min"], "open_points": len(open_pts), "over_share": over_share,
-                "over_share_min": P["over_share_min"], "thumb_angle_deg": round(ang, 1), "thumb_angle_max_deg": P["thumb_angle_max_deg"]}
-
-    def purpose_notouch(self, parts, sides=("l", "r"), glove_cm=0.0):
-        """No capsule of the hands on a no-touch part (as posed now): the deepest press and where."""
-        P = PURPOSES["notouch"]
-        vs, ps = self._gun_verts()
-        names = {g.index: g.name for g in self.rifle_mesh.vertex_groups}
-        vg = []
-        for v in self.rifle_mesh.data.vertices:
-            gm = max(v.groups, key=lambda x: x.weight) if v.groups else None
-            vg.append(names.get(gm.group) if gm else None)
-        sel = [p for p in ps if max(set(vg[i] for i in p), key=[vg[i] for i in p].count) in parts]
-        if not sel:
-            return {"purpose": "notouch", "met": True, "error": 0.0, "worst_cm": None, "parts": list(parts)}
-        bvh = BVHTree.FromPolygons(vs, sel)
-        g = glove_cm / 100.0
-        worst, where = -99.0, None
-        for side in sides:
-            for n, a, b, r in self._segments(side):
-                k = max(2, int((b - a).length / 0.004))
-                for i in range(k + 1):
-                    q = a.lerp(b, i / k)
-                    loc, _nr, _ix, dist = bvh.find_nearest(q)
-                    if loc is None:
-                        continue
-                    into = (r + g - dist) * 100.0 + P["gap_min_cm"]
-                    if into > worst:
-                        worst, where = into, n
-        err = 10.0 * max(0.0, worst)                 # a press into a part that must stay clear costs ten a cm
-        return {"purpose": "notouch", "met": err <= 1e-6, "error": round(err, 3), "worst_cm": round(worst - P["gap_min_cm"], 2),
-                "where": where, "parts": list(parts)}
-
     def purpose_comfort(self, side):
         P = PURPOSES["comfort"]
         rep_, bad = self._arm_report(side, self._limits()[0])
@@ -753,41 +657,24 @@ class HoldMixin:
                 "clavicle_deg": [round(x, 1) for x in cl], "arm_rules_broken": bad}
 
     def hold_purposes(self, side, marks, glove_cm=0.0):
-        """Every purpose the marks give this hand, measured: [result]. A hold mark for this hand (mark["hand"])
-        gives its purpose and its thumb and index variants; every notouch mark is checked for both hands."""
-        res = []
-        for m in marks:
-            if m.get("role") != "hold" or m.get("hand", side) != side:
-                continue
-            if m["purpose"] == "power_wrap":
-                res.append(self.purpose_power_wrap(side, m, glove_cm))
-                if m.get("index") == "extended" and self._object["parts"][m["part"]]["runs"][m.get("run", 0)]["openings"]:
-                    res.append(self.purpose_index_extended(side, m, glove_cm))
-                if m.get("thumb") == "inline":
-                    res.append(self.purpose_thumb_inline(side, m, glove_cm))
-            elif m["purpose"] == "support":
-                res.append(self.purpose_support(side, m, glove_cm))
-                if m.get("thumb") == "inline":
-                    other = "r" if side == "l" else "l"
-                    res.append(self.purpose_thumb_inline(side, m, glove_cm, along=self._thumb_dir(other)))
-        nt = [m["part"] for m in marks if m.get("role") == "notouch"]
-        if nt:
-            res.append(self.purpose_notouch(nt, sides=(side,), glove_cm=glove_cm))
-        res.append(self.purpose_comfort(side))
-        return res
+        """Every purpose the marks give this hand, judged on the contact model (contactlab.contact_purposes): the
+        drawn skin against the object's labelled surface and the other hand. One ruler for the search and the gate."""
+        return self.contact_purposes(side, marks, glove_cm)
 
     # --- the hold search: the whole arm, the purposes as the score ------------------------------------------------
     def _hold_score(self, side, marks, glove_cm, other, soft, tree):
+        """The search's score is the gate's ruler: each purpose's error (the contact pairs, the presses on the drawn
+        skin, the comfort) 10, each body rule broken 200."""
         res = self.hold_purposes(side, marks, glove_cm)
         perr = sum(r["error"] for r in res)
-        pen, worst = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)
         FL = self._limits()[1]
         TL = self._thumb_limits()
         fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
         abad = len(self._arm_report(side, self._limits()[0])[1])
-        sc = 10.0 * perr + 25.0 * pen + 200.0 * (fbad + abad)
-        return sc, {"purposes_error": round(perr, 3), "press": round(pen, 3), "presses": worst[:3], "digit_rules": fbad,
-                    "arm_rules": abad, "purposes": [{k: v for k, v in r.items() if k != "covered_points"} for r in res]}
+        sc = 10.0 * perr + 200.0 * (fbad + abad)
+        pr = next((r for r in res if r["purpose"] == "press"), {})
+        return sc, {"purposes_error": round(perr, 3), "press": round(pr.get("object_cm2", 0.0) + pr.get("hand_cm2", 0.0), 3),
+                    "presses": [], "digit_rules": fbad, "arm_rules": abad, "purposes": res}
 
     def web_point(self, mark, palm_dir, step_cm=0.25, most_cm=6.0, overhang_cm=0.8, crook_cm=0.5):
         """Where the web of the hand sits on a power wrap. The part's surface on the palm's side (palm_dir, object
@@ -1012,18 +899,14 @@ class HoldMixin:
         for side in sides:
             if not any(m.get("role") == "hold" and m.get("hand", side) == side for m in marks):
                 continue
-            res = [{k: v for k, v in r.items() if k != "covered_points"} for r in self.hold_purposes(side, marks, glove_cm)]
+            res = self.hold_purposes(side, marks, glove_cm)
             FL = self._limits()[1]
             TL = self._thumb_limits()
             body = self._finger_report(side, FL)[1] + self._thumb_report(side, TL)[1]
-            hp = self.hand_presses(side, self._tree(), glove_cm, other=True)[0]
-            rec = {"purposes": res, "body_rules": body, "press": round(hp, 3)}
-            rec["pass"] = all(r["met"] for r in res) and not body and hp <= 0.0
+            pr = next((r for r in res if r["purpose"] == "press"), {})
+            rec = {"purposes": res, "body_rules": body, "press": round(pr.get("object_cm2", 0.0) + pr.get("hand_cm2", 0.0), 3)}
+            rec["pass"] = all(r["met"] for r in res) and not body
             out[side] = rec
             ok = ok and rec["pass"]
-        if skin:
-            sp = self.skin_presses("both", glove_cm=glove_cm, other=True)
-            out["skin"] = sp
-            ok = ok and sp["ok"]
-        out["pass"] = ok
+        out["pass"] = ok                               # the presses are the drawn skin's already (the contact model)
         return out

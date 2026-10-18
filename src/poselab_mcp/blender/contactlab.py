@@ -28,6 +28,23 @@ HAND_COLOURS = {"palm": (0.9, 0.3, 0.25), "palm_back": (0.5, 0.2, 0.2), "palm_si
                 "pad": (0.2, 0.75, 0.35), "side": (0.3, 0.5, 0.9), "back": (0.55, 0.55, 0.6),
                 "thumb_pad": (0.95, 0.85, 0.2), "thumb_side": (0.7, 0.6, 0.2), "thumb_back": (0.5, 0.45, 0.3)}
 SAMPLE_CM = 0.2
+# what each purpose asks, as contact on the drawn skin (cm2 of skin touching a region). The areas are first
+# estimates for an adult hand on a pistol-sized grip, to be set by the hold benchmark's known holds
+CONTACT_PURPOSES = {
+    "power_wrap": {"palm_cm2": 6.0, "fingers_front_cm2": 4.0, "fingers_far_cm2": 1.5, "web_cm2": 0.3, "cover_min": 0.30,
+                   "estimate": True,
+                   "why": "the palm on the run's back and its own side, the finger pads round the front to the far side, the "
+                          "web on the tang, a share of the grip's surface covered (the GRASP taxonomy's power wrap)"},
+    "thumb_inline": {"pad_cm2": 0.8, "estimate": True,
+                     "why": "the thumb's pad pressed a little on the far side, laid in line with the index (FM 3-23.35 2-1)"},
+    "index_extended": {"why": "the index straight along the opening's edge, never on a no-touch part (the trigger)"},
+    "support": {"palm_cm2": 4.0, "over_cm2": 3.0, "cover_min": 0.20, "estimate": True,
+                "why": "the support palm on the side the firing hand leaves open, its finger pads over the firing fingers' "
+                       "backs, its own panel covered (FM 3-23.35 2-2)"},
+    "press": {"object_cm2": 0.5, "object_deep_cm": 0.15, "hand_cm2": 1.0, "hand_deep_cm": 0.2,
+              "why": "skin may give a little: no more than this area inside the object or the other hand, no deeper"},
+}
+FINGERS3 = ["middle?_pad", "ring?_pad", "pinky?_pad", "middle?_side", "ring?_side", "pinky?_side"]
 
 
 def _lab_key(l_):
@@ -358,6 +375,240 @@ class ContactMixin:
         rows.sort(key=lambda r: (-r["press_cm2"], -r["contact_cm2"]))
         self._cm_state = {"vert_d": vert_d, "labels": labs_all, "touch": touch, "band_cm": band_cm, "SW": SW, "SL": SL}
         return {"pairs": rows, "hands": totals, "regions": regions, "band_cm": band_cm}
+
+    # --- the fast contact read the purposes, the gate and the search use ---------------------------------------
+    def _skin_static(self):
+        """What does not change with the pose: each skin vertex's heaviest bone, the triangles (numpy)."""
+        c = getattr(self, "_skin_st", None)
+        if c is not None:
+            return c
+        ob = self.meshes[0]
+        names = {g.index: g.name for g in ob.vertex_groups}
+        bone = []
+        for v0 in ob.data.vertices:
+            gm = max(v0.groups, key=lambda x: x.weight) if v0.groups else None
+            bone.append(names.get(gm.group, "") if gm else "")
+        tris = []
+        for p_ in ob.data.polygons:
+            vs = list(p_.vertices)
+            for k in range(1, len(vs) - 1):
+                tris.append((vs[0], vs[k], vs[k + 1]))
+        self._skin_st = (bone, np.array(tris, dtype=np.int64))
+        return self._skin_st
+
+    def _skin_arrays(self):
+        """The skin as posed, read in bulk: world points, normals, each vertex's area (cm2)."""
+        ob = self.meshes[0]
+        bone, T = self._skin_static()
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        n = len(me.vertices)
+        co = np.empty(n * 3)
+        me.vertices.foreach_get("co", co)
+        nr = np.empty(n * 3)
+        me.vertices.foreach_get("normal", nr)
+        ev.to_mesh_clear()
+        M = np.array(ev.matrix_world)
+        P = co.reshape(n, 3) @ M[:3, :3].T + M[:3, 3]
+        N = nr.reshape(n, 3) @ M[:3, :3].T
+        N /= np.maximum(np.linalg.norm(N, axis=1, keepdims=True), 1e-12)
+        a = 0.5 * np.linalg.norm(np.cross(P[T[:, 1]] - P[T[:, 0]], P[T[:, 2]] - P[T[:, 0]]), axis=1) * 1e4
+        A = np.zeros(n)
+        for k in range(3):
+            np.add.at(A, T[:, k], a / 3.0)
+        return P, N, A, bone, T
+
+    def _object_now(self):
+        """The object as posed: its BVH, its signed-distance surface and the labelled samples in the world (a KD
+        tree), cached while the object does not move."""
+        key = self._gun_key()
+        c = getattr(self, "_obj_now", None)
+        if c and c[0] == key:
+            return c[1]
+        vs, ps = self._gun_verts()
+        bvh = BVHTree.FromPolygons(vs, ps)
+        SW, SL = self._samples_world()
+        kd = KDTree(len(SW))
+        for i, p_ in enumerate(SW):
+            kd.insert(Vector(p_), i)
+        kd.balance()
+        val = (bvh, self.Surface(bvh), SW, SL, kd)
+        self._obj_now = (key, val)
+        return val
+
+    def contact_pairs(self, side, other=True, band_cm=0.2, near_cm=1.0, facing_max_deg=70.0, skin_give_cm=0.3,
+                      cover_regions=None):
+        """One hand's contact as posed now, quickly: {(hand part, region): [contact cm2, press cm2, deepest cm]},
+        the totals (contact, press into the object, press into the other hand past the skin's give), and the share
+        of each of cover_regions this hand's skin touches. The same reading the contact map makes, for the
+        purposes, the gate and the search."""
+        P, N, A, bone, T = self._skin_arrays()
+        bvh, surf, SW, SL, kd = self._object_now()
+        labs = self.hand_labels(side, P, N, bone)
+        idx = np.array(sorted(labs), dtype=np.int64)
+        pairs, press, deep = {}, 0.0, 0.0
+        cos_f = math.cos(math.radians(facing_max_deg))
+        for i in idx:
+            p_ = Vector(P[i])
+            loc, nrm, _pi, dist = bvh.find_nearest(p_, near_cm / 100.0)
+            if loc is None:
+                continue
+            d_cm = (-dist if dist < 0.02 and surf.inside(p_) else dist) * 100.0
+            _c, si, _dd = kd.find(loc)
+            reg = SL[si] if si is not None else "other"
+            key = (labs[i], reg)
+            pr = pairs.setdefault(key, [0.0, 0.0, 0.0])
+            if d_cm < 0.0:
+                pr[1] += A[i]
+                pr[2] = max(pr[2], -d_cm)
+                press += A[i]
+                deep = max(deep, -d_cm)
+            if d_cm <= band_cm and (d_cm < 0.0 or -float(np.dot(N[i], nrm)) >= cos_f):
+                pr[0] += A[i]
+        hand_press, hand_deep = 0.0, 0.0
+        o = "r" if side == "l" else "l"
+        if other:
+            sel = np.array([b.endswith("_" + o) for b in bone])
+            ts = T[sel[T[:, 0]] & sel[T[:, 1]] & sel[T[:, 2]]]
+            if len(ts):
+                ob_bvh = BVHTree.FromPolygons([Vector(x) for x in P], [tuple(t) for t in ts])
+                olab = self.hand_labels(o, P, N, bone)
+                for i in idx:
+                    p_ = Vector(P[i])
+                    l2, n2, ti, d2 = ob_bvh.find_nearest(p_, near_cm / 100.0)
+                    if l2 is None:
+                        continue
+                    dd = (-d2 if (p_ - l2).dot(n2) < 0.0 and d2 < 0.02 else d2) * 100.0
+                    key = (labs[i], "hand_%s:%s" % (o, olab.get(int(ts[ti][0]), "?")))
+                    pr = pairs.setdefault(key, [0.0, 0.0, 0.0])
+                    if dd < -skin_give_cm:
+                        pr[1] += A[i]
+                        pr[2] = max(pr[2], -dd - skin_give_cm)
+                        hand_press += A[i]
+                        hand_deep = max(hand_deep, -dd - skin_give_cm)
+                    if dd <= band_cm:
+                        pr[0] += A[i]
+        cover = {}
+        if cover_regions:
+            skd = KDTree(len(idx))
+            for k, i in enumerate(idx):
+                skd.insert(Vector(P[i]), k)
+            skd.balance()
+            r_ = max(band_cm, 0.35) / 100.0
+            want = set(cover_regions)
+            tot, hit = {}, {}
+            for k, (p_, l_) in enumerate(zip(SW, SL)):
+                if l_ not in want:
+                    continue
+                tot[l_] = tot.get(l_, 0) + 1
+                if skd.find(Vector(p_))[2] <= r_:
+                    hit[l_] = hit.get(l_, 0) + 1
+            cover = {l_: round(hit.get(l_, 0) / float(n_), 3) for l_, n_ in tot.items()}
+            cover["_all"] = round(sum(hit.values()) / float(max(1, sum(tot.values()))), 3)
+        return {"pairs": pairs, "press_cm2": round(press, 2), "deepest_cm": round(deep, 2),
+                "hand_press_cm2": round(hand_press, 2), "hand_deepest_cm": round(hand_deep, 2), "cover": cover}
+
+    def _sides_named(self, side):
+        """The region names of this hand's own side of the run and the far side (a right hand's own side is the
+        object's right), when the regions have left and right; else either side."""
+        names = {l_ for l_ in (getattr(self, "_samples", None) and [x[3] for x in self._samples] or [])}
+        if "left" in names or "right" in names:
+            return ("right", "left") if side == "r" else ("left", "right")
+        return ("side_?", "side_?")
+
+    @staticmethod
+    def _short(got, need):
+        return max(0.0, need - got) / need if need > 0 else 0.0
+
+    def contact_purposes(self, side, marks, glove_cm=0.0):
+        """Every purpose the marks give this hand, judged on its contact pairs (one reading of contact_pairs):
+        [{purpose, met, error, the areas measured, the areas asked}], with the press check and the comfort."""
+        C = CONTACT_PURPOSES
+        own, far = self._sides_named(side)
+        cp = self.contact_pairs(side, other=True, cover_regions=["back", "front", own, far, "tang"])
+        pa = self.pair_area
+        res = []
+        for m in marks:
+            if m.get("role") != "hold" or m.get("hand", side) != side:
+                continue
+            if m["purpose"] == "power_wrap":
+                q = C["power_wrap"]
+                got = {"palm_cm2": pa(cp, ["palm", "palm_side"], ["back", own, "tang"]),
+                       "fingers_front_cm2": pa(cp, FINGERS3, ["front"]),
+                       "fingers_far_cm2": pa(cp, FINGERS3, [far]),
+                       "web_cm2": pa(cp, ["web"], ["tang", "back"]),
+                       "cover": cp["cover"].get("_all", 0.0)}
+                err = (self._short(got["palm_cm2"], q["palm_cm2"]) + self._short(got["fingers_front_cm2"], q["fingers_front_cm2"])
+                       + self._short(got["fingers_far_cm2"], q["fingers_far_cm2"]) + self._short(got["web_cm2"], q["web_cm2"])
+                       + 2.0 * self._short(got["cover"], q["cover_min"]))
+                res.append({"purpose": "power_wrap", "met": err <= 1e-6, "error": round(err, 3), **got,
+                            "asks": {k: v for k, v in q.items() if k not in ("why", "estimate")}})
+                if m.get("index") == "extended" and self._object["parts"][m["part"]]["runs"][m.get("run", 0)]["openings"]:
+                    g_ = self.purpose_index_extended(side, m, glove_cm)
+                    on_nt = pa(cp, ["index*"], ["notouch:*"])
+                    g_["notouch_cm2"] = on_nt
+                    g_["error"] = round(g_["error"] + (1.0 if on_nt > 0 else 0.0), 3)
+                    g_["met"] = g_["error"] <= 1e-6
+                    res.append(g_)
+                if m.get("thumb") == "inline":
+                    res.append(self._thumb_contact(side, m, glove_cm, cp, [far, "tang", "back", "opening_edge"], None))
+            elif m["purpose"] == "support":
+                q = C["support"]
+                o = "r" if side == "l" else "l"
+                got = {"palm_cm2": pa(cp, ["palm", "palm_side"], [own]),
+                       "over_cm2": pa(cp, ["index?_pad", "middle?_pad", "ring?_pad", "pinky?_pad"],
+                                      ["hand_%s:*_back" % o, "hand_%s:*_side" % o]),
+                       "cover": cp["cover"].get(own, 0.0)}
+                err = (self._short(got["palm_cm2"], q["palm_cm2"]) + self._short(got["over_cm2"], q["over_cm2"])
+                       + 2.0 * self._short(got["cover"], q["cover_min"]))
+                res.append({"purpose": "support", "met": err <= 1e-6, "error": round(err, 3), **got,
+                            "asks": {k: v for k, v in q.items() if k not in ("why", "estimate")}})
+                if m.get("thumb") == "inline":
+                    res.append(self._thumb_contact(side, m, glove_cm, cp, [own, "hand_%s:thumb*" % o, "tang"], self._thumb_dir(o)))
+        nt_c = pa(cp, ["*"], ["notouch:*"])
+        nt_p = pa(cp, ["*"], ["notouch:*"], 1)
+        res.append({"purpose": "notouch", "met": nt_c <= 0.0 and nt_p <= 0.0, "error": round(nt_c + 5.0 * nt_p, 3),
+                    "contact_cm2": nt_c, "press_cm2": nt_p})
+        q = C["press"]
+        perr = (max(0.0, cp["press_cm2"] - q["object_cm2"]) + 10.0 * max(0.0, cp["deepest_cm"] - q["object_deep_cm"])
+                + max(0.0, cp["hand_press_cm2"] - q["hand_cm2"]) + 10.0 * max(0.0, cp["hand_deepest_cm"] - q["hand_deep_cm"]))
+        res.append({"purpose": "press", "met": perr <= 1e-6, "error": round(perr, 3), "object_cm2": cp["press_cm2"],
+                    "object_deepest_cm": cp["deepest_cm"], "hand_cm2": cp["hand_press_cm2"], "hand_deepest_cm": cp["hand_deepest_cm"]})
+        res.append(self.purpose_comfort(side))
+        return res
+
+    def _thumb_contact(self, side, mark, glove_cm, cp, regions, along):
+        """The thumb in line (its direction and end joint, geometric) and its pad's contact on regions."""
+        g_ = self.purpose_thumb_inline(side, mark, glove_cm, along=along)
+        pad = self.pair_area(cp, ["thumb?_pad"], regions)
+        q = CONTACT_PURPOSES["thumb_inline"]
+        g_.pop("gap_cm", None)
+        g_.pop("gap_band_cm", None)
+        g_["pad_cm2"] = pad
+        g_["pad_asks_cm2"] = q["pad_cm2"]
+        TL = self._thumb_limits()
+        tdir = self._thumb_dir(side)
+        ref = along if along is not None else self._index_dir(side)
+        ang = math.degrees(tdir.angle(ref)) if tdir.length and ref.length else 180.0
+        end = abs(self._thumb_report(side, TL)[0].get("thumb_03", [0, 0])[0])
+        from holdlab import PURPOSES as _GP
+        G = _GP["thumb_inline"]
+        err = max(0.0, ang - G["angle_max_deg"]) / 10.0 + max(0.0, end - G["end_bend_max_deg"]) / 10.0 + self._short(pad, q["pad_cm2"])
+        g_["error"] = round(err, 3)
+        g_["met"] = err <= 1e-6
+        return g_
+
+    @staticmethod
+    def pair_area(cp, hand_parts, regions, what=0):
+        """The area (cm2) of a contact_pairs reading whose hand part matches any of hand_parts and whose region
+        any of regions (fnmatch patterns); what 0 contact, 1 press."""
+        import fnmatch
+        tot = 0.0
+        for (hp, rg), v in cp["pairs"].items():
+            if any(fnmatch.fnmatch(hp, h) for h in hand_parts) and any(fnmatch.fnmatch(rg, r) for r in regions):
+                tot += v[what]
+        return round(tot, 2)
 
     # --- the pictures -------------------------------------------------------------------------------------------
     def _paint(self, ob, name, colours):
