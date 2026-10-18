@@ -33,16 +33,17 @@ HANDLE = {"min_diameter_cm": 2.0, "max_diameter_cm": 6.0, "best_share_of_hand_le
                     "or palmed, not wrapped"}
 # what each purpose asks, measured
 PURPOSES = {
-    "power_wrap": {"coverage_min": 0.55, "web_gap_max_cm": 1.2, "palm_gap_max_cm": 0.5,
+    "power_wrap": {"coverage_min": 0.55, "web_gap_max_cm": 1.2, "palm_gap_max_cm": 0.5, "band_cm": 0.4,
                    "why": "palm and fingers closed round the part (the GRASP taxonomy's power wrap), covering as much "
-                          "of its girth as the hand can, the web of the hand high against the part's inner end"},
+                          "of its girth as the hand can (measured on the drawn skin), the web of the hand high under "
+                          "the part's overhang"},
     "thumb_inline": {"angle_max_deg": 15.0, "end_bend_max_deg": 25.0, "gap_cm": [-0.3, 0.15],
                      "why": "the thumb laid in line with the index finger's direction, straight, its pad pressing a "
                             "little into the part (FM 3-23.35 2-1: the thumb alongside, high)"},
     "index_extended": {"angle_max_deg": 15.0, "band_cm": [-0.3, 1.6], "gap_max_cm": 0.6,
                        "why": "the index finger straight along the opening's edge nearest the hand (a pistol's "
                               "trigger finger on the guard's line, off the trigger)"},
-    "support": {"open_cover_min": 0.4, "over_share_min": 0.5, "thumb_angle_max_deg": 20.0,
+    "support": {"open_cover_min": 0.4, "over_share_min": 0.5, "thumb_angle_max_deg": 20.0, "band_cm": 0.4,
                 "why": "the support hand fills the girth the other hand leaves open and closes over the other "
                        "hand's fingers, its thumb laid the same way (FM 3-23.35 2-2)"},
     "notouch": {"gap_min_cm": 0.05, "why": "no skin on a part that moves or must stay clear"},
@@ -564,6 +565,24 @@ class HoldMixin:
             out.append(ok)
         return out
 
+    def _hand_skin(self, side):
+        """The drawn skin of a hand (it and its digits, the glove as drawn), world points as posed now (n x 3)."""
+        hand = self._n("hand", side)
+        bones = self.arm.data.bones
+        inside = {b.name for b in bones if b.name == hand or any(q.name == hand for q in b.parent_recursive)}
+        pts = [p for p, b in self._skin_points() if b in inside]
+        return np.array([[p.x, p.y, p.z] for p in pts]) if pts else np.zeros((0, 3))
+
+    def _skin_covered(self, pts, skin, band_cm):
+        """Which points have a skin vertex within band_cm of them."""
+        if not len(pts) or not len(skin):
+            return [False] * len(pts)
+        Q = np.array([[p.x, p.y, p.z] for p in pts])
+        out = []
+        for q in Q:
+            out.append(bool(np.min(np.sum((skin - q) ** 2, axis=1)) <= (band_cm / 100.0) ** 2))
+        return out
+
     def _hand_span(self, side, RW):
         """The run's sections the hand spans: those between its index and little finger knuckles along the axis,
         a cm more each way."""
@@ -582,7 +601,9 @@ class HoldMixin:
         segs = [(n, a, b, r + g) for n, a, b, r in segs]
         span = self._hand_span(side, RW) or RW["sections"]
         pts = [p for _c, ring in span for p in ring]
-        cov = self._covered(pts, segs)
+        # skin within band_cm of the surface counts: a finger's straight capsule stands off a curved grip between
+        # its joints by about 0.3 cm, and skin gives where it presses
+        cov = self._skin_covered(pts, self._hand_skin(side), P["band_cm"])
         share = sum(cov) / float(len(cov)) if cov else 0.0
         # the web (between the thumb's base and the index knuckle) against the run's inner end, on the palm's side
         web = self._anchor(side, "web")
@@ -658,9 +679,9 @@ class HoldMixin:
         theirs = [(n, a, b, r + g) for n, a, b, r in self._segments(other) if not n.startswith("forearm")]
         span = self._hand_span(other, RW) or RW["sections"]
         pts = [p for _c, ring in span for p in ring]
-        by_other = self._covered(pts, theirs)
+        by_other = self._skin_covered(pts, self._hand_skin(other), P["band_cm"])
         open_pts = [p for p, c in zip(pts, by_other) if not c]
-        mine_on_open = self._covered(open_pts, mine) if open_pts else []
+        mine_on_open = self._skin_covered(open_pts, self._hand_skin(side), P["band_cm"]) if open_pts else []
         open_cover = sum(mine_on_open) / float(len(mine_on_open)) if mine_on_open else 1.0
         # the support fingers over the other hand's fingers: each support finger's middle and end segment within
         # 0.5 cm of the other hand's middle, ring or little finger
@@ -711,7 +732,7 @@ class HoldMixin:
                     into = (r + g - dist) * 100.0 + P["gap_min_cm"]
                     if into > worst:
                         worst, where = into, n
-        err = max(0.0, worst)
+        err = 10.0 * max(0.0, worst)                 # a press into a part that must stay clear costs ten a cm
         return {"purpose": "notouch", "met": err <= 1e-6, "error": round(err, 3), "worst_cm": round(worst - P["gap_min_cm"], 2),
                 "where": where, "parts": list(parts)}
 
@@ -812,6 +833,31 @@ class HoldMixin:
                 i -= 1
         q, kk = prof[i][2], prof[i][0]
         return [float(x) for x in q], round(kk * 100.0, 2)
+
+    def open_dir(self, other, mark, glove_cm=0.0):
+        """Which way the run is left open by the other hand (as it holds now): the direction, square to the run's
+        axis and in the part's frame, from the run's middle line to the middle of the girth the other hand does not
+        cover, over the sections it spans; and the open share. A support hand's palm goes there."""
+        P = PURPOSES["support"]
+        run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
+        RW = self._run_world(run)
+        g = glove_cm / 100.0
+        theirs = [(n, a, b, r + g) for n, a, b, r in self._segments(other) if not n.startswith("forearm")]
+        span = self._hand_span(other, RW) or RW["sections"]
+        acc, n_open, n_all = Vector(), 0, 0
+        skin = self._hand_skin(other)
+        for cen, ring in span:
+            cov = self._skin_covered(ring, skin, P["band_cm"])
+            for q, c in zip(ring, cov):
+                n_all += 1
+                if not c:
+                    v = q - cen
+                    acc += (v - RW["axis"] * v.dot(RW["axis"])).normalized()
+                    n_open += 1
+        if acc.length < 1e-9:
+            return None, 0.0
+        Fq = self._obj_frame(mark["part"]).to_quaternion()
+        return list(Fq.inverted() @ acc.normalized()), round(n_open / float(max(1, n_all)), 3)
 
     def seed_hold(self, side, mark, palm_dir=None, roll_deg=0.0, along_cm=0.0):
         """A first place for a hand on its mark, from the run's geometry alone: the web at the run's inner end on
