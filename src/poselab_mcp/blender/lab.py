@@ -37,7 +37,7 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size", "place_hand",
-          "thumb_search", "contacts")
+          "thumb_search", "contacts", "natural_hold", "es_hold")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -1591,7 +1591,55 @@ class Lab:
         ev.to_mesh_clear()
         return vs, ps
 
+    def _rule_eval_hand(self, side, rule, glove_cm=0.0):
+        """A contact rule whose region is a hand (on_hand: {side, segments, face back|pad|any}): the patch's points
+        against those segments' skin, the glove counted on both; the facing is the patch's normal against the
+        other skin's (pressed onto it reads 0); face back asks the touch to be on the backs of those fingers."""
+        oh = rule["on_hand"]
+        segs = {x[0]: x for x in self._segments(oh["side"])}
+        want = [segs[n + "_" + oh["side"]] for n in oh["segments"] if n + "_" + oh["side"] in segs]
+        pts = self._patch_points(side, rule["patch"], glove_cm)
+        if not pts or not want:
+            return {"id": rule.get("id"), "met": False, "error": 10.0, "why": "no patch or no segments"}
+        lo, hi = rule.get("gap_cm", [-0.1, 0.4])
+        fmax = rule.get("facing_max_deg", 60.0)
+        g = glove_cm / 100.0
+        acr, k_ = self._hand_frame(oh["side"])
+        best, good = None, 0
+        for p, nv in pts:
+            cand = None
+            for name, a, b, r in want:
+                ab = b - a
+                t = 0.0 if ab.length_squared < 1e-12 else max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+                qa = a + ab * t
+                rad = p - qa
+                if rad.length < 1e-9:
+                    continue
+                n_out = rad.normalized()
+                gap = (rad.length - r - g) * 100.0          # the patch point already carries its own skin and glove
+                ang = math.degrees(nv.angle(-n_out)) if nv.length > 1e-9 else 180.0
+                err = max(0.0, gap - hi) + max(0.0, lo - gap) + max(0.0, ang - fmax) / 30.0
+                if oh.get("face") in ("back", "pad"):
+                    pad = (acr.cross(ab.normalized()) * k_).normalized()
+                    side_ok = n_out.dot(-pad if oh["face"] == "back" else pad)
+                    err += max(0.0, 0.3 - side_ok)
+                if cand is None or err < cand[0]:
+                    cand = (err, gap, ang, a.lerp(b, t), n_out)
+            if cand is None:
+                continue
+            good += 1 if cand[0] <= 1e-6 else 0
+            if best is None or cand[0] < best[0]:
+                best = cand
+        err, gap, ang, q, nn = best
+        share = good / len(pts)
+        err += 2.0 * max(0.0, rule.get("min_share", 0.0) - share)
+        return {"id": rule.get("id"), "patch": rule["patch"], "met": err <= 1e-6, "error": round(err, 3), "gap_cm": round(gap, 2),
+                "facing_deg": round(ang), "share": round(share, 2), "min_share": rule.get("min_share", 0.0), "touch": q, "normal": nn,
+                "on_hand": oh["side"]}
+
     def _rule_eval(self, side, rule, glove_cm=0.0, verts=None):
+        if rule.get("on_hand"):
+            return self._rule_eval_hand(side, rule, glove_cm)
         """One contact rule measured: the patch's surface point that best meets the region (gap and facing), its
         gap (cm, below 0 inside), the facing angle (the patch's normal against the surface's, degrees), the touch
         point and the surface normal (world), whether the rule is met, and an error (0 when met)."""
@@ -1745,6 +1793,194 @@ class Lab:
         out["closure"] = {"closed": closed, "margin": margin, "touches": len(tc), "friction": friction}
         out["ok"] = out["ok"] and closed
         return out
+
+    def es_hold(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=7,
+                sigma_cm=1.0, sigma_deg=8.0):
+        """A hold refined as one problem, from where the hand is now: the hand's place (3) and turn (3, about its
+        palm's middle), each finger's bend off its measured posture (4, within its tolerance), and the thumb's base
+        turn (3) and its two bends (2), searched together by an evolution strategy (a population each generation,
+        the best quarter recombined, the step widened when it helps and narrowed when not). Each try is scored by
+        every contact rule, every press into the gun or the other hand, the arm's rules (each all but forbidden),
+        the thumb's and fingers' rules, and the arm's ease. Returns the score's parts at the best."""
+        import random as _random
+        self._need()
+        rnd = _random.Random(seed)
+        Lm, FL = self._limits()
+        TL = self._thumb_limits()
+        tree = self._tree()
+        hn = self._n("hand", side)
+        H0 = self._bw(hn).copy()
+        P0 = H0.translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
+        n1 = self._n("finger", side, "thumb", "01")
+        self.snapshot("save", "_es")
+        fins = ("index", "middle", "ring", "pinky")
+        base = {fi: list((plan or {}).get(fi, {}).get("curl", [0.0, 0.0, 0.0])) for fi in fins}
+        tols = {fi: float((plan or {}).get(fi, {}).get("tol", 15.0)) for fi in fins}
+        tpl = (plan or {}).get("thumb") or {}
+        tb = list(tpl.get("curl", [0.0, 10.0, 6.0]))
+        dim = 15
+        scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [tols[fi] / 2.0 for fi in fins] + [sigma_deg * 2] * 3 + [10.0, 10.0]
+
+        def apply(x):
+            self.snapshot("load", "_es")
+            t = Vector(x[0:3]) / 100.0
+            rv = Vector(x[3:6])
+            q = Quaternion(rv.normalized(), math.radians(rv.length)) if rv.length > 1e-6 else Quaternion()
+            R = Matrix.Translation(t) @ Matrix.Translation(P0) @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0
+            short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
+            bpy.context.view_layer.update()
+            for k_, fi in enumerate(fins):
+                d = max(-tols[fi], min(tols[fi], x[6 + k_]))
+                c3 = [base[fi][0] + d, base[fi][1] + d, base[fi][2] + d * 2.0 / 3.0]
+                for j, cc in zip(("01", "02", "03"), c3):
+                    self._set_curl(side, fi, j, cc, FL)
+            tv = Vector(x[10:13])
+            if tv.length > 1e-6:
+                head = self._bw(n1).translation.copy()
+                self._turn_about(n1, tv.normalized(), tv.length, head)
+            bpy.context.view_layer.update()
+            for j, b in (("02", tb[1] + x[13]), ("03", tb[2] + x[14])):
+                cur = self._thumb_report(side, TL)[0].get("thumb_" + j, [0, 0])[0]
+                if self.R.get("thumb_hinge") == "ray":
+                    self._thumb_flex(side, j, b - cur)
+                else:
+                    pass
+            if self.R.get("thumb_hinge") != "ray":
+                self._set_thumb_bend(side, tb[1] + x[13], tb[2] + x[14], TL)
+            bpy.context.view_layer.update()
+            return short
+
+        def score(x):
+            short = apply(x)
+            vv = self._gun_verts()
+            err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
+                      for r_ in (rules or []))
+            pen, worst = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)
+            cm, rep_, abad = self._comfort(side, Lm)
+            fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
+            sc = 10.0 * err + 25.0 * pen + cm + 6.0 * fbad + 4.0 * short
+            return sc, {"rules_error": round(err, 3), "press": round(pen, 3), "presses": worst[:3], "comfort": round(cm, 2),
+                        "arm_bad": abad, "digit_rules": fbad, "wrist_bend_deg": rep_.get("wrist_bend_deg"),
+                        "forearm_rotation_deg": rep_.get("forearm_rotation_deg"), "elbow_bend_deg": rep_.get("elbow_bend_deg")}
+
+        mean = [0.0] * dim
+        sig = 1.0
+        best = (score(mean)[0], list(mean), score(mean)[1])
+        mu = max(2, pop // 4)
+        for _g in range(generations):
+            kids = []
+            for _k in range(pop):
+                x = [mean[i] + sig * scale[i] * rnd.gauss(0, 1) for i in range(dim)]
+                sc, why = score(x)
+                kids.append((sc, x, why))
+            kids.sort(key=lambda k: k[0])
+            if kids[0][0] < best[0]:
+                best = kids[0]
+                sig = min(2.0, sig * 1.15)
+            else:
+                sig = max(0.1, sig * 0.85)
+            mean = [sum(k[1][i] for k in kids[:mu]) / mu for i in range(dim)]
+        sc, why = score(best[1])
+        return {"score": round(sc, 2), "x": [round(v, 2) for v in best[1]], "evaluations": generations * pop + 2, **why}
+
+    def _comfort(self, side, Lm=None):
+        """How far the arm is from a relaxed one, beyond its limits counted hard: each arm rule broken 20, the wrist's
+        bend 0.15 a degree (a straight wrist is the most natural), the forearm's roll past 60 degrees 0.2 a degree,
+        the elbow under 15 degrees of bend 0.5 a degree."""
+        Lm = Lm or self._limits()[0]
+        rep_, bad = self._arm_report(side, Lm)
+        sc = 20.0 * len(bad) + 0.15 * abs(rep_.get("wrist_bend_deg", 0.0))
+        sc += 0.2 * max(0.0, abs(rep_.get("forearm_rotation_deg", 0.0)) - 60.0)
+        sc += 0.5 * max(0.0, 15.0 - rep_.get("elbow_bend_deg", 90.0))
+        return sc, rep_, bad
+
+    def natural_hold(self, side, centre, normal, rules, plan=None, glove_cm=0.0, other=True, soft=None,
+                     axis=None, dists_cm=(0.0, 1.0, 2.0), cone_deg=60.0, keep=40, refine=40, seed=5, slide_cm=(-2.0, 0.0, 2.0)):
+        """A hand's hold found over the whole arm's range, as a body would take it: palm places off a surface
+        (centre, its outward normal; dists_cm farther out, for a palm over another hand), the palm facing anywhere
+        within cone_deg of into the surface and the fingers pointing any way round it. Each place is reached by the
+        arm (shoulder, clavicle, elbow, forearm, wrist) and scored first for the arm alone: its rules (hard), how far
+        the wrist bends, the forearm rolls and the elbow straightens. The keep most natural are then closed (the
+        plan's digits) and scored by the contact rules and the presses too, and the best refined round itself.
+        Returns the scores and the arm at the end."""
+        import random as _random
+        self._need()
+        rnd = _random.Random(seed)
+        Lm = self._limits()[0]
+        tree = self._tree()
+        hn = self._n("hand", side)
+        nrm = Vector(normal).normalized()
+        ax = Vector(axis).normalized() if axis is not None else nrm.orthogonal().normalized()
+        ax = (ax - nrm * ax.dot(nrm)).normalized()
+        bx = nrm.cross(ax).normalized()
+        H0 = self._bw(hn).copy()
+        self.snapshot("save", "_natural")
+
+        def hand_at(dist, tilt_a, tilt_b, roll, sa=0.0, sb=0.0):
+            # the palm facing into the surface, tilted, then turned about its own facing; its middle at the place
+            # (slid sa along the axis and sb across it on the surface)
+            face = -nrm
+            face = (Quaternion(ax, math.radians(tilt_a)) @ Quaternion(bx, math.radians(tilt_b)) @ face).normalized()
+            P = Vector(centre) + nrm * (dist / 100.0) + ax * (sa / 100.0) + bx * (sb / 100.0)
+            self.snapshot("load", "_natural")
+            H = self._bw(hn)
+            w = H.translation
+            mid = self._bw(self._n("finger", side, "middle", "01")).translation
+            pc = w.lerp(mid, 0.5)
+            q = self._palm_facing(side).rotation_difference(face)
+            R = Matrix.Translation(pc) @ q.to_matrix().to_4x4() @ Matrix.Translation(-pc) @ H
+            R = Matrix.Translation(pc) @ Quaternion(face, math.radians(roll)).to_matrix().to_4x4() @ Matrix.Translation(-pc) @ R
+            R = Matrix.Translation(P - pc) @ R
+            return Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit())
+
+        cheap = []
+        # the palm's own rules (palm, heel) measured on each place too: a relaxed arm away from the gun holds nothing
+        palm_rules = [r_ for r_ in (rules or []) if r_["patch"].split(":")[0] in ("palm", "heel")]
+        vv0 = self._gun_verts()
+        tilts = [t for t in range(-int(cone_deg), int(cone_deg) + 1, 20)]
+        for d in dists_cm:
+            for sa in slide_cm:
+                for sb in slide_cm:
+                    for ta in tilts:
+                        for tb in tilts:
+                            for roll in range(0, 360, 30):
+                                M = hand_at(d, ta, tb, roll, sa, sb)
+                                short = self._put_hand(side, M)
+                                bpy.context.view_layer.update()
+                                sc, _r, _b = self._comfort(side, Lm)
+                                pe = sum(self._rule_eval(side, r_, glove_cm, vv0)["error"] for r_ in palm_rules)
+                                cheap.append((sc + 4.0 * short + 8.0 * pe, (d, ta, tb, roll, sa, sb)))
+        cheap.sort(key=lambda x: x[0])
+
+        def full(p):
+            M = hand_at(*p)
+            short = self._put_hand(side, M)
+            bpy.context.view_layer.update()
+            self.close_hand(side, plan, tree, glove_cm, other, rules=rules)
+            vv = self._gun_verts()
+            err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
+                      for r_ in (rules or []))
+            pen, worst = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)
+            cm, rep_, bad = self._comfort(side, Lm)
+            return 8.0 * err + 25.0 * pen + cm + 4.0 * short, {"rules_error": round(err, 3), "press": round(pen, 3),
+                                                              "presses": worst, "comfort": round(cm, 2), "arm": rep_, "arm_bad": bad}
+
+        best = None
+        for _sc, p in cheap[:keep]:
+            sc, why = full(p)
+            if best is None or sc < best[0]:
+                best = (sc, p, why)
+        for _ in range(refine):
+            d, ta, tb, roll, sa, sb = best[1]
+            p = (min(max(dists_cm), max(min(dists_cm), d + rnd.uniform(-0.6, 0.6))), ta + rnd.uniform(-8, 8), tb + rnd.uniform(-8, 8), roll + rnd.uniform(-12, 12),
+                 sa + rnd.uniform(-0.6, 0.6), sb + rnd.uniform(-0.6, 0.6))
+            sc, why = full(p)
+            if sc < best[0]:
+                best = (sc, p, why)
+        sc, why = full(best[1])
+        return {"score": round(sc, 2), "place": [round(x, 2) for x in best[1]], "tried_cheap": len(cheap), "tried_full": keep + refine,
+                **{k: v for k, v in why.items() if k != "arm"}, "wrist_bend_deg": why["arm"].get("wrist_bend_deg"),
+                "forearm_rotation_deg": why["arm"].get("forearm_rotation_deg"), "elbow_bend_deg": why["arm"].get("elbow_bend_deg")}
 
     def hold_chain(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, thumb_point=None, rounds=8,
                    step_cm=0.5, step_deg=6.0, clavicle_max_deg=16.0):
