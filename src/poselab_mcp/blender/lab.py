@@ -251,8 +251,13 @@ class Lab:
                 st = lambda q_: ax * (min(max((q_ - H0).dot(ax), 0.0), ln) * (pk - 1.0))     # noqa: E731
                 roll = eb.roll
                 h, t = Mw @ eb.head, Mw @ eb.tail
-                eb.head = Mi @ (h + st(h))
-                eb.tail = Mi @ (t + st(t))
+                if bits[0] == "thumb":
+                    # the thumb rides as one piece, by the stretch at its base joint: the palm must not lengthen it
+                    sh = st(Bb("thumb_01_" + bits[-1]))
+                    eb.head, eb.tail = Mi @ (h + sh), Mi @ (t + sh)
+                else:
+                    eb.head = Mi @ (h + st(h))
+                    eb.tail = Mi @ (t + st(t))
                 eb.roll = roll
             bpy.ops.object.mode_set(mode="OBJECT")
         bpy.context.view_layer.objects.active = prev
@@ -1397,7 +1402,7 @@ class Lab:
         tree = self._tree()
         best = None
         closest = None
-        for roll in range(-90, 91, 15):
+        for roll in range(-180, 180, 15):
             self._set_world(n1, M1)
             if roll:
                 self._turn_about(n1, axis, float(roll), head)
@@ -1795,7 +1800,7 @@ class Lab:
         return out
 
     def es_hold(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=7,
-                sigma_cm=1.0, sigma_deg=8.0):
+                sigma_cm=1.0, sigma_deg=8.0, freeze_thumb=False):
         """A hold refined as one problem, from where the hand is now: the hand's place (3) and turn (3, about its
         palm's middle), each finger's bend off its measured posture (4, within its tolerance), and the thumb's base
         turn (3) and its two bends (2), searched together by an evolution strategy (a population each generation,
@@ -1820,6 +1825,8 @@ class Lab:
         tb = list(tpl.get("curl", [0.0, 10.0, 6.0]))
         dim = 15
         scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [tols[fi] / 2.0 for fi in fins] + [sigma_deg * 2] * 3 + [10.0, 10.0]
+        if freeze_thumb:
+            scale[10:15] = [0.0] * 5           # the thumb kept as it is: the hand and fingers move round it
 
         def apply(x):
             self.snapshot("load", "_es")
@@ -1835,6 +1842,9 @@ class Lab:
                 for j, cc in zip(("01", "02", "03"), c3):
                     self._set_curl(side, fi, j, cc, FL)
             tv = Vector(x[10:13])
+            if freeze_thumb:
+                bpy.context.view_layer.update()
+                return short
             if tv.length > 1e-6:
                 head = self._bw(n1).translation.copy()
                 self._turn_about(n1, tv.normalized(), tv.length, head)
@@ -1858,7 +1868,7 @@ class Lab:
             pen, worst = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)
             cm, rep_, abad = self._comfort(side, Lm)
             fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
-            sc = 10.0 * err + 25.0 * pen + cm + 6.0 * fbad + 4.0 * short
+            sc = 10.0 * err + 25.0 * pen + cm + 20.0 * fbad + 4.0 * short
             return sc, {"rules_error": round(err, 3), "press": round(pen, 3), "presses": worst[:3], "comfort": round(cm, 2),
                         "arm_bad": abad, "digit_rules": fbad, "wrist_bend_deg": rep_.get("wrist_bend_deg"),
                         "forearm_rotation_deg": rep_.get("forearm_rotation_deg"), "elbow_bend_deg": rep_.get("elbow_bend_deg")}
