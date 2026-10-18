@@ -15,6 +15,8 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 
+from holdlab import HoldMixin  # noqa: E402  (holding any object: its reader, purposes, search, gate)
+
 FINGERS = ("index", "middle", "ring", "pinky", "thumb")
 RADIUS = {"forearm": 0.030, "palm": 0.018, "finger": 0.0075}       # m: the capsules a body part is tested with
 DEFAULT_POLES = {"l": [45.0, -20.0, 95.0], "r": [-45.0, -20.0, 95.0]}  # arms frame, cm: where each elbow points
@@ -38,7 +40,9 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size", "place_hand",
           "contacts", "natural_hold", "es_hold",
-          "hold_score", "adapt_hold", "repair_hand", "skin_presses", "view_report", "put_reference")
+          "hold_score", "adapt_hold", "repair_hand", "skin_presses", "view_report", "put_reference",
+          "read_object", "object_summary", "suggest_marks", "shoulder", "hold_purposes", "seed_hold", "hold_object",
+          "hold_gate")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -128,7 +132,7 @@ def fit(src, dst):
     return Matrix([[Rm[i, 0] * k, Rm[i, 1] * k, Rm[i, 2] * k, t[i]] for i in range(3)] + [[0.0, 0.0, 0.0, 1.0]])
 
 
-class Lab:
+class Lab(HoldMixin):
     def __init__(self, rigs_file, out_dir):
         self.rigs_file = rigs_file
         self.out_dir = os.path.realpath(out_dir)
