@@ -37,7 +37,7 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size", "place_hand",
-          "thumb_search", "contacts", "natural_hold", "es_hold")
+          "contacts", "natural_hold", "es_hold")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -1991,138 +1991,6 @@ class Lab:
         return {"score": round(sc, 2), "place": [round(x, 2) for x in best[1]], "tried_cheap": len(cheap), "tried_full": keep + refine,
                 **{k: v for k, v in why.items() if k != "arm"}, "wrist_bend_deg": why["arm"].get("wrist_bend_deg"),
                 "forearm_rotation_deg": why["arm"].get("forearm_rotation_deg"), "elbow_bend_deg": why["arm"].get("elbow_bend_deg")}
-
-    def hold_chain(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, thumb_point=None, rounds=8,
-                   step_cm=0.5, step_deg=6.0, clavicle_max_deg=16.0):
-        """A hold's contact rules met down the arm, as a body does: the digits close toward their rules within their
-        joint ranges; where one still falls short (at its limit), the hand moves and turns a step (the wrist inside
-        its ranges, the forearm's roll, the elbow and the shoulder following by the arm's reach, the clavicle
-        lending up to clavicle_max_deg when the arm is at full stretch); a step is kept only when the rules' error,
-        the presses and the arm's and digits' rules broken all fall together. Steps halve when none helps.
-        Returns the error before and after, the steps taken, and which limits bind at the end."""
-        self._need()
-        tree = self._tree()
-        Lm, FL = self._limits()
-        hn = self._n("hand", side)
-
-        def settle():
-            self.close_hand(side, plan, tree, glove_cm, other, rules=rules)
-            if thumb_point is not None and not ((plan or {}).get("thumb") or {}).get("via_world"):
-                self._set_thumb_bend(side, 10.0, 6.0, self._thumb_limits())
-                self._thumb_to(side, Vector(thumb_point), tree, glove_cm, other, joints=("01",), guard=False)
-            vv = self._gun_verts()
-            err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
-                      for r_ in rules)
-            pen = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)[0]
-            arm, abad = self._arm_report(side, Lm)
-            fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, self._thumb_limits())[1])
-            return 8.0 * err + 25.0 * pen + 3.0 * (len(abad) + fbad), err, abad
-
-        def put(M):
-            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
-            cn = "clavicle_" + side
-            if cn in self.arm.pose.bones and self._arm_report(side, Lm)[0].get("elbow_bend_deg", 90.0) < Lm["elbow_bend_min_deg"] + 5.0:
-                # at full stretch the shoulder blade reaches too, a little at a time
-                C = self._bw(cn).translation
-                S = self._bw(self._n("upperarm", side)).translation
-                ax = (S - C).cross(M.translation - C)
-                if ax.length > 1e-9:
-                    for deg in (4.0, 8.0, 12.0, clavicle_max_deg):
-                        self._turn_about(cn, ax.normalized(), 4.0, C)
-                        bpy.context.view_layer.update()
-                        self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
-                        if self._arm_report(side, Lm)[0].get("elbow_bend_deg", 90.0) >= Lm["elbow_bend_min_deg"] + 5.0:
-                            break
-            bpy.context.view_layer.update()
-
-        H = self._bw(hn).copy()
-        put(H)
-        sc0, e0, _b0 = settle()
-        best = (sc0, H)
-        st_cm, st_deg = step_cm, step_deg
-        taken = 0
-        axes = (Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1)))
-        for _r in range(rounds * 4):
-            improved = False
-            P = best[1].translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
-            moves = [Matrix.Translation(a * (sg * st_cm / 100.0)) @ best[1] for a in axes for sg in (1.0, -1.0)]
-            moves += [Matrix.Translation(P) @ Quaternion(a, math.radians(sg * st_deg)).to_matrix().to_4x4() @ Matrix.Translation(-P) @ best[1]
-                      for a in axes for sg in (1.0, -1.0)]
-            for M in moves:
-                self.snapshot("save", "_chain")
-                put(M)
-                sc, e, _b = settle()
-                if sc < best[0] - 1e-4:
-                    best = (sc, M)
-                    improved = True
-                    taken += 1
-                    self.snapshot("save", "_chain_best")
-                self.snapshot("load", "_chain")
-            if not improved:
-                st_cm, st_deg = st_cm / 2.0, st_deg / 2.0
-                if st_cm < 0.06:
-                    break
-        put(best[1])
-        sc1, e1, abad = settle()
-        binds = list(abad) + self._finger_report(side, FL)[1] + self._thumb_report(side, self._thumb_limits())[1]
-        return {"error_before": round(e0, 3), "error_after": round(e1, 3), "score_before": round(sc0, 2),
-                "score_after": round(sc1, 2), "steps": taken, "limits_at_end": binds[:6]}
-
-    def thumb_search(self, side, point, glove_cm=0.0, other=True, frame="world", samples=220, refine=80, seed=3,
-                     spread_deg=70.0, rule=None, press_w=6.0):
-        """The thumb laid on a rest point (the firing thumb on the safety) by search: turns of its base joint within
-        spread_deg of where it is, each with a few bends of its knuckle and end joint in their hinges; the try whose
-        tip lies nearest the point wins, while the thumb presses into the gun or the other hand no deeper than the
-        allowance (0.2 cm, glove counted) and breaks no thumb rule. Then refined round itself. Returns the tip's
-        distance left (cm), its gap to the gun (cm) and the rules broken."""
-        import random as _random
-        self._need()
-        rnd = _random.Random(seed)
-        tgt = Vector(point) if frame == "world" else self._point(point, frame)
-        tree = self._tree()
-        TL = self._thumb_limits()
-        n1 = self._n("finger", side, "thumb", "01")
-        head = self._bw(n1).translation.copy()
-        M0 = self._bw(n1)
-        bends = ((10.0, 6.0), (20.0, 15.0), (30.0, 30.0), (5.0, 40.0))
-
-        def score():
-            dd = (self._finger_tip("thumb", side) - tgt).length * 100.0
-            if rule is not None:
-                dd = 0.1 * dd + 10.0 * self._rule_eval(side, rule, glove_cm)["error"]   # the rule first, the point a guide
-            gap = self._digit_gap(side, "thumb", tree, glove_cm, other)
-            rules = len(self._thumb_report(side, TL)[1])
-            return dd + press_w * max(0.0, -gap - 0.05) + 10.0 * rules, dd, gap, rules
-
-        def put(q, b):
-            self._set_world(n1, M0)
-            R = Matrix.Translation(head) @ q.to_matrix().to_4x4() @ Matrix.Translation(-head) @ M0
-            self._set_world(n1, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
-            self._set_thumb_bend(side, b[0], b[1], TL)
-
-        def rand_q(deg):
-            ax = Vector((rnd.gauss(0, 1), rnd.gauss(0, 1), rnd.gauss(0, 1))).normalized()
-            return Quaternion(ax, math.radians(rnd.uniform(0.0, deg)))
-
-        best = None
-        for i in range(samples):
-            q = Quaternion() if i == 0 else rand_q(spread_deg)
-            for b in bends:
-                put(q, b)
-                sc = score()
-                if best is None or sc[0] < best[0][0]:
-                    best = (sc, q, b)
-        for _ in range(refine):
-            q = rand_q(12.0) @ best[1]
-            b = (best[2][0] + rnd.uniform(-8, 8), best[2][1] + rnd.uniform(-10, 10))
-            put(q, b)
-            sc = score()
-            if sc[0] < best[0][0]:
-                best = (sc, q, b)
-        put(best[1], best[2])
-        bpy.context.view_layer.update()
-        return {"left_cm": round(best[0][1], 2), "gap_cm": round(best[0][2], 2), "rules": best[0][3],
-                "bend": [round(x, 1) for x in best[2]]}
 
     def _thumb_base_clear(self, side, tree, glove_cm=0.0, other=True, steps=20):
         """The thumb's base joint turned, 3 degrees at a time about three axes, the way that opens the whole thumb's
