@@ -139,9 +139,14 @@ def _dirs(step_deg=10.0):
 
 class HoldMixin:
     # --- the object, read from its geometry ------------------------------------------------------------------
-    def _obj_frame(self):
-        """The object's own frame: its armature object's (the rig moves it), else the mesh's."""
-        o = getattr(self, "rifle_arm", None) or self.rifle_mesh
+    def _obj_frame(self, part=None):
+        """A part's own frame as the object is posed now: its bone's (a rigged object moves a part by its bone:
+        a gun's frame by its root, its slide by the slide's bone), else the armature object's, else the mesh's."""
+        arm = getattr(self, "rifle_arm", None)
+        if arm is not None and part and part in arm.pose.bones:
+            pb = arm.pose.bones[part]
+            return arm.matrix_world @ pb.matrix @ pb.bone.matrix_local.inverted()
+        o = arm or self.rifle_mesh
         return o.matrix_world
 
     def _part_points(self, spacing_cm=0.2, seed=11):
@@ -153,8 +158,8 @@ class HoldMixin:
         me_ob = self.rifle_mesh
         ev = me_ob.evaluated_get(dg)
         me = ev.to_mesh()
-        Fi = self._obj_frame().inverted() @ me_ob.matrix_world
-        V = np.array([list(Fi @ v.co) for v in me.vertices])
+        Mw = me_ob.matrix_world
+        V = np.array([list(Mw @ v.co) for v in me.vertices])           # the world, as posed now
         names = {g.index: g.name for g in me_ob.vertex_groups}
         vg = []
         for v in me_ob.data.vertices:
@@ -203,7 +208,17 @@ class HoldMixin:
                 acc.setdefault(part, ([], []))
                 acc[part][0].append(pts)
                 acc[part][1].append(np.repeat(n[None, :], m, 0))
-        return {k: (np.vstack(v[0]), np.vstack(v[1])) for k, v in acc.items()}
+        out = {}
+        for k, v in acc.items():
+            Fi = self._obj_frame(k).inverted()
+            R_ = np.array(Fi.to_3x3())
+            T_ = np.array(Fi.translation)
+            Pw, Nw = np.vstack(v[0]), np.vstack(v[1])
+            Pl = Pw @ R_.T + T_
+            Nl = Nw @ R_.T
+            Nl /= np.maximum(np.linalg.norm(Nl, axis=1, keepdims=True), 1e-12)
+            out[k] = (Pl, Nl)                          # each part in its own frame
+        return out
 
     def _runs(self, P, hand_len_cm, step_cm=0.5, dir_step_deg=8.0):
         """The runs of a part a hand can wrap: along a direction, consecutive sections whose girth (as a cylinder's
@@ -286,8 +301,9 @@ class HoldMixin:
         a grid of rays across its thinnest direction, against all the object's parts; a cell no ray hits but walled by hits on both sides in both grid directions
         is open; touching open cells are one opening. Returns each opening's cells (object frame, m), middle, area
         and its through direction."""
-        # rays against the whole object (another part may close the hole: a slide over a frame's open top)
-        bvh = self._part_bvh_local(None)
+        # rays against the whole object (another part may close the hole: a slide over a frame's open top), in
+        # this part's frame
+        bvh = self._part_bvh_local(None, name)
         if bvh is None or len(P) < 60:
             return []
         c = P.mean(0)
@@ -368,16 +384,16 @@ class HoldMixin:
         got.sort(key=lambda g_: float(np.linalg.norm(np.array(g_["centre"]) - inner)))
         return got
 
-    def _part_bvh_local(self, part):
-        """A part's polygons as a BVH in the object's frame (parts at rest); part None: the whole object's."""
+    def _part_bvh_local(self, part, frame_part=None):
+        """A part's polygons as a BVH in frame_part's frame (default its own); part None: the whole object's."""
         c = getattr(self, "_pbvh", {})
-        if part in c:
-            return c[part]
+        if (part, frame_part) in c:
+            return c[(part, frame_part)]
         dg = bpy.context.evaluated_depsgraph_get()
         me_ob = self.rifle_mesh
         ev = me_ob.evaluated_get(dg)
         me = ev.to_mesh()
-        Fi = self._obj_frame().inverted() @ me_ob.matrix_world
+        Fi = self._obj_frame(frame_part or part).inverted() @ me_ob.matrix_world
         V = [Fi @ v.co for v in me.vertices]
         names = {g.index: g.name for g in me_ob.vertex_groups}
         vg = []
@@ -391,7 +407,7 @@ class HoldMixin:
                 ps.append(tuple(p.vertices))
         ev.to_mesh_clear()
         bvh = BVHTree.FromPolygons(V, ps) if ps else None
-        c[part] = bvh
+        c[(part, frame_part)] = bvh
         self._pbvh = c
         return bvh
 
@@ -524,8 +540,9 @@ class HoldMixin:
 
     # --- the purposes, measured --------------------------------------------------------------------------------
     def _run_world(self, run):
-        """A run's sections as world rings (24 points each) and middles, with its axis and inner end in the world."""
-        F = self._obj_frame()
+        """A run's sections as world rings (24 points each) and middles, with its axis and inner end in the world,
+        as its part is posed now."""
+        F = self._obj_frame(run.get("part"))
         Fq = F.to_quaternion()
         d, u, v = Vector(run["axis"]), Vector(run["u"]), Vector(run["v"])
         o = Vector(run["origin"])
@@ -573,11 +590,12 @@ class HoldMixin:
         if mark.get("palm_dir") is not None and getattr(self, "_part_P", {}).get(mark["part"]) is not None:
             if "_web" not in mark:
                 mark["_web"] = self.web_point(mark, mark["palm_dir"])[0]
-            tgt = self._obj_frame() @ Vector(mark["_web"])
+            tgt = self._obj_frame(mark["part"]) @ Vector(mark["_web"])
         web_gap = (web - tgt).length * 100.0
         palm = [s_ for s_ in segs if s_[0].startswith("palm")]
         pg = min((self._seg_point_cm(a, b, r, p) for _n, a, b, r in palm for p in pts), default=99.0)
-        err = max(0.0, P["coverage_min"] - share) * 10.0 + max(0.0, web_gap - P["web_gap_max_cm"]) + max(0.0, pg - P["palm_gap_max_cm"])
+        # the hand high on the part counts as much as its cover: 3 a cm the web is off its place
+        err = max(0.0, P["coverage_min"] - share) * 10.0 + 3.0 * max(0.0, web_gap - P["web_gap_max_cm"]) + max(0.0, pg - P["palm_gap_max_cm"])
         return {"purpose": "power_wrap", "met": err <= 1e-6, "error": round(err, 3), "coverage": round(share, 3),
                 "coverage_min": P["coverage_min"], "web_gap_cm": round(web_gap, 2), "web_gap_max_cm": P["web_gap_max_cm"],
                 "palm_gap_cm": round(pg, 2), "sections": len(span), "covered_points": [p for p, c in zip(pts, cov) if c]}
@@ -610,7 +628,7 @@ class HoldMixin:
         P = PURPOSES["index_extended"]
         run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
         op = run["openings"][mark.get("index_line", 0)]
-        F = self._obj_frame()
+        F = self._obj_frame(mark["part"])
         e0, e1 = F @ Vector(op["edge"][0]), F @ Vector(op["edge"][1])
         thru = (F.to_quaternion() @ Vector(op["through"])).normalized()
         ld = (e1 - e0)
@@ -803,7 +821,7 @@ class HoldMixin:
         Returns place_hand's answer."""
         run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
         RW = self._run_world(run)
-        F = self._obj_frame()
+        F = self._obj_frame(mark["part"])
         ax = RW["axis"]
         if (RW["inner"] - RW["outer"]).dot(ax) < 0:
             ax = -ax
@@ -826,12 +844,14 @@ class HoldMixin:
         return self.place_hand(side, {"web": list(web_t), "palm": list(palm_t)}, facing=list(-pd), frame="world", across=list(across))
 
     def hold_object(self, side, marks, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=5,
-                    sigma_cm=1.0, sigma_deg=8.0, close=None):
+                    sigma_cm=1.0, sigma_deg=8.0, close=None, wrap=None):
         """A hand's hold searched over the whole arm, from where it is now: the hand's place (3) and turn (3), the
         elbow's swing (1), the shoulder girdle (2: forward, up), each finger's bend (4) and the thumb's base turn
         (3) and two bends (2), by an evolution strategy; each try scored by its purposes (hold_purposes), its
         presses into the object and the other hand, and the body's rules (each broken all but forbidden). close:
-        {finger: [3 bends]} the fingers start from (else as they are). Returns the score's parts at the best."""
+        {finger: [3 bends]} the fingers start from (else as they are). wrap: {finger: "wrap" | "straight"}: each
+        try closes those fingers until their skin meets the object or the other hand (as real fingers close on a
+        handle), the straight ones laid straight; their bends are then not searched. Returns the score's parts."""
         import random as _random
         self._need()
         rnd = _random.Random(seed)
@@ -856,6 +876,13 @@ class HoldMixin:
         self.snapshot("save", "_ho")
         dim = 18
         scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [10.0] + [4.0, 4.0] + [8.0] * 4 + [sigma_deg * 2] * 3 + [10.0, 10.0]
+        plan = None
+        if wrap:
+            plan = {fi: ({"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} if how == "wrap" else {"pose": "straight", "curl": [0.0, 0.0, 3.0]})
+                    for fi, how in wrap.items()}
+            for k_, fi in enumerate(fins):
+                if fi in wrap:
+                    scale[9 + k_] = 0.0
 
         def apply(x):
             self.snapshot("load", "_ho")
@@ -874,10 +901,19 @@ class HoldMixin:
                 self._swing_elbow(side, max(-40.0, min(40.0, x[6])))
                 bpy.context.view_layer.update()
             for k_, fi in enumerate(fins):
+                if plan and fi in plan:
+                    continue
                 d = x[9 + k_]
                 c3 = [base[fi][0] + d, base[fi][1] + d, base[fi][2] + d * 2.0 / 3.0]
                 for j, cc in zip(("01", "02", "03"), c3):
                     self._set_curl(side, fi, j, cc, FL)
+            if plan:
+                # the fingers opened, then closed until they meet the object or the other hand
+                for fi in plan:
+                    for j in ("01", "02", "03"):
+                        self._set_curl(side, fi, j, 0.0, FL)
+                bpy.context.view_layer.update()
+                self.close_hand(side, plan, tree, glove_cm, other)
             tv = Vector(x[13:16])
             if tv.length > 1e-6:
                 head = self._bw(n1).translation.copy()

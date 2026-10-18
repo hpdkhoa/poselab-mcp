@@ -4131,12 +4131,13 @@ class Lab(HoldMixin):
                 "anatomy_break_frames": breaks, "grip_break_frames": grip_bad, "not_holding_frames": not_holding,
                 "rules": dict(sorted(seen.items(), key=lambda kv: -kv[1])), "per_frame": per}
 
-    def render(self, views=("eye", "right", "left", "top"), size=(640, 360), ortho_cm=None):
+    def render(self, views=("eye", "right", "left", "top"), size=(640, 360), ortho_cm=None, centre=None):
         """Renders the pose: eye is the player's camera (90 degrees, 5 cm near plane); right, left, top and front
         look at the rifle from outside. ortho_cm: those outside views straight on (orthographic), ortho_cm across,
         so sizes compare true (a perspective view draws the hands, nearer the lens, bigger than the gun). Images go
-        to the output folder."""
+        to the output folder. centre: a world point the outside views aim at (the hold), else the bore."""
         self._need()
+        aim = centre
         if not views:
             raise ValueError("views: at least one of eye, right, left, top, front")
         out_dir = self._own(os.path.join(self.out_dir, "renders"))
@@ -4188,6 +4189,11 @@ class Lab(HoldMixin):
                     cam.location = cam.location + drop
                 else:
                     centre_v = centre
+                if aim is not None:
+                    # the outside views aimed at a given world point (the hold), from the same side
+                    c_ = Vector(aim)
+                    cam.location = cam.location + (c_ - centre_v)
+                    centre_v = c_
                 zc = (cam.location - centre_v).normalized()
                 upv = G.to_quaternion() @ Vector((0.0, 0.0, 1.0))
                 if abs(upv.dot(zc)) > 0.95:
