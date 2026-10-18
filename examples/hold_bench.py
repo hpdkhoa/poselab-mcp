@@ -32,6 +32,7 @@ ap.add_argument("--bone-edits", default=None)
 ap.add_argument("--out", required=True)
 ap.add_argument("--generations", type=int, default=30)
 ap.add_argument("--pop", type=int, default=12)
+ap.add_argument("--restarts", type=int, default=3)
 ap.add_argument("--view-cm", type=float, nargs=3, default=(10.0, 28.0, -20.0))
 ap.add_argument("--tilt-deg", type=float, default=20.0, help="the handle's top leaned forward, as a hand holds a grip")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:])
@@ -157,8 +158,8 @@ for roll, flip in [(r_, f_) for f_ in (False, True) for r_ in range(0, 360, 30)]
             continue
         for j in ("01", "02", "03"):
             L._set_curl("r", fi, j, 0.0, L._limits()[1])
-    L.close_hand("r", plan, L._tree(), 0.0, False, mend=False)
-    L.relax_fingers("r", tuple(plan))
+    L._set_thumb_bend("r", 6.0, 4.0, L._thumb_limits())
+    L.conform_digits("r", tuple(plan))
     sc, why = L._hold_score("r", marks, 0.0, False, None, L._tree())
     if os.environ.get("BENCH_DEBUG") and roll == 0:
         cp_ = L.contact_pairs("r", other=False)
@@ -178,14 +179,30 @@ for roll, flip in [(r_, f_) for f_ in (False, True) for r_ in range(0, 360, 30)]
     tries.append((sc, (roll, flip), ex_))
     if (ex_, sc) <= min((t_[2], t_[0]) for t_ in tries):
         L.snapshot("save", "_best")
-L.snapshot("load", "_best")
 out["seeds"] = sorted([{"roll_deg": r[0], "flip": r[1], "score": round(s_, 1), "arm_excess_deg": e_} for s_, r, e_ in tries],
                      key=lambda x: (x["arm_excess_deg"], x["score"]))
 out["seed_s"] = round(time.time() - t2, 1)
+# the search from the best starts in turn (the arm's excess first, then the score), the best hold kept, stopping
+# as soon as one passes the gate: a random search can miss what another run meets, and a try is cheap now
 t3 = time.time()
-out["hold"] = L.hold_object("r", marks, glove_cm=0.0, other=False, generations=a.generations, pop=a.pop, wrap=WRAP)
+order = sorted(tries, key=lambda t_: (t_[2], t_[0]))[: a.restarts]
+best = None
+out["restarts"] = []
+for k, (sc0, (roll, flip), ex0) in enumerate(order):
+    L.snapshot("load", "_seed")
+    L.seed_hold("r", marks[0], palm_dir=None, roll_deg=float(roll), flip=flip)
+    L.settle_palm("r")
+    h_ = L.hold_object("r", marks, glove_cm=0.0, other=False, generations=a.generations, pop=a.pop, wrap=WRAP, seed=5 + k)
+    g_ = L.hold_gate(marks, sides=("r",), glove_cm=0.0, skin=False)
+    out["restarts"].append({"roll_deg": roll, "flip": flip, "score": h_["score"], "gate": g_["pass"]})
+    if best is None or (g_["pass"], -h_["score"]) > (best[1]["pass"], -best[0]["score"]):
+        best = (h_, g_)
+        L.snapshot("save", "_held")
+    if g_["pass"]:
+        break
+L.snapshot("load", "_held")
+out["hold"], out["gate"] = best
 out["search_s"] = round(time.time() - t3, 1)
-out["gate"] = L.hold_gate(marks, sides=("r",), glove_cm=0.0, skin=False)
 cm = L.contact_map(("r",), marks=marks)
 out["contact"] = {"hands": cm["hands"], "regions": {k: v for k, v in cm["regions"].items() if not k.startswith("other")},
                   "pairs": cm["pairs"][:12]}

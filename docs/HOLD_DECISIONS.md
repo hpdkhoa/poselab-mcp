@@ -52,6 +52,9 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-18 | One ruler: the purposes, the search's score and the gate all read the contact pairs | A search scoring differently from the gate finds holds the gate fails |
 | 2026-10-18 | Work rules: a benchmark with known answers, one change per run, keep the best, solver proven on a cylinder before the gun, report only measured results | Fixes kept making the hold worse without a baseline |
 | 2026-10-19 | The search: palm settled by signed skin distance; fingers closed by contact without the old wrist mend, then relaxed by the skin; a pull toward unmet contacts; seeds by the hand's frame; seeds ranked by how far past its limits the arm is | Each fault found on the cylinder benchmark |
+| 2026-10-19 | Conforming finger closure on the skin (numpy, one read): the knuckle leads, a touching segment stops its own joint and those behind it; replaces the capsule closing and the skin relax | The fingers stopped at their first touch and hovered; a try went from 0.72 to 0.38 s |
+| 2026-10-19 | Soft tissue give: a press counts only past the tissue's give (palm 0.3 cm, finger and thumb pads, web and palm edge 0.15, elsewhere 0.05); the palm settle and the closing may sink into it | Rigid meshes do not squash; a real grip's contact area comes from flattened palm and pads. The purposes' area thresholds were not changed |
+| 2026-10-19 | A power wrap's cover is the share of the run's surface covered over the stretch the hand spans, not over the whole run | A long handle is not held less for being long (a 30 cm bat handle could never reach 30% over its whole length) |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 
@@ -70,8 +73,9 @@ reason. Read it before changing the hold code, and check each change against it.
 
 - Built: OCR Lab; the object reader; mark suggestions; purposes; the shoulder tool; the contact model and its
   pictures; the gate on contact pairs; the whole-arm search with the fixes above; the cylinder benchmark.
-- The cylinder: a real wrap (palm on the side, fingers round, thumb over), the body inside every range, but the gate
-  fails: the fingers hover 0.2 to 1 cm off the handle (they stop at their first capsule touch).
+- The cylinder (3.5 cm, leaned 20 degrees) PASSES the gate (2026-10-19): palm 9.3 cm2, finger pads 8.3, web 0.83,
+  thumb 1.67, cover 41% over the hand's span, press 0.34 cm2 at 0.06 cm, wrist 14, forearm 33; the third of three
+  starts passed; a try 0.36 s.
 - The contact areas the purposes ask for are first estimates; set them from holds the owner accepts.
-- Not yet: conforming finger closure, the M1911 idle on the new search, the other clips, the working holds
+- Not yet: the M1911 idle on the new search, the other clips, the working holds
   (magazine, slide) on purposes, the skin check baseline, the game check loop.

@@ -822,7 +822,7 @@ class HoldMixin:
         return {"short_cm": round(short, 2), "roll_deg": roll_deg}
 
     def hold_object(self, side, marks, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=5,
-                    sigma_cm=1.0, sigma_deg=8.0, close=None, wrap=None, settle=True):
+                    sigma_cm=1.0, sigma_deg=8.0, close=None, wrap=None, settle=True, conform=True):
         """A hand's hold searched over the whole arm, from where it is now: the hand's place (3) and turn (3), the
         elbow's swing (1), the shoulder girdle (2: forward, up), each finger's bend (4) and the thumb's base turn
         (3) and two bends (2), by an evolution strategy; each try scored by its purposes (hold_purposes), its
@@ -871,7 +871,14 @@ class HoldMixin:
             if "thumb" in wrap:
                 scale[16:18] = [0.0, 0.0]          # the thumb's bends come from its closing; its base is searched
 
+        prof = {}
+
+        def lap(name, t0):
+            prof[name] = prof.get(name, 0.0) + (_time.time() - t0)
+            return _time.time()
+
         def apply(x):
+            t_ = _time.time()
             self.snapshot("load", "_ho")
             pr, el = clav0[0] + x[7], clav0[1] + x[8]
             sh = self.shoulder(side, pr, el)
@@ -887,10 +894,12 @@ class HoldMixin:
             if abs(x[6]) > 0.5:
                 self._swing_elbow(side, max(-40.0, min(40.0, x[6])))
                 bpy.context.view_layer.update()
+            t_ = lap("place", t_)
             settled = (None, 0.0)
             if settle:
                 settled = self.settle_palm(side)
             self._settled = settled
+            t_ = lap("settle", t_)
             for k_, fi in enumerate(fins):
                 if plan and fi in plan:
                     continue
@@ -921,14 +930,31 @@ class HoldMixin:
                     for j in ("01", "02", "03"):
                         self._set_curl(side, fi, j, 0.0, FL)
                 bpy.context.view_layer.update()
-                self.close_hand(side, plan, tree, glove_cm, other, mend=False)
-                self.relax_fingers(side, tuple(plan))
+                t_ = lap("thumb", t_)
+                if conform:
+                    # every joint closes, a touching segment stops the joints behind it (the skin, in numpy)
+                    straight = [fi for fi, p_ in plan.items() if p_.get("pose") == "straight"]
+                    for fi in straight:
+                        for j, cc in zip(("01", "02", "03"), plan[fi]["curl"]):
+                            self._set_curl(side, fi, j, cc, FL)
+                    if "thumb" in plan:
+                        self._set_thumb_bend(side, 6.0, 4.0, TL)
+                    bpy.context.view_layer.update()
+                    self.conform_digits(side, tuple(fi for fi in plan if fi not in straight), other=other)
+                    t_ = lap("close", t_)
+                else:
+                    self.close_hand(side, plan, tree, glove_cm, other, mend=False)
+                    t_ = lap("close", t_)
+                    self.relax_fingers(side, tuple(plan))
+                    t_ = lap("relax", t_)
             return short
 
         def score(x):
             t0 = _time.time()
             short = apply(x)
+            t1 = _time.time()
             sc, why = self._hold_score(side, marks, glove_cm, other, soft, tree)
+            lap("score", t1)
             gap, _touch = getattr(self, "_settled", (None, 0.0))
             if settle and (gap is None or gap > 1.5):
                 sc += 500.0 + 10.0 * (gap or 10.0)        # the palm could not reach the object: no hold
@@ -959,7 +985,8 @@ class HoldMixin:
         sc, why = score(best[1])
         return {"score": round(sc, 2), "start_score": round(s0[0], 2), "x": [round(v, 2) for v in best[1]],
                 "shoulder_deg": list(getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))),
-                "evaluations": generations * pop + 2, "try_s": round(sum(times) / max(1, len(times)), 3), **why}
+                "evaluations": generations * pop + 2, "try_s": round(sum(times) / max(1, len(times)), 3),
+                "try_parts_s": {k: round(v / max(1, len(times)), 3) for k, v in prof.items()}, **why}
 
     # --- the gate --------------------------------------------------------------------------------------------
     def hold_gate(self, marks, sides=("r", "l"), glove_cm=0.0, skin=True):
