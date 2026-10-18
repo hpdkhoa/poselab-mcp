@@ -640,6 +640,23 @@ class HoldMixin:
         return {"purpose": "index_extended", "met": err <= 1e-6, "error": round(err, 3), "offsets_cm": [round(o, 2) for o in offs],
                 "band_cm": P["band_cm"], "angle_deg": round(ang, 1), "angle_max_deg": P["angle_max_deg"], "gap_cm": round(gap, 2)}
 
+    def arm_excess(self, side):
+        """How far past its limits the arm is, in degrees summed (0 inside every range): the wrist's bend, its
+        side bend (radial, ulnar), the forearm's roll, an elbow locked straight. A seed 2 degrees over on the wrist
+        is a start the search can mend; one 75 degrees over on the forearm is not."""
+        Lm = self._limits()[0]
+        rep_, bad = self._arm_report(side, Lm)
+        if rep_.get("forearm_rotation_deg") is None and bad:
+            return 200.0 + 10.0 * len(bad)            # an arm the report cannot read (out of reach): no start
+        w = abs(rep_.get("wrist_bend_deg", 0.0))
+        rad = rep_.get("wrist_radial_deg", 0.0)
+        roll = rep_.get("forearm_rotation_deg", 0.0) or 0.0
+        el = rep_.get("elbow_bend_deg", 90.0)
+        ex = max(0.0, w - Lm["wrist_max_deg"]) + max(0.0, rad - Lm["wrist_radial_deg"]) + max(0.0, -rad - Lm["wrist_ulnar_deg"])
+        ex += max(0.0, roll - Lm["supination_deg"]) + max(0.0, -roll - Lm["pronation_deg"])
+        ex += max(0.0, Lm["elbow_bend_min_deg"] + 5.0 - el)
+        return round(ex + 5.0 * len([b for b in bad if "shoulder" in b or "across" in b or "behind" in b]), 1)
+
     def purpose_comfort(self, side):
         P = PURPOSES["comfort"]
         rep_, bad = self._arm_report(side, self._limits()[0])
@@ -842,11 +859,17 @@ class HoldMixin:
         scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [10.0] + [4.0, 4.0] + [8.0] * 4 + [sigma_deg * 2] * 3 + [10.0, 10.0]
         plan = None
         if wrap:
-            plan = {fi: ({"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} if how == "wrap" else {"pose": "straight", "curl": [0.0, 0.0, 3.0]})
-                    for fi, how in wrap.items()}
+            plan = {}
+            for fi, how in wrap.items():
+                if fi == "thumb":
+                    plan[fi] = {"pose": "wrap", "max_curl": [0.0, 55.0, 80.0]}
+                else:
+                    plan[fi] = {"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} if how == "wrap" else {"pose": "straight", "curl": [0.0, 0.0, 3.0]}
             for k_, fi in enumerate(fins):
                 if fi in wrap:
                     scale[9 + k_] = 0.0
+            if "thumb" in wrap:
+                scale[16:18] = [0.0, 0.0]          # the thumb's bends come from its closing; its base is searched
 
         def apply(x):
             self.snapshot("load", "_ho")
@@ -875,27 +898,31 @@ class HoldMixin:
                 c3 = [base[fi][0] + d, base[fi][1] + d, base[fi][2] + d * 2.0 / 3.0]
                 for j, cc in zip(("01", "02", "03"), c3):
                     self._set_curl(side, fi, j, cc, FL)
-            if plan:
-                # the fingers opened, then closed until they meet the object or the other hand
-                for fi in plan:
-                    for j in ("01", "02", "03"):
-                        self._set_curl(side, fi, j, 0.0, FL)
-                bpy.context.view_layer.update()
-                self.close_hand(side, plan, tree, glove_cm, other, mend=False)
-                self.relax_fingers(side, tuple(plan))       # then opened by the skin until it presses nothing
             tv = Vector(x[13:16])
             if tv.length > 1e-6:
                 head = self._bw(n1).translation.copy()
                 self._turn_about(n1, tv.normalized(), tv.length, head)
             bpy.context.view_layer.update()
-            for j, b in (("02", tb[0] + x[16]), ("03", tb[1] + x[17])):
-                cur = self._thumb_report(side, TL)[0].get("thumb_" + j, [0, 0])[0]
-                if self.R.get("thumb_hinge") == "ray":
-                    self._thumb_flex(side, j, b - cur)
-                else:
-                    self._set_thumb_bend(side, tb[0] + x[16], tb[1] + x[17], TL)
-                    break
+            if not (plan and "thumb" in plan):
+                for j, b in (("02", tb[0] + x[16]), ("03", tb[1] + x[17])):
+                    cur = self._thumb_report(side, TL)[0].get("thumb_" + j, [0, 0])[0]
+                    if self.R.get("thumb_hinge") == "ray":
+                        self._thumb_flex(side, j, b - cur)
+                    else:
+                        self._set_thumb_bend(side, tb[0] + x[16], tb[1] + x[17], TL)
+                        break
             bpy.context.view_layer.update()
+            if plan:
+                # the fingers (and a wrapping thumb, its base turned) opened, then closed until they meet the
+                # object or the other hand, then opened by the skin until they press nothing
+                for fi in plan:
+                    if fi == "thumb":
+                        continue
+                    for j in ("01", "02", "03"):
+                        self._set_curl(side, fi, j, 0.0, FL)
+                bpy.context.view_layer.update()
+                self.close_hand(side, plan, tree, glove_cm, other, mend=False)
+                self.relax_fingers(side, tuple(plan))
             return short
 
         def score(x):

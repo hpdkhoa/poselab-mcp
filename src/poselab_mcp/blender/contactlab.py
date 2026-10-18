@@ -38,6 +38,8 @@ CONTACT_PURPOSES = {
     "thumb_inline": {"pad_cm2": 0.8, "estimate": True,
                      "why": "the thumb's pad pressed a little on the far side, laid in line with the index (FM 3-23.35 2-1)"},
     "index_extended": {"why": "the index straight along the opening's edge, never on a no-touch part (the trigger)"},
+    "thumb_wrap": {"pad_cm2": 0.8, "estimate": True,
+                   "why": "the thumb closed round the handle opposite the fingers, its pad on it (a round handle's power wrap)"},
     "support": {"palm_cm2": 4.0, "over_cm2": 3.0, "cover_min": 0.20, "estimate": True,
                 "why": "the support palm on the side the firing hand leaves open, its finger pads over the firing fingers' "
                        "backs, its own panel covered (FM 3-23.35 2-2)"},
@@ -307,50 +309,56 @@ class ContactMixin:
 
     def relax_fingers(self, side, fingers=("index", "middle", "ring", "pinky", "thumb"), step_deg=4.0, rounds=8,
                       allow_cm=0.05):
-        """Each finger opened, by the drawn skin, until it no longer presses into the object: the joint whose
-        segment presses deepest opens step_deg at a time (closing by capsules leaves skin a little inside: the
-        capsules are thinner than the flesh at the pads). Returns each finger's degrees opened."""
-        bvh = self._object_now()[0]
+        """Every finger opened, by the drawn skin, until it no longer presses into the object: each round one read
+        of the skin, and in each finger still pressing the joint whose segment presses deepest opens step_deg
+        (closing by capsules leaves skin a little inside: the capsules are thinner than the flesh at the pads).
+        Returns each finger's degrees opened."""
+        bvh, surf = self._object_now()[:2]
         _bone, _T, sidev, kind, segi = self._skin_static()
         sc_ = 1 if side == "r" else 2
         FL = self._limits()[1]
         TL = self._thumb_limits()
-        opened = {}
+        verts = {}
         for fi in fingers:
             k0 = DIGITS.index(fi) * 3
             vi = np.nonzero((sidev == sc_) & (kind == 3) & (segi >= k0) & (segi < k0 + 3))[0]
-            if not len(vi):
-                continue
-            tot = 0.0
-            for _ in range(rounds):
-                P, _N, _A, _b, _t = self._skin_arrays()
+            if len(vi):
+                verts[fi] = (k0, vi[:: max(1, len(vi) // 90)])
+        opened = {fi: 0.0 for fi in verts}
+        live = set(verts)
+        for _ in range(rounds):
+            if not live:
+                break
+            P, _N, _A, _b, _t = self._skin_arrays()
+            moved = False
+            for fi in sorted(live):
+                k0, vi = verts[fi]
                 deep = {}
-                for i in vi[:: max(1, len(vi) // 90)]:
+                for i in vi:
                     p_ = Vector(P[i])
                     loc, nrm, _k, d = bvh.find_nearest(p_, 0.03)
-                    if loc is not None and d * 100.0 > allow_cm and self._object_now()[1].inside(p_):
+                    if loc is not None and d * 100.0 > allow_cm and (p_ - loc).dot(nrm) < 0.0 and surf.inside(p_):
                         j = int(segi[i]) - k0
                         deep[j] = max(deep.get(j, 0.0), d)
                 if not deep:
-                    break
-                j = max(deep, key=deep.get)
-                jn = ("01", "02", "03")[j]
+                    live.discard(fi)
+                    continue
+                jn = ("01", "02", "03")[max(deep, key=deep.get)]
                 if fi == "thumb":
-                    if jn == "01":
-                        jn = "02"
-                    cur = self._thumb_report(side, TL)[0].get("thumb_" + jn, [0, 0])[0]
+                    jn = "02" if jn == "01" else jn
                     if self.R.get("thumb_hinge") == "ray":
                         self._thumb_flex(side, jn, -step_deg)
                     else:
-                        b2 = self._thumb_report(side, TL)[0].get("thumb_02", [0, 0])[0]
-                        b3 = self._thumb_report(side, TL)[0].get("thumb_03", [0, 0])[0]
+                        tr = self._thumb_report(side, TL)[0]
+                        b2, b3 = tr.get("thumb_02", [0, 0])[0], tr.get("thumb_03", [0, 0])[0]
                         self._set_thumb_bend(side, b2 - (step_deg if jn == "02" else 0.0), b3 - (step_deg if jn == "03" else 0.0), TL)
                 else:
                     cur = self._finger_report(side, FL)[0]["%s_%s" % (fi, jn)][0]
                     self._set_curl(side, fi, jn, cur - step_deg, FL)
+                opened[fi] += step_deg
+                moved = True
+            if moved:
                 bpy.context.view_layer.update()
-                tot += step_deg
-            opened[fi] = tot
         return opened
 
     def palm_check(self, side):
@@ -778,6 +786,17 @@ class ContactMixin:
                     res.append(g_)
                 if m.get("thumb") == "inline":
                     res.append(self._thumb_contact(side, m, glove_cm, cp, [far, "tang", "back", "opening_edge"], None))
+                elif m.get("thumb") in ("wrap", "opposed"):
+                    # the thumb closed round the handle the other way from the fingers (the GRASP taxonomy's power
+                    # wrap with the thumb opposed): its pad or side on the handle
+                    q2 = CONTACT_PURPOSES["thumb_wrap"]
+                    got2 = pa(cp, ["thumb?_pad", "thumb?_side"], pr_ if not named else RUN)
+                    e2 = self._short(got2, q2["pad_cm2"])
+                    met2 = e2 <= 1e-6
+                    if not met2:
+                        e2 += PULL_W * min(10.0, self.pull_cm(cp, ["thumb?_pad"], RUN))
+                    res.append({"purpose": "thumb_wrap", "met": met2, "error": round(e2, 3), "pad_cm2": got2,
+                                "asks": {"pad_cm2": q2["pad_cm2"]}})
             elif m["purpose"] == "support":
                 q = C["support"]
                 o = "r" if side == "l" else "l"

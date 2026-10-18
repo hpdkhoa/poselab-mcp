@@ -1,7 +1,8 @@
 """The hold benchmark: one hand holds a built shape with a known answer, by the whole hold stack (the object reader,
 the contact model, the purposes, the search, the gate), and every number is written down.
 
-Case "cylinder": a round handle 3.5 cm across and 12 cm long in front of the right hand. A power wrap on it must
+Case "cylinder": a round handle 3.5 cm across and 12 cm long in front of the right hand, its top leaned forward
+20 degrees as a hand holds a grip. A power wrap on it must
 pass the gate: the palm and the finger pads on the handle, a share of its surface covered, nothing pressed in.
 
     blender -b --factory-startup -P examples/hold_bench.py -- --arms-folder <folder> --arms Arms.fbx
@@ -32,6 +33,7 @@ ap.add_argument("--out", required=True)
 ap.add_argument("--generations", type=int, default=30)
 ap.add_argument("--pop", type=int, default=12)
 ap.add_argument("--view-cm", type=float, nargs=3, default=(10.0, 28.0, -20.0))
+ap.add_argument("--tilt-deg", type=float, default=20.0, help="the handle's top leaned forward, as a hand holds a grip")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:])
 os.makedirs(a.out, exist_ok=True)
 
@@ -70,7 +72,9 @@ rigs = os.path.join(a.out, "bench_rigs.json")
 json.dump(rig, open(rigs, "w"), indent=1)
 L = PL.Lab(rigs, a.out)
 L.load_rig("bench")
-L.rifle_rest = Matrix.LocRotScale(L._from(list(a.view_cm), "view"), Quaternion(), L.rifle_rest.to_scale())
+# the handle leaned: its top forward by tilt_deg about the view's right (a grip, a joystick, a hammer held up)
+lean = Quaternion(PL.VIEW_RIGHT, math.radians(-a.tilt_deg))
+L.rifle_rest = Matrix.LocRotScale(L._from(list(a.view_cm), "view"), lean, L.rifle_rest.to_scale())
 L.pose_idle()
 bpy.context.view_layer.update()
 
@@ -83,7 +87,7 @@ if not runs:
     out["result"] = "the reader found no run"
     json.dump(out, open(os.path.join(a.out, "bench_cylinder.json"), "w"), indent=1, default=str)
     sys.exit(1)
-marks = [{"part": "Root", "role": "hold", "purpose": "power_wrap", "run": 0, "hand": "r", "index": "wrap"}]
+marks = [{"part": "Root", "role": "hold", "purpose": "power_wrap", "run": 0, "hand": "r", "index": "wrap", "thumb": "wrap"}]
 out["regions_cm2"] = L.object_regions(marks)
 out["read_s"] = round(time.time() - t0, 2)
 
@@ -93,8 +97,9 @@ for _ in range(5):
     L.contact_pairs("r", other=False, cover_regions=["back", "front", "side_a", "side_b", "end"])
 out["contact_read_s"] = round((time.time() - t1) / 5.0, 3)
 
-WRAP = {fi: "wrap" for fi in ("index", "middle", "ring", "pinky")}
-plan = {fi: {"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} for fi in WRAP}
+WRAP = {fi: "wrap" for fi in ("index", "middle", "ring", "pinky", "thumb")}
+plan = {fi: {"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} for fi in WRAP if fi != "thumb"}
+plan["thumb"] = {"pose": "wrap", "max_curl": [0.0, 55.0, 80.0]}
 L.snapshot("save", "_seed")
 tries = []
 t2 = time.time()
@@ -148,6 +153,8 @@ for roll, flip in [(r_, f_) for f_ in (False, True) for r_ in range(0, 360, 30)]
         pc = L._bw(L._n("hand", "r")).translation.lerp(L._bw(L._n("finger", "r", "middle", "01")).translation, 0.5)
         print("DBG settled", roll, gap_, "pc_h", round((pc - RW["inner"]).dot(ax) * 100, 2))
     for fi in WRAP:
+        if fi == "thumb":
+            continue
         for j in ("01", "02", "03"):
             L._set_curl("r", fi, j, 0.0, L._limits()[1])
     L.close_hand("r", plan, L._tree(), 0.0, False, mend=False)
@@ -159,11 +166,21 @@ for roll, flip in [(r_, f_) for f_ in (False, True) for r_ in range(0, 360, 30)]
         print("DBG press", cp_["press_cm2"], cp_["deepest_cm"], pr_[:8], "settle", L.settle_palm("r"))
     if os.environ.get("BENCH_DEBUG"):
         print("DBG score", roll, round(sc, 1), [(p_["purpose"], p_["error"], {k: p_.get(k) for k in ("palm_cm2", "fingers_front_cm2", "cover", "pull_cm", "wrist_deg")}) for p_ in why["purposes"]])
-    tries.append((sc, (roll, flip)))
-    if sc <= min(t_[0] for t_ in tries):
+    # a seed that breaks an arm rule (a forearm twisted past its range) is no start: the body first
+    rep__, bad_ = L._arm_report("r", L._limits()[0])
+    if os.environ.get("BENCH_DEBUG"):
+        RW_ = L._run_world(runs[0])
+        print("DBG arm", roll, flip, "roll", rep__.get("forearm_rotation_deg"), "wrist", rep__.get("wrist_bend_deg"), "elbow", rep__.get("elbow_bend_deg"),
+              "index_up", round((L._bw(L._n("finger", "r", "index", "01")).translation - L._bw(L._n("finger", "r", "pinky", "01")).translation).normalized().z, 2),
+              "palm_facing", [round(v, 2) for v in L._palm_facing("r")], "bad", bad_)
+    # the starts ranked by how far past its limits the arm is (the body first), then by the score
+    ex_ = L.arm_excess("r")
+    tries.append((sc, (roll, flip), ex_))
+    if (ex_, sc) <= min((t_[2], t_[0]) for t_ in tries):
         L.snapshot("save", "_best")
 L.snapshot("load", "_best")
-out["seeds"] = sorted([{"roll_deg": r[0], "flip": r[1], "score": round(s_, 1)} for s_, r in tries], key=lambda x: x["score"])
+out["seeds"] = sorted([{"roll_deg": r[0], "flip": r[1], "score": round(s_, 1), "arm_excess_deg": e_} for s_, r, e_ in tries],
+                     key=lambda x: (x["arm_excess_deg"], x["score"]))
 out["seed_s"] = round(time.time() - t2, 1)
 t3 = time.time()
 out["hold"] = L.hold_object("r", marks, glove_cm=0.0, other=False, generations=a.generations, pop=a.pop, wrap=WRAP)
