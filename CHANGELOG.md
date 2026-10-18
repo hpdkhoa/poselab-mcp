@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+The hand work trimmed to one score (2026-10-18). Five searches each scored a hold their own way and undid one
+another's work; a known good hold adapted in small moves replaces searching from nothing.
+
+* `hold_score`: the one score every hold search and every repair uses (contact rules, presses into the gun and the
+  other hand, the arm's ease and rules, the digits' rules, reach).
+* `adapt_hold`: a reference hold already on the hand (a pack's hand, a dataset's grasp) adapted to this gun, started
+  from the hand's own bends, kept within a span and a turn of its start; how far it went says whether the reference
+  fits. `es_hold` gains the elbow's swing as a dimension (the whole arm moves), `from_pose`, `span_cm`, `turn_deg`,
+  `keep_w` and `hand_only`.
+* `put_reference`: a reference hold put on the hand: digit bends, a rigid fit to the wrist, knuckles and thumb base,
+  the thumb's tip aimed.
+* `repair_hand`: one frame mended by the same score (the hand and the elbow move, the digits stay). It does the work
+  of Gun Kit's four repair passes.
+* `skin_presses`: the drawn skin against the gun (signed, ray parity) and the other hand, vertex by vertex; the
+  capsules test a slightly thinner body than the picture.
+* `view_report`: what the eye sees of a hold: the sights' visible share, the arms' cover, each hand shown.
+* `examples/geometry_tests.py`: known answers for the capsule, segment and signed-distance measures (13 checks).
+* Removed: `hold_chain` and `thumb_search` (no callers left once the trim landed).
+
 Every hand in an action has a target, from a review by eye of the repair pilot (2026-10-15): a repaired AK charge
 pose broke no rule, but its right hand pulled nothing and three of its fingers curled in the air.
 

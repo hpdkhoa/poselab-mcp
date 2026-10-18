@@ -37,7 +37,8 @@ PUBLIC = ("load_rig", "describe", "list_rigs", "pose_idle", "pose_clip", "move_p
           "record_clip", "load_clip", "scan_clip", "fix_clip", "save_clip",
           "where", "distance", "clearance", "anatomy", "grip", "purpose", "solve_hand", "hand_presses", "faces_eye", "visible", "screen", "solve", "render",
           "view_cover", "solve_grip", "retarget_clip", "check_set", "shift_hand", "body_size", "place_hand",
-          "contacts", "natural_hold", "es_hold")
+          "contacts", "natural_hold", "es_hold",
+          "hold_score", "adapt_hold", "repair_hand", "skin_presses", "view_report", "put_reference")
 # How far a human arm bends, for a hand working a gun. The joint ranges are the AAOS normal values (elbow flexion
 # 0-150, wrist flexion 80, extension 70, radial deviation 20, ulnar 30); the working rules are stricter: the wrist
 # within 30 degrees of the forearm's line, the elbow (a hinge) never locked straight, and the elbow below the shoulder
@@ -425,6 +426,8 @@ class Lab:
 
     def _two_bone(self, side, goal, pole=None, pole_world=None):
         upper, lower, hand = self._n("upperarm", side), self._n("lowerarm", side), self._n("hand", side)
+        if pole_world is None and pole is None and getattr(self, "pole_world", {}).get(side) is not None:
+            pole_world = self.pole_world[side]        # a reference's own elbow: the arm bends as its animator's did
         pole = pole_world if pole_world is not None else ue(pole or self.poles[side])
         S, E, W = self._bw(upper).translation, self._bw(lower).translation, self._bw(hand).translation
         l1, l2 = (E - S).length, (W - E).length
@@ -1799,14 +1802,57 @@ class Lab:
         out["ok"] = out["ok"] and closed
         return out
 
+    def hold_score(self, side, rules=None, glove_cm=0.0, other=True, soft=None, tree=None, short=0.0):
+        """The one score every hold search and every repair uses (lower is better): each contact rule's error 10 (an
+        optional rule 3), each press into the gun or the other hand past its allowance 25, the arm's ease (the wrist's
+        bend, the forearm's roll, a straight elbow), each arm, finger or thumb rule broken 200,
+        each cm the arm falls short of the hand 4. Returns (score, its parts)."""
+        Lm, FL = self._limits()
+        TL = self._thumb_limits()
+        tree = tree or self._tree()
+        vv = self._gun_verts() if rules else None
+        err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
+                  for r_ in (rules or []))
+        pen, worst = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)
+        cm, rep_, abad = self._comfort(side, Lm)
+        fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
+        # anatomy first: a broken arm rule (its 20 in the ease and 180 more) or digit rule costs more than any
+        # contact rule gains; a hold may miss a touch, never bend a body past its range
+        sc = 10.0 * err + 25.0 * pen + cm + 180.0 * len(abad) + 200.0 * fbad + 4.0 * short
+        return sc, {"rules_error": round(err, 3), "press": round(pen, 3), "presses": worst[:3], "comfort": round(cm, 2),
+                    "arm_bad": abad, "digit_rules": fbad, "wrist_bend_deg": rep_.get("wrist_bend_deg"),
+                    "forearm_rotation_deg": rep_.get("forearm_rotation_deg"), "elbow_bend_deg": rep_.get("elbow_bend_deg")}
+
+    def adapt_hold(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, span_cm=3.0, turn_deg=20.0,
+                   keep_w=1.0, generations=40, pop=16, seed=7, sigma_cm=0.8, sigma_deg=6.0, freeze_thumb=False):
+        """A known good hold (a reference already put on the hand) adapted to this gun: the same search as es_hold,
+        started from the bends the hand has now, the hand kept within span_cm and turn_deg of where it started and
+        drawn back toward it by keep_w a cm (0.05 a degree). A hold that needs the whole span means the reference
+        does not fit this gun: moved_cm and turned_deg say how far it went."""
+        return self.es_hold(side, rules, plan=plan, glove_cm=glove_cm, other=other, soft=soft, generations=generations,
+                            pop=pop, seed=seed, sigma_cm=sigma_cm, sigma_deg=sigma_deg, freeze_thumb=freeze_thumb,
+                            from_pose=True, span_cm=span_cm, turn_deg=turn_deg, keep_w=keep_w)
+
+    def repair_hand(self, side, glove_cm=0.0, other=True, soft=None, keep_w=2.0, span_cm=10.0, generations=6, pop=8,
+                    seed=3, sigma_cm=1.0, sigma_deg=6.0):
+        """One frame mended: the hand moved and turned (its digits as they are) and the elbow swung, by the same score
+        with no contact rules, the hand drawn back to where the motion put it by keep_w a cm. It does the work of the
+        lift off the gun, the elbow's ease, the wrist's relief and its turns. Returns the score's parts."""
+        return self.es_hold(side, None, glove_cm=glove_cm, other=other, soft=soft, generations=generations, pop=pop,
+                            seed=seed, sigma_cm=sigma_cm, sigma_deg=sigma_deg, from_pose=True, span_cm=span_cm,
+                            turn_deg=45.0, keep_w=keep_w, hand_only=True)
+
     def es_hold(self, side, rules, plan=None, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=7,
-                sigma_cm=1.0, sigma_deg=8.0, freeze_thumb=False):
+                sigma_cm=1.0, sigma_deg=8.0, freeze_thumb=False, from_pose=False, span_cm=None, turn_deg=None,
+                keep_w=0.0, hand_only=False):
         """A hold refined as one problem, from where the hand is now: the hand's place (3) and turn (3, about its
-        palm's middle), each finger's bend off its measured posture (4, within its tolerance), and the thumb's base
-        turn (3) and its two bends (2), searched together by an evolution strategy (a population each generation,
-        the best quarter recombined, the step widened when it helps and narrowed when not). Each try is scored by
-        every contact rule, every press into the gun or the other hand, the arm's rules (each all but forbidden),
-        the thumb's and fingers' rules, and the arm's ease. Returns the score's parts at the best."""
+        palm's middle), each finger's bend off its measured posture (4, within its tolerance), the thumb's base
+        turn (3) and its two bends (2), and the elbow's swing about the shoulder-to-wrist line (1), searched together
+        by an evolution strategy (a population each generation, the best quarter recombined, the step widened when
+        it helps and narrowed when not). Each try is scored by hold_score. from_pose: the bends are the hand's own
+        now (a reference), not the plan's posture; span_cm, turn_deg: the hand kept that near its start; keep_w:
+        each cm away from the start costs that; hand_only: the digits stay as they are. Returns the score's parts
+        at the best."""
         import random as _random
         self._need()
         rnd = _random.Random(seed)
@@ -1823,19 +1869,42 @@ class Lab:
         tols = {fi: float((plan or {}).get(fi, {}).get("tol", 15.0)) for fi in fins}
         tpl = (plan or {}).get("thumb") or {}
         tb = list(tpl.get("curl", [0.0, 10.0, 6.0]))
-        dim = 15
-        scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [tols[fi] / 2.0 for fi in fins] + [sigma_deg * 2] * 3 + [10.0, 10.0]
+        if from_pose:
+            # the bends the hand has now: a reference put on it, or the frame the motion made
+            fr_ = self._finger_report(side, FL)[0]
+            base = {fi: [fr_["%s_%s" % (fi, j)][0] for j in ("01", "02", "03")] for fi in fins}
+            tr_ = self._thumb_report(side, TL)[0]
+            tb = [0.0, tr_.get("thumb_02", [0.0])[0], tr_.get("thumb_03", [0.0])[0]]
+        dim = 16
+        scale = ([sigma_cm] * 3 + [sigma_deg] * 3 + [tols[fi] / 2.0 for fi in fins] + [sigma_deg * 2] * 3 + [10.0, 10.0]
+                 + [10.0])
         if freeze_thumb:
             scale[10:15] = [0.0] * 5           # the thumb kept as it is: the hand and fingers move round it
+        if hand_only:
+            scale[6:15] = [0.0] * 9            # the digits as they are: the hand and the elbow move
+
+        def clamp(x):
+            t = Vector(x[0:3])
+            if span_cm is not None and t.length > span_cm:
+                t = t.normalized() * span_cm
+            rv = Vector(x[3:6])
+            if turn_deg is not None and rv.length > turn_deg:
+                rv = rv.normalized() * turn_deg
+            return t, rv
 
         def apply(x):
             self.snapshot("load", "_es")
-            t = Vector(x[0:3]) / 100.0
-            rv = Vector(x[3:6])
+            tc, rv = clamp(x)
+            t = tc / 100.0
             q = Quaternion(rv.normalized(), math.radians(rv.length)) if rv.length > 1e-6 else Quaternion()
             R = Matrix.Translation(t) @ Matrix.Translation(P0) @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0
             short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
             bpy.context.view_layer.update()
+            if abs(x[15]) > 0.5:
+                self._swing_elbow(side, max(-40.0, min(40.0, x[15])))     # the elbow about the shoulder-wrist line
+                bpy.context.view_layer.update()
+            if hand_only:
+                return short
             for k_, fi in enumerate(fins):
                 d = max(-tols[fi], min(tols[fi], x[6 + k_]))
                 c3 = [base[fi][0] + d, base[fi][1] + d, base[fi][2] + d * 2.0 / 3.0]
@@ -1862,16 +1931,11 @@ class Lab:
 
         def score(x):
             short = apply(x)
-            vv = self._gun_verts()
-            err = sum(self._rule_eval(side, r_, glove_cm, vv)["error"] * (1.0 if r_.get("need", "required") == "required" else 0.3)
-                      for r_ in (rules or []))
-            pen, worst = self.hand_presses(side, tree, glove_cm, other=other, soft=soft)
-            cm, rep_, abad = self._comfort(side, Lm)
-            fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
-            sc = 10.0 * err + 25.0 * pen + cm + 20.0 * fbad + 4.0 * short
-            return sc, {"rules_error": round(err, 3), "press": round(pen, 3), "presses": worst[:3], "comfort": round(cm, 2),
-                        "arm_bad": abad, "digit_rules": fbad, "wrist_bend_deg": rep_.get("wrist_bend_deg"),
-                        "forearm_rotation_deg": rep_.get("forearm_rotation_deg"), "elbow_bend_deg": rep_.get("elbow_bend_deg")}
+            sc, why = self.hold_score(side, rules, glove_cm, other, soft, tree, short)
+            if keep_w:
+                tc, rv = clamp(x)
+                sc += keep_w * (tc.length + 0.05 * rv.length)
+            return sc, why
 
         mean = [0.0] * dim
         sig = 1.0
@@ -1891,7 +1955,118 @@ class Lab:
                 sig = max(0.1, sig * 0.85)
             mean = [sum(k[1][i] for k in kids[:mu]) / mu for i in range(dim)]
         sc, why = score(best[1])
-        return {"score": round(sc, 2), "x": [round(v, 2) for v in best[1]], "evaluations": generations * pop + 2, **why}
+        tc, rv = clamp(best[1])
+        return {"score": round(sc, 2), "x": [round(v, 2) for v in best[1]], "evaluations": generations * pop + 2,
+                "moved_cm": round(tc.length, 2), "turned_deg": round(rv.length, 1), **why}
+
+    # --- the reference, the skin and the view (0.9.0): one seed, mesh-true checks, what the player sees ------------
+    def put_reference(self, side, ref, glove_cm=0.0, other=True):
+        """A reference hold (a pack's or a dataset's, already in this gun's world) put on the hand: each finger's
+        three bends and the thumb's two (the measured angles), then the hand fitted as one rigid body to the
+        reference's wrist, knuckles and thumb base (Kabsch; a smaller or larger hand lands as near as it can), then
+        the thumb's base aimed so its tip comes to the reference's. ref: {"points": {wrist|index_knuckle|knuckle|
+        pinky_knuckle|thumb_cmc: world point}, "curls": {finger: [3 degrees]}, "thumb": [knuckle, end degrees],
+        "thumb_tip": world point, "elbow": world point (the arm's pole from then on), "keep": [digits left as they are]}.
+        Returns each point's distance left (cm)."""
+        self._need()
+        FL = self._limits()[1]
+        TL = self._thumb_limits()
+        keep = set(ref.get("keep") or ())
+        for fi, c3 in (ref.get("curls") or {}).items():
+            if fi in keep:
+                continue
+            for j, cc in zip(("01", "02", "03"), c3):
+                self._set_curl(side, fi, j, float(cc), FL)
+        bpy.context.view_layer.update()
+        th = ref.get("thumb")
+        if th and "thumb" not in keep:
+            if self.R.get("thumb_hinge") == "ray":
+                for j, b in (("02", th[0]), ("03", th[1])):
+                    cur = self._thumb_report(side, TL)[0].get("thumb_" + j, [0, 0])[0]
+                    self._thumb_flex(side, j, float(b) - cur)
+                    bpy.context.view_layer.update()
+            else:
+                self._set_thumb_bend(side, float(th[0]), float(th[1]), TL)
+        pts = {k: v for k, v in (ref.get("points") or {}).items()
+               if k in ("wrist", "index_knuckle", "knuckle", "pinky_knuckle", "thumb_cmc")}
+        if (ref.get("points") or {}).get("elbow") is not None:
+            # the reference's elbow as this arm's pole from now on (a body-fixed point: the arm frame does not move)
+            if not hasattr(self, "pole_world"):
+                self.pole_world = {}
+            self.pole_world[side] = Vector(ref["points"]["elbow"])
+        placed = self.place_hand(side, pts, frame="world")
+        out = {"left_cm": placed["left_cm"], "short_cm": placed["short_cm"]}
+        if ref.get("thumb_tip") is not None and "thumb" not in keep:
+            tgt = Vector(ref["thumb_tip"])
+            self._thumb_to(side, tgt, self._tree(), glove_cm, other, joints=("01",), guard=True)
+            out["thumb_tip_left_cm"] = round((self._finger_tip("thumb", side) - tgt).length * 100.0, 2)
+        bpy.context.view_layer.update()
+        return out
+
+    def skin_presses(self, side="both", glove_cm=0.0, allow_cm=0.1, palm_allow_cm=0.3, skin_allow_cm=0.5, other=True,
+                     top=4):
+        """How far the drawn skin goes into the gun and into the other hand: every skin vertex of the forearm, the
+        hand and its digits (the glove's thickness out along it), measured to the gun's surface (signed: inside is
+        found by ray parity, not by a nearest corner) and to the other hand's capsules. The capsule checks test a
+        body slightly thinner than the drawn one; this is the picture's own answer. The palm may press
+        palm_allow_cm, skin on skin skin_allow_cm (it gives). Returns per side the worst press into the gun and into
+        the other hand (cm), the part, how many vertices press past their allowance, and ok."""
+        self._need()
+        tree = self._tree()
+        g = glove_cm / 100.0
+        dg = bpy.context.evaluated_depsgraph_get()
+        M = self.rifle_mesh.matrix_world
+        corners = [M @ Vector(c) for c in self.rifle_mesh.bound_box]
+        lo = Vector((min(c.x for c in corners), min(c.y for c in corners), min(c.z for c in corners))) - Vector((0.03,) * 3)
+        hi = Vector((max(c.x for c in corners), max(c.y for c in corners), max(c.z for c in corners))) + Vector((0.03,) * 3)
+        sides = ("l", "r") if side == "both" else (side,)
+        segs = {s_: [x for x in self._segments(s_) if not x[0].startswith("forearm")] for s_ in ("l", "r")}
+        out, ok = {}, True
+        pts = self._skin_points()
+        for s_ in sides:
+            suf = "_" + s_
+            hand = self._n("hand", s_)
+            theirs = segs["r" if s_ == "l" else "l"] if other else []
+            worst_g, worst_o, over = (0.0, None), (0.0, None), 0
+            for p, bone in pts:
+                if not bone.endswith(suf) or bone.startswith(("upperarm", "clavicle")):
+                    continue
+                part = "palm" if bone == hand else bone
+                allow = palm_allow_cm if part == "palm" else allow_cm
+                if lo.x <= p.x <= hi.x and lo.y <= p.y <= hi.y and lo.z <= p.z <= hi.z:
+                    _q, d = tree.nearest(p)
+                    if d is not None and d < g:
+                        deep = (g - d) * 100.0
+                        if deep > worst_g[0]:
+                            worst_g = (deep, part)
+                        if deep > allow:
+                            over += 1
+                if bone.startswith(("lowerarm", "forearm")) or "twist" in bone:
+                    continue
+                for oname, oa, ob, orr in theirs:
+                    into = 2.0 * glove_cm - self._seg_point_cm(oa, ob, orr, p)
+                    if into > worst_o[0]:
+                        worst_o = (into, "%s on %s" % (part, oname))
+                    if into > skin_allow_cm:
+                        over += 1
+                        break
+            rec = {"gun_cm": round(worst_g[0], 2), "gun_part": worst_g[1], "hand_cm": round(worst_o[0], 2),
+                   "hand_part": worst_o[1], "vertices_over": over}
+            rec["ok"] = over == 0
+            ok = ok and rec["ok"]
+            out[s_] = rec
+        out["ok"] = ok
+        return out
+
+    def view_report(self, sights=(), size=(192, 108)):
+        """What the player sees of the hold from the eye: each sight point's visible share (the arms and the gun in
+        the way), the arms' cover of the view (all of it and its lower left third) and how much of each hand shows.
+        sights: points as visible() takes them (a pistol's rear and front sight)."""
+        self._need()
+        vc = self.view_cover(size=size)
+        return {"sights": [self.visible(p, radius_cm=0.3)["visible"] for p in sights],
+                "cover": vc["total"], "lower_left": vc["lower_left"], "bottom_middle": vc["bottom_middle"],
+                "hand_r_shown": self.hand_shown("r"), "hand_l_shown": self.hand_shown("l")}
 
     def _comfort(self, side, Lm=None):
         """How far the arm is from a relaxed one, beyond its limits counted hard: each arm rule broken 20, the wrist's
