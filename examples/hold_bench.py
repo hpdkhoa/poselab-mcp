@@ -6,7 +6,7 @@ Case "cylinder": a round handle 3.5 cm across and 12 cm long in front of the rig
 pass the gate: the palm and the finger pads on the handle, a share of its surface covered, nothing pressed in.
 
     blender -b --factory-startup -P examples/hold_bench.py -- --arms-folder <folder> --arms Arms.fbx
-        --idle Arms_Idle.fbx --eye 0 -2.3 162.6 --out <folder> [--generations 30 --pop 12] [--bone-edits bone_edits.json]
+        --idle Arms_Idle.fbx --eye 0 -2.3 162.6 --out <folder> [--bone-edits bone_edits.json]
 The arms are yours (no arms ship with Pose Lab). Writes <out>/bench_cylinder.json and its contact pictures."""
 import argparse
 import json
@@ -30,11 +30,7 @@ ap.add_argument("--idle", required=True)
 ap.add_argument("--eye", type=float, nargs=3, required=True)
 ap.add_argument("--bone-edits", default=None)
 ap.add_argument("--out", required=True)
-ap.add_argument("--generations", type=int, default=30)
-ap.add_argument("--pop", type=int, default=12)
 ap.add_argument("--restarts", type=int, default=3)
-ap.add_argument("--solver", choices=("target", "search"), default="target",
-                help="target: the hold solved toward its purposes' targets (no chance); search: the evolution strategy")
 ap.add_argument("--view-cm", type=float, nargs=3, default=(10.0, 28.0, -20.0))
 ap.add_argument("--tilt-deg", type=float, default=20.0, help="the handle's top leaned forward, as a hand holds a grip")
 a = ap.parse_args(sys.argv[sys.argv.index("--") + 1:])
@@ -194,15 +190,14 @@ for k, (sc0, (roll, flip), ex0) in enumerate(order):
     L.snapshot("load", "_seed")
     L.seed_hold("r", marks[0], palm_dir=None, roll_deg=float(roll), flip=flip)
     L.settle_palm("r")
-    if a.solver == "target":
-        h_ = L.target_hold("r", marks, glove_cm=0.0, other=False, wrap=WRAP)
-        h_.setdefault("try_s", h_["solve_s"])
-    else:
-        h_ = L.hold_object("r", marks, glove_cm=0.0, other=False, generations=a.generations, pop=a.pop, wrap=WRAP, seed=5 + k)
+    h_ = L.target_hold("r", marks, glove_cm=0.0, other=False, wrap=WRAP)       # inside the walls, no chance in it
+    h_.setdefault("try_s", h_["solve_s"])
     g_ = L.hold_gate(marks, sides=("r",), glove_cm=0.0, skin=False)
     out["restarts"].append({"roll_deg": roll, "flip": flip, "score": h_["score"], "gate": g_["pass"],
-                            "rounds": h_.get("rounds"), "unmet": h_.get("unmet")})
-    if best is None or (g_["pass"], -h_["score"]) > (best[1]["pass"], -best[0]["score"]):
+                            "rounds": h_.get("rounds"), "unmet": h_.get("unmet"), "walls": h_.get("walls")})
+    g_["pass"] = g_["pass"] and not h_.get("walls")
+    if best is None or (L._walls_rank(h_.get("walls") or {}), not g_["pass"], h_["score"]) < (
+            L._walls_rank(best[0].get("walls") or {}), not best[1]["pass"], best[0]["score"]):
         best = (h_, g_)
         L.snapshot("save", "_held")
     if g_["pass"]:
@@ -232,7 +227,6 @@ centre = L._obj_frame("Root") @ Vector(runs[0]["sections"][len(runs[0]["sections
 out["pictures"] = L.contact_pictures(os.path.join(a.out, "bench_cylinder"), centre=list(centre), frame_part="Root",
                                      kinds=("hand", "heat", "contact"), ortho_cm=24.0)
 json.dump(out, open(os.path.join(a.out, "bench_cylinder.json"), "w"), indent=1, default=str)
-out["solver"] = a.solver
 json.dump(out, open(os.path.join(a.out, "bench_cylinder.json"), "w"), indent=1, default=str)
-print("BENCH cylinder %s gate %s, try %.3f s, search %.0f s, contact read %.3f s" % (a.solver, out["gate"]["pass"], out["hold"]["try_s"],
+print("BENCH cylinder gate %s, walls %s, solve %.1f s, all starts %.0f s, contact read %.3f s" % (out["gate"]["pass"], out["hold"].get("walls"), out["hold"]["try_s"],
                                                                          out["search_s"], out["contact_read_s"]))

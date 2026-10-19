@@ -22,6 +22,8 @@ import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 
+from contactlab import CLIP_NOISE_CM2
+
 # the shoulder girdle: the sternoclavicular joint's range, a working share of it kept
 CLAVICLE = {"protraction_deg": 15.0, "retraction_deg": 20.0, "elevation_deg": 30.0, "depression_deg": 8.0,
             "source": "Neumann, Kinesiology of the Musculoskeletal System (3rd ed., 2017), the sternoclavicular joint: "
@@ -829,170 +831,76 @@ class HoldMixin:
         bpy.context.view_layer.update()
         return {"short_cm": round(short, 2), "roll_deg": roll_deg}
 
-    def hold_object(self, side, marks, glove_cm=0.0, other=True, soft=None, generations=40, pop=16, seed=5,
-                    sigma_cm=1.0, sigma_deg=8.0, close=None, wrap=None, settle=True, conform=True):
-        """A hand's hold searched over the whole arm, from where it is now: the hand's place (3) and turn (3), the
-        elbow's swing (1), the shoulder girdle (2: forward, up), each finger's bend (4) and the thumb's base turn
-        (3) and two bends (2), by an evolution strategy; each try scored by its purposes (hold_purposes), its
-        presses into the object and the other hand, and the body's rules (each broken all but forbidden). close:
-        {finger: [3 bends]} the fingers start from (else as they are). wrap: {finger: "wrap" | "straight"}: each
-        try closes those fingers until their skin meets the object or the other hand (as real fingers close on a
-        handle), the straight ones laid straight; their bends are then not searched. settle: each try first slides
-        the hand until its palm's skin meets the object (palm first, then the fingers close), and a try whose palm
-        cannot reach it is thrown out. Returns the score's parts and the time a try takes."""
-        import time as _time
-        import random as _random
-        self._need()
-        rnd = _random.Random(seed)
+    def hold_object(self, side, marks, glove_cm=0.0, other=True, soft=None, generations=None, pop=None, seed=None,
+                    wrap=None, **_old):
+        """A hand's hold on its marks: the target solver (target_hold), inside the walls. The old random search
+        this name ran priced a broken body rule against contact and is gone; its search settings are ignored."""
+        return self.target_hold(side, marks, glove_cm=glove_cm, other=other, wrap=wrap)
+
+    def wall_faults(self, side, other=True):
+        """Every wall this hand breaks as posed now, each with how far past it is: the arm's rules, the fingers' and
+        the thumb's ranges, a holding digit's limits (degrees past), and clipping (skin in the object past its give,
+        the object in the flesh past it, a hand in the other: cm2 and cm). Empty when the hand is inside every wall."""
+        import re
+        out = {}
+
+        def add(kind, msg):
+            m = re.search(r"(-?\d+(?:\.\d+)?)\D*\(at most (-?\d+(?:\.\d+)?)\)", msg)
+            if m:
+                key, over = kind + ":" + msg[:m.start(1)].strip(), abs(float(m.group(1)) - float(m.group(2)))
+            else:
+                key, over = kind + ":" + re.sub(r"\(.*?\)", "", msg).strip(), 1.0
+            out[key] = max(out.get(key, 0.0), over)
         FL = self._limits()[1]
         TL = self._thumb_limits()
-        tree = self._tree()
-        hn = self._n("hand", side)
-        if close:
-            for fi, c3 in close.items():
-                for j, cc in zip(("01", "02", "03"), c3):
-                    self._set_curl(side, fi, j, float(cc), FL)
-            bpy.context.view_layer.update()
-        H0 = self._bw(hn).copy()
-        P0 = H0.translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
-        n1 = self._n("finger", side, "thumb", "01")
-        fins = ("index", "middle", "ring", "pinky")
-        fr_ = self._finger_report(side, FL)[0]
-        base = {fi: [fr_["%s_%s" % (fi, j)][0] for j in ("01", "02", "03")] for fi in fins}
-        tr_ = self._thumb_report(side, TL)[0]
-        tb = [tr_.get("thumb_02", [0.0])[0], tr_.get("thumb_03", [0.0])[0]]
-        clav0 = getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))
-        self.snapshot("save", "_ho")
-        dim = 18
-        scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [10.0] + [4.0, 4.0] + [8.0] * 4 + [sigma_deg * 2] * 3 + [10.0, 10.0]
-        plan = None
-        if wrap:
-            plan = {}
-            for fi, how in wrap.items():
-                if fi == "thumb":
-                    plan[fi] = {"pose": "wrap", "max_curl": [0.0, 55.0, 80.0]}
-                else:
-                    plan[fi] = {"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} if how == "wrap" else {"pose": "straight", "curl": [0.0, 0.0, 3.0]}
-            for k_, fi in enumerate(fins):
-                if fi in wrap and wrap[fi] == "wrap":
-                    scale[9 + k_] = 0.0          # closed by contact; a straight (extended) finger keeps its bend searched
-            if "thumb" in wrap:
-                scale[16:18] = [0.0, 0.0]          # the thumb's bends come from its closing; its base is searched
+        for msg in self._arm_report(side, self._limits()[0])[1]:
+            add("arm", msg)
+        for msg in self._finger_report(side, FL)[1]:
+            add("finger", msg)
+        for msg in self._thumb_report(side, TL)[1]:
+            add("thumb", msg)
+        for msg in self.hold_digit_rule(side)["faults"]:
+            add("holding", msg)
+        if getattr(self, "_object", None):
+            cp = self.contact_pairs(side, other=other)
+            area = cp["press_cm2"] + cp["pierced_cm2"] + cp["hand_press_cm2"]
+            deep = max(cp["deepest_cm"], cp["pierced_deep_cm"], cp["hand_deepest_cm"])
+            if area > CLIP_NOISE_CM2 or deep > 0.0:
+                out["clip:area_cm2"], out["clip:deepest_cm"] = area, deep
+        else:
+            sp = self.skin_presses(side, other=other)
+            if not sp["ok"]:
+                s_ = sp.get(side, {})
+                out["clip:deepest_cm"] = max(s_.get("gun_cm", 0.0), s_.get("hand_cm", 0.0), 0.01)
+        return out
 
-        prof = {}
+    def _walls_hold(self, now, before):
+        """True when no wall is broken now that was not broken before, and none is broken further."""
+        for k, v in now.items():
+            if k not in before:
+                return False
+            tol = self.WALL_TOL["clip_cm2"] if k == "clip:area_cm2" else (self.WALL_TOL["clip_cm"] if k.startswith("clip") else self.WALL_TOL["deg"])
+            if v > before[k] + tol:
+                return False
+        return True
 
-        def lap(name, t0):
-            prof[name] = prof.get(name, 0.0) + (_time.time() - t0)
-            return _time.time()
+    @staticmethod
+    def _walls_rank(w):
+        """Fewer walls broken first, then by less past them."""
+        return (len(w), round(sum(w.values()), 3))
 
-        def apply(x):
-            t_ = _time.time()
-            self.snapshot("load", "_ho")
-            pr, el = clav0[0] + x[7], clav0[1] + x[8]
-            sh = self.shoulder(side, pr, el)
-            if not hasattr(self, "_clav_now"):
-                self._clav_now = {}
-            self._clav_now[side] = (sh["protraction_deg"], sh["elevation_deg"])
-            t = Vector(x[0:3]) / 100.0
-            rv = Vector(x[3:6])
-            q = Quaternion(rv.normalized(), math.radians(rv.length)) if rv.length > 1e-6 else Quaternion()
-            R = Matrix.Translation(t) @ Matrix.Translation(P0) @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0
-            short = self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
-            bpy.context.view_layer.update()
-            if abs(x[6]) > 0.5:
-                self._swing_elbow(side, max(-40.0, min(40.0, x[6])))
-                bpy.context.view_layer.update()
-            t_ = lap("place", t_)
-            settled = (None, 0.0)
-            if settle:
-                settled = self.settle_palm(side)
-            self._settled = settled
-            t_ = lap("settle", t_)
-            for k_, fi in enumerate(fins):
-                if plan and fi in plan and plan[fi].get("pose") != "straight":
-                    continue
-                d = x[9 + k_]
-                b3 = plan[fi]["curl"] if plan and fi in plan else base[fi]
-                c3 = [b3[0] + d, b3[1] + d * 0.5, b3[2] + d * 0.3]
-                for j, cc in zip(("01", "02", "03"), c3):
-                    self._set_curl(side, fi, j, cc, FL)
-            tv = Vector(x[13:16])
-            if tv.length > 1e-6:
-                head = self._bw(n1).translation.copy()
-                self._turn_about(n1, tv.normalized(), tv.length, head)
-            bpy.context.view_layer.update()
-            if not (plan and "thumb" in plan):
-                for j, b in (("02", tb[0] + x[16]), ("03", tb[1] + x[17])):
-                    cur = self._thumb_report(side, TL)[0].get("thumb_" + j, [0, 0])[0]
-                    if self.R.get("thumb_hinge") == "ray":
-                        self._thumb_flex(side, j, b - cur)
-                    else:
-                        self._set_thumb_bend(side, tb[0] + x[16], tb[1] + x[17], TL)
-                        break
-            bpy.context.view_layer.update()
-            if plan:
-                # the fingers (and a wrapping thumb, its base turned) opened, then closed until they meet the
-                # object or the other hand, then opened by the skin until they press nothing
-                for fi in plan:
-                    if fi == "thumb" or plan[fi].get("pose") == "straight":
-                        continue
-                    for j in ("01", "02", "03"):
-                        self._set_curl(side, fi, j, 0.0, FL)
-                bpy.context.view_layer.update()
-                t_ = lap("thumb", t_)
-                if conform:
-                    # every joint closes, a touching segment stops the joints behind it (the skin, in numpy)
-                    straight = [fi for fi, p_ in plan.items() if p_.get("pose") == "straight"]
-                    if "thumb" in plan:
-                        self._set_thumb_bend(side, 6.0, 4.0, TL)
-                    bpy.context.view_layer.update()
-                    self.conform_digits(side, tuple(fi for fi in plan if fi not in straight), other=other)
-                    t_ = lap("close", t_)
-                else:
-                    self.close_hand(side, plan, tree, glove_cm, other, mend=False)
-                    t_ = lap("close", t_)
-                    self.relax_fingers(side, tuple(plan))
-                    t_ = lap("relax", t_)
-            return short
-
-        def score(x):
-            t0 = _time.time()
-            short = apply(x)
-            t1 = _time.time()
-            sc, why = self._hold_score(side, marks, glove_cm, other, soft, tree)
-            lap("score", t1)
-            gap, _touch = getattr(self, "_settled", (None, 0.0))
-            if settle and (gap is None or gap > 1.5):
-                sc += 500.0 + 10.0 * (gap or 10.0)        # the palm could not reach the object: no hold
-            why["palm_gap_cm"] = gap
-            times.append(_time.time() - t0)
-            return sc + 4.0 * short, why
-
-        times = []
-
-        mean = [0.0] * dim
-        s0 = score(mean)
-        best = (s0[0], list(mean), s0[1])
-        mu = max(2, pop // 4)
-        sig = 1.0
-        for _g in range(generations):
-            kids = []
-            for _k in range(pop):
-                x = [mean[i] + sig * scale[i] * rnd.gauss(0, 1) for i in range(dim)]
-                sc, why = score(x)
-                kids.append((sc, x, why))
-            kids.sort(key=lambda k: k[0])
-            if kids[0][0] < best[0]:
-                best = kids[0]
-                sig = min(2.0, sig * 1.15)
-            else:
-                sig = max(0.1, sig * 0.85)
-            mean = [sum(k[1][i] for k in kids[:mu]) / mu for i in range(dim)]
-        sc, why = score(best[1])
-        return {"score": round(sc, 2), "start_score": round(s0[0], 2), "x": [round(v, 2) for v in best[1]],
-                "shoulder_deg": list(getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))),
-                "evaluations": generations * pop + 2, "try_s": round(sum(times) / max(1, len(times)), 3),
-                "try_parts_s": {k: round(v / max(1, len(times)), 3) for k, v in prof.items()}, **why}
+    def _walled(self, side, other, step, tag="_wall"):
+        """step() kept only if it leaves the hand inside every wall it was inside, and no further past any it was
+        already past; else undone. Returns (kept, the walls now)."""
+        w0 = self.wall_faults(side, other)
+        self.snapshot("save", tag)
+        step()
+        bpy.context.view_layer.update()
+        w1 = self.wall_faults(side, other)
+        if self._walls_hold(w1, w0):
+            return True, w1
+        self.snapshot("load", tag)
+        return False, w0
 
     # --- the target solver: each purpose says where its hand part goes, the hand goes there --------------------
     def _region_points(self, names):
@@ -1145,11 +1053,14 @@ class HoldMixin:
         bpy.context.view_layer.update()
         return best
 
-    def _descend(self, err_fn, moves, steps=(8.0, 4.0, 2.0)):
+    def _descend(self, err_fn, moves, side, other, steps=(8.0, 4.0, 2.0)):
         """A fixed pattern search (no chance in it): each move (a function of a step in degrees) tried both ways
-        at each step size, kept when the error falls; until no move helps at the finest step. Returns the error."""
+        at each step size. A step that breaks a wall, or goes further past one, is undone whatever it does for the
+        aim (the walls are not in the error); a step that leaves the walls less broken is kept first; else a step
+        is kept when the error falls. Until no move helps at the finest step. Returns the error."""
         self.snapshot("save", "_ds")
         e0 = err_fn()
+        w0 = self.wall_faults(side, other)
         for st in steps:
             improved = True
             while improved:
@@ -1159,36 +1070,35 @@ class HoldMixin:
                         self.snapshot("save", "_ds")
                         mv(sg * st)
                         bpy.context.view_layer.update()
+                        w1 = self.wall_faults(side, other)
+                        if not self._walls_hold(w1, w0):
+                            self.snapshot("load", "_ds")
+                            continue
                         e1 = err_fn()
-                        if e1 < e0 - 1e-6:
-                            e0, improved = e1, True
+                        if self._walls_rank(w1) < self._walls_rank(w0) or e1 < e0 - 1e-6:
+                            e0, w0, improved = e1, w1, True
                         else:
                             self.snapshot("load", "_ds")
         return e0
 
-    def _fit_index(self, side, mark, glove_cm):
-        """An extended index turned joint by joint onto its line (its error from the purpose; a press into the
-        object counted ten times over)."""
+    def _fit_index(self, side, mark, glove_cm, other=True):
+        """An extended index turned joint by joint onto its line (its error from the purpose), inside the walls."""
         FL = self._limits()[1]
 
         def err():
-            r = self.purpose_index_extended(side, mark, glove_cm)
-            pts = self._skin_part(side, ["index?_*"])
-            pr = max(0.0, -float(self.sdf_query(pts, want_normal=False)[0].min()) - 0.15) if len(pts) else 0.0
-            dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith("index")]
-            return r["error"] + 10.0 * pr + 50.0 * len(dig)
+            return self.purpose_index_extended(side, mark, glove_cm)["error"]
 
         def turn(j):
             def mv(deg):
                 cur = self._finger_report(side, FL)[0]["index_" + j][0]
                 self._set_curl(side, "index", j, cur + deg, FL)
             return mv
-        return self._descend(err, [turn("01"), turn("02"), turn("03")])
+        return self._descend(err, [turn("01"), turn("02"), turn("03")], side, other)
 
-    def _fit_pads(self, side, fingers):
+    def _fit_pads(self, side, fingers, other=True):
         """Each wrapping finger's joints turned by a fixed step pattern so more of its pads rest on the surface (within
-        0.1 cm, not past a pad's give) and no skin sinks past its give: a closing stops the joints behind a touching
-        fingertip, and this lays the base and middle segments down too. The holding-digit rule is kept."""
+        0.1 cm): a closing stops the joints behind a touching fingertip, and this lays the base and middle segments
+        down too. Inside the walls (no pad past its give, no joint past a holding finger's limits)."""
         FL = self._limits()[1]
         P_, N_ = self._skin_arrays()[:2]
         ix, lb = self._hand_label_arrays(side, P_, N_)
@@ -1197,17 +1107,12 @@ class HoldMixin:
             if not len(sel):
                 continue
             is_pad = np.array([lb[k].endswith("_pad") for k in range(len(lb)) if lb[k].startswith(fi)])
-            give = np.where(is_pad, 0.15, 0.05)
 
-            def err(sel=sel, is_pad=is_pad, give=give, fi=fi):
+            def err(sel=sel, is_pad=is_pad):
                 P, _N, A = self._skin_arrays()[:3]
                 D = self.sdf_query(P[sel], want_normal=False)[0]
                 on = is_pad & (D <= 0.1) & (D >= -0.15)
-                sunk = float((A[sel] * np.maximum(0.0, -D - give)).sum())
-                dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith(fi)]
-                cp = self.contact_pairs(side, other=False)
-                pier = cp["pierced_cm2"] * cp["pierced_deep_cm"] if str(cp.get("pierced_at") or "").startswith(fi) else 0.0
-                return -float(A[sel][on].sum()) + 20.0 * (sunk + pier) + 50.0 * len(dig)
+                return -float(A[sel][on].sum())
 
             def turn(js, fi=fi):
                 # js: (joint, share) turned together; a base closing while its end opens rolls a finger down onto
@@ -1219,31 +1124,23 @@ class HoldMixin:
                 return mv
             self._descend(err, [turn([("01", 1.0)]), turn([("02", 1.0)]), turn([("03", 1.0)]),
                                 turn([("01", 1.0), ("03", -1.0)]), turn([("01", 1.0), ("02", -1.0)]),
-                                turn([("02", 1.0), ("03", -1.0)])], steps=(6.0, 3.0))
+                                turn([("02", 1.0), ("03", -1.0)])], side, other, steps=(6.0, 3.0))
 
-    def _fit_thumb(self, side, mark, glove_cm, along=None, inline=True):
-        """A thumb placed: its base turned about three axes and its two joints bent, a fixed step pattern, so no
-        skin sinks past its give, the pad just presses the object (a gap of -0.1 cm wanted), no joint breaks the
-        holding digit's rule, and an inline thumb lies on the index's line (or along)."""
+    def _fit_thumb(self, side, mark, glove_cm, along=None, inline=True, other=True):
+        """A thumb placed: its base turned about three axes and its two joints bent, a fixed step pattern, its pad
+        just on the object (a gap of -0.1 cm wanted) and an inline thumb on the index's line (or along). Inside the
+        walls: a turn that takes the base past its spread or the joints past their ranges, or the thumb into the
+        object either way, is undone."""
         TL = self._thumb_limits()
         n1 = self._n("finger", side, "thumb", "01")
-
-        P_, N_, A_ = self._skin_arrays()[:3]
+        P_, N_ = self._skin_arrays()[:2]
         ix, lb = self._hand_label_arrays(side, P_, N_)
-        th = np.array([i for i, l_ in zip(ix, lb) if l_.startswith("thumb")])
         pad = np.array([i for i, l_ in zip(ix, lb) if l_.startswith("thumb") and l_.endswith("_pad")])
-        give = np.array([0.15 if lb[k].endswith("_pad") else 0.05 for k in range(len(lb)) if lb[k].startswith("thumb")])
 
         def err():
-            P, _N, A = self._skin_arrays()[:3]
-            D = self.sdf_query(P[th], want_normal=False)[0]
-            sunk = float((A[th] * np.maximum(0.0, -D - give)).sum())          # cm2 x cm past the skin's give
+            P = self._skin_arrays()[0]
             gap = float(self.sdf_query(P[pad], want_normal=False)[0].min()) if len(pad) else 5.0
-            dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith("thumb")]
-            # the object inside the flesh too (a thick thumb base round a frame's edge, between its vertices)
-            cp = self.contact_pairs(side, other=False)
-            pier = cp["pierced_cm2"] * cp["pierced_deep_cm"] if str(cp.get("pierced_at") or "").startswith("thumb") else 0.0
-            e = 20.0 * (sunk + pier) + abs(gap + 0.1) / 0.3 + 50.0 * (len(self._thumb_report(side, TL)[1]) + len(dig))
+            e = abs(gap + 0.1) / 0.3
             if inline:
                 e += self.purpose_thumb_inline(side, mark, glove_cm, along=along)["error"]
             return e
@@ -1263,7 +1160,7 @@ class HoldMixin:
                     b2, b3 = tr.get("thumb_02", [0, 0])[0], tr.get("thumb_03", [0, 0])[0]
                     self._set_thumb_bend(side, b2 + (deg if j == "02" else 0.0), b3 + (deg if j == "03" else 0.0), TL)
             return mv
-        return self._descend(err, [base((1, 0, 0)), base((0, 1, 0)), base((0, 0, 1)), bend("02"), bend("03")])
+        return self._descend(err, [base((1, 0, 0)), base((0, 1, 0)), base((0, 0, 1)), bend("02"), bend("03")], side, other)
 
     def _polish(self, side, marks, glove_cm, other, fingers):
         """The whole hold tuned on the gate's own ruler (the hold score) by a fixed step pattern: the hand moved
@@ -1274,7 +1171,7 @@ class HoldMixin:
         hn = self._n("hand", side)
 
         def err():
-            return self._hold_score(side, marks, glove_cm, other, None, self._tree())[0]
+            return sum(r["error"] for r in self.hold_purposes(side, marks, glove_cm, other=other) if not r.get("hard"))
 
         def move(ax):
             def mv(st):
@@ -1340,7 +1237,7 @@ class HoldMixin:
         AX = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
         moves = [around, along] + [move(a) for a in AX] + [turn(a) for a in AX] + [swing, girdle(0), girdle(1)]
         moves += [curl(fi, j) for fi in fingers for j in ("01", "02", "03")] + [tbend("02"), tbend("03")]
-        return self._descend(err, moves, steps=(4.0, 2.0, 1.0))
+        return self._descend(err, moves, side, other, steps=(4.0, 2.0, 1.0))
 
     def target_hold(self, side, marks, glove_cm=0.0, other=True, rounds=4, wrap=None, polish=True):
         """A hand's hold solved toward its purposes' targets, with no chance in it: each round the hand is fitted
@@ -1358,60 +1255,68 @@ class HoldMixin:
         best, log = None, []
         self.snapshot("save", "_th_best")
         for rd in range(rounds):
+            self.snapshot("save", "_th_round")
+            w_round = self.wall_faults(side, other)
             pairs = self._place_targets(side, m)
             if pairs:
                 # the hand goes onto its targets as far as the arm takes it: the whole move, else three quarters,
                 # a half, a quarter (an arm no further past its limits than it was); else it stays
-                ex0 = self.arm_excess(side)
+                # the fingers open first (a hand moving onto a hold comes open), inside the walls
+                self._walled(side, other, lambda: [self._set_curl(side, fi, j, 0.0, FL) for fi in closing for j in ("01", "02", "03")])
+                w_fit = self.wall_faults(side, other)
                 self.snapshot("save", "_th_fit")
                 took = 0.0
                 for share in (1.0, 0.75, 0.5, 0.25):
                     self.snapshot("load", "_th_fit")
                     self._fit_hand(side, pairs, share)
-                    if self.arm_excess(side) > ex0 + 2.0:
+                    self.settle_palm(side)
+                    if not self._walls_hold(self.wall_faults(side, other), w_fit):
                         # the body helps first (the elbow, then the girdle), the hand kept on its targets
                         self._body_eases(side, self._bw(self._n("hand", side)).copy())
-                    if self.arm_excess(side) <= ex0 + 2.0:
+                    if self._walls_hold(self.wall_faults(side, other), w_fit):
                         took = share
                         break
                 if os.environ.get("POSELAB_DEBUG"):
-                    print("DBG fit", side, rd, "share", took, "arm excess", ex0, "->", self.arm_excess(side))
+                    print("DBG fit", side, rd, "share", took)
                 if took == 0.0:
                     self.snapshot("load", "_th_fit")
-                    log.append({"round": rd, "fit": "refused, the arm past its limits"})
+                    log.append({"round": rd, "fit": "refused: every share broke a wall"})
                 elif took < 1.0:
                     log.append({"round": rd, "fit": "share %.2f, as far as the arm takes it" % took})
-            self.settle_palm(side)
+            W = lambda f: self._walled(side, other, f)           # noqa: E731  every step inside the walls
+            W(lambda: self.settle_palm(side))
             keep = self._bw(self._n("hand", side)).copy()
-            self._body_eases(side, keep)
-            for fi in closing:
-                for j in ("01", "02", "03"):
-                    self._set_curl(side, fi, j, 0.0, FL)
+            W(lambda: self._body_eases(side, keep))
             for fi, how in wrap.items():
                 if how == "straight" and fi != "thumb" and rd == 0:
-                    for j, cc in zip(("01", "02", "03"), (0.0, 0.0, 3.0)):
-                        self._set_curl(side, fi, j, cc, FL)
-            bpy.context.view_layer.update()
-            self.conform_digits(side, closing, other=other)
-            self._fit_pads(side, closing)
+                    W(lambda fi=fi: [self._set_curl(side, fi, j, cc, FL) for j, cc in zip(("01", "02", "03"), (0.0, 0.0, 3.0))])
+            W(lambda: self.conform_digits(side, closing, other=other))
+            self._fit_pads(side, closing, other)
             if m.get("index") == "extended" and wrap.get("index") == "straight":
-                self._fit_index(side, m, glove_cm)
+                self._fit_index(side, m, glove_cm, other)
             if m.get("thumb") == "inline":
                 o_ = "r" if side == "l" else "l"
-                self._fit_thumb(side, m, glove_cm, along=self._thumb_dir(o_) if m["purpose"] == "support" else None)
+                self._fit_thumb(side, m, glove_cm, along=self._thumb_dir(o_) if m["purpose"] == "support" else None, other=other)
             elif m.get("thumb") in ("wrap", "opposed"):
-                self._set_thumb_bend(side, 6.0, 4.0, self._thumb_limits())
-                bpy.context.view_layer.update()
-                self.conform_digits(side, ("thumb",), other=other)
-                self._fit_thumb(side, m, glove_cm, inline=False)
-            self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb")))
+                W(lambda: self._set_thumb_bend(side, 6.0, 4.0, self._thumb_limits()))
+                W(lambda: self.conform_digits(side, ("thumb",), other=other))
+                self._fit_thumb(side, m, glove_cm, inline=False, other=other)
+            W(lambda: self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb"))))
+            w_end = self.wall_faults(side, other)
+            if not self._walls_hold(w_end, w_round):
+                # the round as a whole may not leave the hand past a wall it started inside (nor further past one)
+                self.snapshot("load", "_th_round")
+                log.append({"round": rd, "refused": "the round broke walls: %s" % sorted(set(w_end) - set(w_round))})
+                w_end = w_round
             sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
             g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
-            ok = bool(g.get(side, {}).get("pass"))
+            ok = bool(g.get(side, {}).get("pass")) and not w_end
             prev = [x["score"] for x in log if "score" in x]
-            log.append({"round": rd, "score": round(sc, 2), "gate": ok})
-            if best is None or (ok, -sc) > (best[2], -best[0]):
-                best = (sc, why, ok)
+            log.append({"round": rd, "score": round(sc, 2), "gate": ok, "walls": len(w_end)})
+            # holds compared in a fixed order: the walls first (fewer broken, less past), then the gate, then the score
+            rank = (self._walls_rank(w_end), not ok, sc)
+            if best is None or rank < best[3]:
+                best = (sc, why, ok, rank, w_end)
                 self.snapshot("save", "_th_best")
             if ok or (prev and sc >= prev[-1] - 0.5):
                 break
@@ -1419,18 +1324,26 @@ class HoldMixin:
         if polish and not best[2]:
             self._polish(side, marks, glove_cm, other, tuple(fi for fi in ("index", "middle", "ring", "pinky")
                                                               if wrap.get(fi) == "wrap"))
+            w_p = self.wall_faults(side, other)
             sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
             g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
-            ok = bool(g.get(side, {}).get("pass"))
-            log.append({"round": "polish", "score": round(sc, 2), "gate": ok})
-            if (ok, -sc) > (best[2], -best[0]):
-                best = (sc, why, ok)
+            ok = bool(g.get(side, {}).get("pass")) and not w_p
+            log.append({"round": "polish", "score": round(sc, 2), "gate": ok, "walls": len(w_p)})
+            rank = (self._walls_rank(w_p), not ok, sc)
+            if rank < best[3]:
+                best = (sc, why, ok, rank, w_p)
                 self.snapshot("save", "_th_best")
             self.snapshot("load", "_th_best")
-        sc, why, ok = best
+        sc, why, ok, _rank, walls = best
         unmet = [{"purpose": r["purpose"], "why": {k: v for k, v in r.items() if k not in ("purpose", "met", "error", "hard", "why")}}
                  for r in why["purposes"] if not r["met"]]
-        return {"score": round(sc, 2), "gate": ok, "rounds": log, "unmet": unmet, "solve_s": round(_time.time() - t0, 1), **why}
+        out = {"score": round(sc, 2), "gate": ok, "rounds": log, "unmet": unmet, "solve_s": round(_time.time() - t0, 1),
+               "walls": {k: round(v, 2) for k, v in walls.items()}, **why}
+        if walls:
+            # no hold inside the walls from this start: said plainly, never handed out as a hold
+            out["result"] = "no hold inside the walls from this start"
+            out["gate"] = False
+        return out
 
     # --- one frame mended on the contact ruler ----------------------------------------------------------------
     def frame_fault(self, side, glove_cm=0.0, other=True):
@@ -1440,58 +1353,44 @@ class HoldMixin:
         return {"press_cm2": cp["press_cm2"], "deepest_cm": cp["deepest_cm"], "hand_press_cm2": cp["hand_press_cm2"],
                 "hand_deepest_cm": cp["hand_deepest_cm"], "arm_excess_deg": self.arm_excess(side)}
 
-    def repair_frame(self, side, glove_cm=0.0, other=True, keep_w=6.0, generations=6, pop=8, seed=3, sigma_cm=1.0,
-                     sigma_deg=6.0, press_cm2=0.3):
-        """A moving frame's hand mended by the contact ruler: only when its skin presses past the give (more than
-        press_cm2) or its arm is past a limit; the hand moved and turned and the elbow swung (the digits as they
-        are), each try scored by the skin's presses (25 a cm2, 100 a cm deep), the arm's excess (20 a degree) and
-        keep_w a cm away from where the motion put the hand. Returns the fault before and after, or None when the
-        frame needed nothing."""
-        import random as _random
-        f0 = self.frame_fault(side, glove_cm, other)
-        if f0["press_cm2"] + f0["hand_press_cm2"] <= press_cm2 and f0["arm_excess_deg"] <= 0.0:
+    def repair_frame(self, side, glove_cm=0.0, other=True, keep_w=6.0, generations=None, pop=None, seed=None, **_old):
+        """A moving frame's hand mended back inside the walls, with no chance in it: only when it breaks one (the
+        arm's rules, the hand's ranges, clipping either way, a hand in the other); the hand moved (0.4 to 0.1 cm)
+        and turned (2 to 0.5 degrees) about its palm and the elbow swung, by a fixed step pattern; a step that
+        breaks a wall or goes further past one is undone, a step that leaves the walls less broken kept first, else
+        the one nearest where the motion put the hand. Returns the faults before and after and the walls left, or
+        None when the frame needed nothing."""
+        w0 = self.wall_faults(side, other)
+        if not w0:
             return None
-        rnd = _random.Random(seed)
+        f0 = self.frame_fault(side, glove_cm, other)
         hn = self._n("hand", side)
         H0 = self._bw(hn).copy()
         P0 = H0.translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
-        self.snapshot("save", "_rf")
 
-        def apply(x):
-            self.snapshot("load", "_rf")
-            rv = Vector(x[3:6])
-            q = Quaternion(rv.normalized(), math.radians(rv.length)) if rv.length > 1e-6 else Quaternion()
-            R = Matrix.Translation(Vector(x[0:3]) / 100.0) @ Matrix.Translation(P0) @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0
-            self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
-            bpy.context.view_layer.update()
-            if abs(x[6]) > 0.5:
-                self._swing_elbow(side, max(-40.0, min(40.0, x[6])))
-                bpy.context.view_layer.update()
+        def err():
+            return (self._bw(hn).translation - H0.translation).length * 100.0
 
-        def score(x):
-            apply(x)
-            f = self.frame_fault(side, glove_cm, other)
-            sc = (25.0 * (f["press_cm2"] + f["hand_press_cm2"]) + 100.0 * (f["deepest_cm"] + f["hand_deepest_cm"])
-                  + 20.0 * f["arm_excess_deg"] + keep_w * Vector(x[0:3]).length)
-            return sc, f
+        def move(ax):
+            def mv(st):
+                M = Matrix.Translation(Vector(ax) * (st * 0.001)) @ self._bw(hn)
+                self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            return mv
 
-        scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [10.0]
-        mean = [0.0] * 7
-        s0 = score(mean)
-        best = (s0[0], list(mean), s0[1])
-        sig = 1.0
-        for _g in range(generations):
-            kids = sorted((score(x) + (x,) for x in ([mean[i] + sig * scale[i] * rnd.gauss(0, 1) for i in range(7)] for _k in range(pop))),
-                          key=lambda k: k[0])
-            if kids[0][0] < best[0]:
-                best = (kids[0][0], kids[0][2], kids[0][1])
-                sig = min(2.0, sig * 1.15)
-            else:
-                sig = max(0.1, sig * 0.85)
-            mu = max(2, pop // 4)
-            mean = [sum(k[2][i] for k in kids[:mu]) / mu for i in range(7)]
-        _sc, f1 = score(best[1])
-        return {"before": f0, "after": f1, "moved_cm": round(Vector(best[1][0:3]).length, 2)}
+        def turn(ax):
+            def mv(st):
+                R = Matrix.Translation(P0) @ Matrix.Rotation(math.radians(st * 0.5), 4, Vector(ax)) @ Matrix.Translation(-P0)
+                M = R @ self._bw(hn)
+                self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            return mv
+
+        def swing(st):
+            self._swing_elbow(side, st * 2.0)
+        AX = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+        self._descend(err, [move(a) for a in AX] + [turn(a) for a in AX] + [swing], side, other, steps=(4.0, 2.0, 1.0))
+        f1 = self.frame_fault(side, glove_cm, other)
+        w1 = self.wall_faults(side, other)
+        return {"before": f0, "after": f1, "moved_cm": round(err(), 2), "walls": {k: round(v, 2) for k, v in w1.items()}}
 
     # --- the gate --------------------------------------------------------------------------------------------
     def hold_gate(self, marks, sides=("r", "l"), glove_cm=0.0, skin=True, other=True):

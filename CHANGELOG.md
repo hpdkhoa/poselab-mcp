@@ -37,7 +37,12 @@ docs/HOLD_DECISIONS.md.
   weighted least squares, the body eases past a limit, the fingers close by the skin and are laid down by a fixed step
   pattern, the thumb steps out of the object, and a fixed-step polish tunes the whole hold on the gate's own score.
   It stops at the first round that passes, keeps the best, and reports each unmet purpose with its numbers. The
-  cylinder passes with a score of 0, the same on every run. `hold_bench.py --solver target|search`.
+  cylinder passes with a score of 0, the same on every run.
+* **The walls** (`wall_faults`, `_walled`, `_walls_hold`): a real body's limits and physics are never scored or
+  traded. Every step of the target solver, its fits, its polish and the per-frame repair is undone when it breaks a
+  wall or goes further past one; holds are ranked walls first; a hold past a wall is reported as "no hold inside the
+  walls" and never handed out. `hold_object` now runs the target solver; the random search and the random per-frame
+  repair are removed. Not yet run.
 * **Distance grids** (`sdflab.py`): each part's signed distance on a 0.2 cm grid in its own frame, built once and kept
   on disk; `sdf_query` gives distance, nearest part and outward normal for many points at once (20000 in 0.02 s).
   The contact read, the palm settle, the closing and the relax use it. `examples/sdf_tests.py`: known answers and the

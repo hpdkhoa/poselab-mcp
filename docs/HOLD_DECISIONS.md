@@ -74,6 +74,8 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-19 | The grid's error near the surface is measured (examples/sdf_tests.py: median 0.002 cm, 99 of 100 points under 0.022, worst 0.056), and the press rule does not count skin sunk less than SDF_TOL_CM (0.03 cm) past its give | A rule cannot ask for more than its ruler can tell: 0.15 cm2 sunk 0.004 cm failed the hard rule |
 | 2026-10-19 | **The target solver** (`target_hold`) replaces the random search: each purpose names where its hand part goes (the palm's half by the knuckles onto the run, its facing into the surface, the web onto its point or the nearest surface, the knuckle line along the run in the start's way); the hand fitted onto them by weighted least squares (Kabsch), a fit the arm cannot take refused; the palm settled; the body eased past a limit (elbow, then girdle); the fingers closed by the skin, then laid down by a fixed step pattern (base closing while the end opens); the thumb's base and bends stepped out of the object; last a fixed-step polish of the whole hold on the gate's own score (the hand around and along the run, moved and turned, the elbow, the girdle, each joint) | The owner: the search must look toward the holding part, not guess. The cylinder passes with a score of 0, the same answer on every run |
 | 2026-10-19 | A power wrap seats the handle across the distal palm (the palm's half by the knuckles), not the palm's middle | Seated at the middle only the fingertips reached (pads 3.4 of 4 cm2); a real power grip lies by the knuckle crease |
+| 2026-10-19 | **The walls** (owner): a real body's limits and physics are walls, never scored, never weighed, never traded. `wall_faults` reads every wall a hand breaks (the arm's rules, the fingers' and thumb's ranges, a holding digit's limits, clipping both ways and hand into hand). Every step of every fit, the polish and the per-frame repair goes through it: a step that breaks a wall, or goes further past one, is undone; a step that leaves the walls less broken is kept first. A round must end inside its start's walls or it is undone. Holds are compared in a fixed order (walls, then the gate, then the score). A hold past a wall is reported "no hold inside the walls" and never counts as found; Gun Kit checks every hold whatever found it, and a clip with any frame past a wall is not written, only reported. The old random search and the random per-frame repair are gone (they priced the rules) | The target solver priced a broken thumb rule at 50 against clipping at 830 and swung the thumb base to 158 degrees (limit 80); it let the hand leave the gun to escape a clip. The owner: "the rule and the body anatomy is set to keep a real human body not the thing you can score and break, clipping is against physics" |
+| 2026-10-19 | When a result breaks a wall: stop and tell the owner; no long runs tuning through it; no default changed to a solver that has not beaten the old one on the real case without the owner's yes | Four 20 to 30 minute gun runs were tuned through broken rules before asking |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 
@@ -86,8 +88,7 @@ reason. Read it before changing the hold code, and check each change against it.
 - Clipping known answers: `blender -b --factory-startup -P examples/clip_tests.py`.
 - The hold benchmark (the arms are yours): `blender -b --factory-startup -P examples/hold_bench.py -- --arms-folder
   <folder> --arms Arms.fbx --idle Arms_Idle.fbx --eye 0 -2.3 162.6 --bone-edits bone_edits.json --out <folder>`.
-  It writes bench_cylinder.json (every number) and the pictures (hand, heat, contact). `--solver target` (the
-  default) runs the target solver; `--solver search` the old random search, for comparison.
+  It writes bench_cylinder.json (every number) and the pictures (hand, heat, contact).
 - Gun Kit on a gun: the hands step with the grip style's purposes; `contact_view` draws the contact map of a saved
   clip frame.
 
@@ -113,6 +114,7 @@ reason. Read it before changing the hold code, and check each change against it.
   (32 cm2, 1.3 cm). Run 4: the thumb base spreads 158 deg from the index (limit 80): the thumb fit's base turns are
   not held to the thumb's range. Open: hold the thumb fit to the base's range; the support index twist; the firing
   palm (0 to 0.2 cm2) never seats on the backstrap; the gun runs are slow (most of it the stance grid and the starts).
+- The walls are built (2026-10-19) and not yet run: the owner asked for no test run until the speed plan is chosen.
 - The contact areas the purposes ask for are first estimates; set them from holds the owner accepts.
 - The M1911 idle on the new search (2026-10-19): a two-hand grip that looks right (firing hand high, fingers round
   the front strap, index along the frame over the guard; support hand over the firing fingers, both thumbs forward
