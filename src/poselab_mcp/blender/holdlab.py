@@ -15,6 +15,7 @@ GRASP Taxonomy of Human Grasp Types): a power wrap closes palm and fingers round
 the other hand leaves and holds it; a pinch opposes digit pads; a press puts one pad on a face. Each is judged by
 numbers on the hand's capsules and on the drawn skin, never by a picture."""
 import math
+import os
 
 import bpy
 import numpy as np
@@ -1009,7 +1010,7 @@ class HoldMixin:
         sel = [int(i) for i, l_ in zip(idx, lab) if any(fnmatch.fnmatch(l_, p_) for p_ in patterns)]
         return P[sel] if sel else np.zeros((0, 3))
 
-    def _fit_hand(self, side, pairs):
+    def _fit_hand(self, side, pairs, share=1.0):
         """The hand moved and turned as one body by a weighted least-squares fit (Kabsch) of its points onto their
         targets: pairs [(source world point, target world point, weight)]. The arm reaches it."""
         if len(pairs) < 3:
@@ -1024,6 +1025,11 @@ class HoldMixin:
         dd = np.sign(np.linalg.det(Vt.T @ U.T))
         Rm = Vt.T @ np.diag([1.0, 1.0, dd]) @ U.T
         R = Matrix([list(Rm[0]), list(Rm[1]), list(Rm[2])]).to_4x4()
+        if share < 1.0:
+            # a share of the move: the turn by slerp, the shift in proportion
+            q = Matrix([list(Rm[0]), list(Rm[1]), list(Rm[2])]).to_quaternion()
+            R = Quaternion().slerp(q, share).to_matrix().to_4x4()
+            cd = cs + (cd - cs) * share
         T = Matrix.Translation(Vector(list(cd))) @ R @ Matrix.Translation(-Vector(list(cs)))
         hn = self._n("hand", side)
         M = T @ self._bw(hn)
@@ -1053,19 +1059,36 @@ class HoldMixin:
             dk = np.linalg.norm(palm - kn, axis=1)
             palm = palm[dk <= np.median(dk)]
         pc = palm.mean(0)
-        k = int(np.argmin(np.linalg.norm(R - pc, axis=1)))
-        tgt = R[k]
-        D, _w, Nn = self.sdf_query(tgt[None, :])
-        n_s = Nn[0]
-        f0 = np.array(list(self._palm_facing(side)))
-        pairs = [(Vector(pc), Vector(tgt), 3.0),
-                 (Vector(pc + f0 * 0.03), Vector(tgt - n_s * 0.03), 3.0)]
         run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
         RW = self._run_world(run)
         ax = np.array(list((RW["inner"] - RW["outer"]).normalized()))
+        o_ = np.array(list(RW["outer"]))
+        if mark["purpose"] == "power_wrap":
+            # the palm wraps the run: its target on the run's wall (a surface along the run, not an end or a tang's
+            # top) and its facing toward the run's axis
+            _D0, _w0, NR = self.sdf_query(R)
+            wall = np.abs(NR @ ax) < 0.5
+            if wall.any():
+                R = R[wall]
+        k = int(np.argmin(np.linalg.norm(R - pc, axis=1)))
+        tgt = R[k]
+        if mark["purpose"] == "power_wrap":
+            c_ = o_ + ax * float(np.dot(tgt - o_, ax))          # the axis point level with the target
+            inw = c_ - tgt
+            inw = inw / max(1e-9, np.linalg.norm(inw))
+        else:
+            inw = -self.sdf_query(tgt[None, :])[2][0]          # a support palm lies flat on its panel
+        f0 = np.array(list(self._palm_facing(side)))
+        pairs = [(Vector(pc), Vector(tgt), 3.0),
+                 (Vector(pc + f0 * 0.03), Vector(tgt + inw * 0.03), 3.0)]
+        if os.environ.get("POSELAB_DEBUG"):
+            print("DBG targets", side, mark["purpose"], "palm->tgt cm", round(float(np.linalg.norm(tgt - pc)) * 100, 1),
+                  "facing.inw", round(float(np.dot(f0, inw)), 2))
         a0 = np.array(list(self._bw(self._n("finger", side, "index", "01")).translation
                            - self._bw(self._n("finger", side, "pinky", "01")).translation))
         a0 /= max(1e-9, np.linalg.norm(a0))
+        if os.environ.get("POSELAB_DEBUG"):
+            print("DBG knuckles.ax", round(float(np.dot(a0, ax)), 2), "web mark", bool(mark.get("_web")))
         if np.dot(a0, ax) < 0 and not (mark.get("_web") and mark["purpose"] == "power_wrap"):
             ax = -ax        # the knuckles keep their start's way along the run (the body chose it); a web point pins it
         pairs += [(Vector(pc + a0 * 0.03), Vector(tgt + ax * 0.03), 1.0), (Vector(pc - a0 * 0.03), Vector(tgt - ax * 0.03), 1.0)]
@@ -1182,7 +1205,9 @@ class HoldMixin:
                 on = is_pad & (D <= 0.1) & (D >= -0.15)
                 sunk = float((A[sel] * np.maximum(0.0, -D - give)).sum())
                 dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith(fi)]
-                return -float(A[sel][on].sum()) + 20.0 * sunk + 50.0 * len(dig)
+                cp = self.contact_pairs(side, other=False)
+                pier = cp["pierced_cm2"] * cp["pierced_deep_cm"] if str(cp.get("pierced_at") or "").startswith(fi) else 0.0
+                return -float(A[sel][on].sum()) + 20.0 * (sunk + pier) + 50.0 * len(dig)
 
             def turn(js, fi=fi):
                 # js: (joint, share) turned together; a base closing while its end opens rolls a finger down onto
@@ -1215,7 +1240,10 @@ class HoldMixin:
             sunk = float((A[th] * np.maximum(0.0, -D - give)).sum())          # cm2 x cm past the skin's give
             gap = float(self.sdf_query(P[pad], want_normal=False)[0].min()) if len(pad) else 5.0
             dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith("thumb")]
-            e = 20.0 * sunk + abs(gap + 0.1) / 0.3 + 50.0 * (len(self._thumb_report(side, TL)[1]) + len(dig))
+            # the object inside the flesh too (a thick thumb base round a frame's edge, between its vertices)
+            cp = self.contact_pairs(side, other=False)
+            pier = cp["pierced_cm2"] * cp["pierced_deep_cm"] if str(cp.get("pierced_at") or "").startswith("thumb") else 0.0
+            e = 20.0 * (sunk + pier) + abs(gap + 0.1) / 0.3 + 50.0 * (len(self._thumb_report(side, TL)[1]) + len(dig))
             if inline:
                 e += self.purpose_thumb_inline(side, mark, glove_cm, along=along)["error"]
             return e
@@ -1332,12 +1360,27 @@ class HoldMixin:
         for rd in range(rounds):
             pairs = self._place_targets(side, m)
             if pairs:
+                # the hand goes onto its targets as far as the arm takes it: the whole move, else three quarters,
+                # a half, a quarter (an arm no further past its limits than it was); else it stays
                 ex0 = self.arm_excess(side)
                 self.snapshot("save", "_th_fit")
-                self._fit_hand(side, pairs)
-                if self.arm_excess(side) > ex0 + 20.0:
-                    self.snapshot("load", "_th_fit")   # a fit the arm cannot take: the hand stays where it started
+                took = 0.0
+                for share in (1.0, 0.75, 0.5, 0.25):
+                    self.snapshot("load", "_th_fit")
+                    self._fit_hand(side, pairs, share)
+                    if self.arm_excess(side) > ex0 + 2.0:
+                        # the body helps first (the elbow, then the girdle), the hand kept on its targets
+                        self._body_eases(side, self._bw(self._n("hand", side)).copy())
+                    if self.arm_excess(side) <= ex0 + 2.0:
+                        took = share
+                        break
+                if os.environ.get("POSELAB_DEBUG"):
+                    print("DBG fit", side, rd, "share", took, "arm excess", ex0, "->", self.arm_excess(side))
+                if took == 0.0:
+                    self.snapshot("load", "_th_fit")
                     log.append({"round": rd, "fit": "refused, the arm past its limits"})
+                elif took < 1.0:
+                    log.append({"round": rd, "fit": "share %.2f, as far as the arm takes it" % took})
             self.settle_palm(side)
             keep = self._bw(self._n("hand", side)).copy()
             self._body_eases(side, keep)

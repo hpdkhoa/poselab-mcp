@@ -103,6 +103,16 @@ reason. Read it before changing the hold code, and check each change against it.
   (comfort 22), forearm 34, elbow 52, girdle forward 10 and down 6. The third of three fixed starts passed (the first
   two: palm short, or a pinky tip twisted 16). 36 s for the passing start, 116 s for all three; the contact read
   0.08 s.
+- Later the same day: the fit goes only as far as the arm takes it (the whole move, else 3/4, 1/2, 1/4, the body
+  easing first), the palm faces the run's axis from a target on the run's wall, and the thumb and finger fits count
+  the object inside the flesh too. The cylinder still passes; a solve takes 138 s now (36 s before the two-way test
+  in the fits: a full contact read per step, to speed up).
+- The M1911 idle on the target solver (2026-10-19, four runs of 21 to 32 min): it fails. Best support hand (run 3):
+  palm 7 cm2 on the panel, 4.4 cm2 over the firing fingers, nothing pressed; but its index end joint twisted 85.
+  Firing hand (run 3): thumb in line (8.6 deg), index 8 deg off the guard line, but the frame inside the thumb's base
+  (32 cm2, 1.3 cm). Run 4: the thumb base spreads 158 deg from the index (limit 80): the thumb fit's base turns are
+  not held to the thumb's range. Open: hold the thumb fit to the base's range; the support index twist; the firing
+  palm (0 to 0.2 cm2) never seats on the backstrap; the gun runs are slow (most of it the stance grid and the starts).
 - The contact areas the purposes ask for are first estimates; set them from holds the owner accepts.
 - The M1911 idle on the new search (2026-10-19): a two-hand grip that looks right (firing hand high, fingers round
   the front strap, index along the frame over the guard; support hand over the firing fingers, both thumbs forward
