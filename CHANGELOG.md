@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+A hand holds any object by measured contact (2026-10-18 and 19). The goals and every decision behind this work are in
+docs/HOLD_DECISIONS.md.
+
+* **The object reader** (`holdlab.py`): `read_object` finds a part's runs a hand can wrap (an axis, sections and their
+  girth, the inner end) from 2 mm surface samples, splitting each section into its pieces (a grip and the guard bar in
+  front of it); the openings through the object (a trigger guard, a handle's eye), with the edge an extended finger lies
+  along; the web point under an overhang (a beavertail, a hammer's head). `suggest_marks` proposes hold and no-touch
+  marks for a person to confirm. Each part is read in its own bone's frame, so a rigged part that moves is read where
+  it is. `examples/hold_reader_tests.py`: known answers on a cylinder, a pistol-shaped block and a box.
+* **The contact model, the core** (`contactlab.py`): the object's surface labelled by region (back, front, left,
+  right, tang, opening edge, no-touch parts) from its samples, not its polygons; the hand's skin labelled by part (palm,
+  web, each digit segment's pad, side and back). `contact_map` and `contact_pairs` give every pair's contact area,
+  press area and depth and facing, hand on hand included; `contact_pictures` draws the object's regions, the hand's
+  parts, the collision heat (see-through) and the contact map.
+* **Purposes on contact pairs:** power wrap (palm and finger pads on their regions, web, cover over the hand's span),
+  thumb in line, thumb wrap (a round handle), index extended along an opening's edge, support (palm on the open side,
+  fingers over the other hand), no-touch, press past soft tissue's give, comfort. `hold_gate` passes a hand only when
+  it does its job; the search scores with the same purposes (one ruler).
+* **The search** (`hold_object`): the whole arm (hand place and turn, elbow swing, the shoulder girdle via `shoulder`,
+  clavicle forward and up within Neumann's ranges), the thumb's base; the palm settled onto the object by signed skin
+  distance; `conform_digits` closes the fingers on the drawn skin in numpy, the knuckle leading, a touching segment
+  stopping the joints behind it; a pull toward each unmet contact; starts by the hand's own frame (`seed_hold`), ranked
+  by how far past its limits the arm is (`arm_excess`). A try takes 0.36 to 0.44 s (it took 0.7 to 2.7 s).
+* **Soft tissue give:** a press counts only past the palm's 3 mm, a finger or thumb pad's 1.5 mm, 0.5 mm elsewhere.
+* `examples/hold_bench.py`: the hold benchmark; a 3.5 cm handle leaned 20 degrees passes the gate (palm 9.3 cm2,
+  finger pads 8.3, web 0.8, thumb 1.7, cover 41 percent, press 0.34 cm2).
+* `close_hand(mend=False)` closes without turning the wrist (the old mend rotated a settled hand into the object).
+* `render(centre=...)` aims the outside views at a world point.
+* Removed: the coverage-ring and capsule versions of the power wrap, support and no-touch purposes (one ruler left).
+
 The hand work trimmed to one score (2026-10-18). Five searches each scored a hold their own way and undid one
 another's work; a known good hold adapted in small moves replaces searching from nothing.
 
