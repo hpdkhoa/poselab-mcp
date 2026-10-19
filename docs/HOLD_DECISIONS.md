@@ -57,6 +57,10 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-19 | A power wrap's cover is the share of the run's surface covered over the stretch the hand spans, not over the whole run | A long handle is not held less for being long (a 30 cm bat handle could never reach 30% over its whole length) |
 | 2026-10-19 | A clip frame where a hand rests on its home hold is not repaired: it is the hold, searched and gated | The per-frame repair still scored with the old capsule ruler and moved held hands off the gun (two rulers again). Open: move the repair onto the contact ruler |
 | 2026-10-19 | A hand placed first is not charged for the other hand in its rest pose; the index line's up runs from the run's outer end to its inner end | Scoring faults found on the M1911 seed |
+| 2026-10-19 | Openings ignore parts much smaller than the held part (a trigger inside its guard); the edge an extended finger lies along is the opening's top band (15 percent of its height up the run), fitted straight | The trigger split the guard hole into slots and the edge came out along the slot behind it (80 degrees to the bore) |
+| 2026-10-19 | The gun's stance is searched: a grid of places ahead and up, judged by both hands' best starts (arm excess first, then the purposes) | Both shoulders sat at their limits: the style's guessed stance was far for these arms |
+| 2026-10-19 | The per-frame repair moves onto the contact ruler (`repair_frame`: skin presses past the give, the arm's excess, a pull back to the motion) | Closes the open item: no second ruler on moving frames |
+| 2026-10-19 | In the score the grip's own purpose (power wrap, support) counts three times its refinements (thumb and index lines); the stance grid reaches 8 cm down | The search traded the palm on the grip (10 to 0.4 cm2) for a better thumb line; the stance pick sat at the grid's edge |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 

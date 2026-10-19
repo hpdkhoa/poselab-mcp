@@ -297,14 +297,14 @@ class HoldMixin:
             o.pop("_d")
         return out
 
-    def _part_openings(self, name, P, cell_cm=0.3):
+    def _part_openings(self, name, P, cell_cm=0.3, skip=()):
         """Holes through the object beside a part (a trigger guard, a handle's eye), found once over the whole part:
         a grid of rays across its thinnest direction, against all the object's parts; a cell no ray hits but walled by hits on both sides in both grid directions
         is open; touching open cells are one opening. Returns each opening's cells (object frame, m), middle, area
         and its through direction."""
         # rays against the whole object (another part may close the hole: a slide over a frame's open top), in
         # this part's frame
-        bvh = self._part_bvh_local(None, name)
+        bvh = self._part_bvh_local(None, name, skip)
         if bvh is None or len(P) < 60:
             return []
         c = P.mean(0)
@@ -364,32 +364,28 @@ class HoldMixin:
             thin = o["through"]
             across = np.cross(thin, inward)
             across /= np.linalg.norm(across)
-            # the opening's boundary on the inner side, across its whole width: for each strip across, its
-            # farthest cell inward; a straight line fitted through them (a guard's top, under the frame)
-            k = pts @ across
+            # the opening's edge on the inner side: its cells in the top band of its height up the run (the top
+            # 15 percent, at least 3 mm), a straight line fitted through them (a guard's top, under the frame)
             h = pts @ inward
-            tops = []
-            for kb in np.arange(k.min(), k.max() + 1e-9, 0.003):
-                m = np.abs(k - kb) <= 0.0016
-                if m.any():
-                    tops.append(pts[m][int(np.argmax(h[m]))])
-            tops = np.array(tops)
-            keep = tops[int(len(tops) * 0.1):max(int(len(tops) * 0.9), int(len(tops) * 0.1) + 2)]
-            c_ = keep.mean(0)
-            _u, _s, vt = np.linalg.svd(keep - c_, full_matrices=False)
+            band = max(0.003, 0.15 * float(np.ptp(h)))
+            top = pts[h >= h.max() - band]
+            c_ = top.mean(0)
+            _u, _s, vt = np.linalg.svd(top - c_, full_matrices=False)
             ld = vt[0] - thin * float(vt[0] @ thin)
             ld /= np.linalg.norm(ld)
-            t_ = (tops - c_) @ ld
+            t_ = (top - c_) @ ld
             got.append({"centre": [float(x) for x in o["centre"]], "area_cm2": o["area_cm2"], "through": [float(x) for x in thin],
                         "edge": [[float(x) for x in (c_ + ld * t_.min())], [float(x) for x in (c_ + ld * t_.max())]]})
         got.sort(key=lambda g_: float(np.linalg.norm(np.array(g_["centre"]) - inner)))
         return got
 
-    def _part_bvh_local(self, part, frame_part=None):
-        """A part's polygons as a BVH in frame_part's frame (default its own); part None: the whole object's."""
+    def _part_bvh_local(self, part, frame_part=None, skip=()):
+        """A part's polygons as a BVH in frame_part's frame (default its own); part None: the whole object's, less
+        the parts in skip."""
         c = getattr(self, "_pbvh", {})
-        if (part, frame_part) in c:
-            return c[(part, frame_part)]
+        ck = (part, frame_part, tuple(sorted(skip)))
+        if ck in c:
+            return c[ck]
         dg = bpy.context.evaluated_depsgraph_get()
         me_ob = self.rifle_mesh
         ev = me_ob.evaluated_get(dg)
@@ -404,11 +400,12 @@ class HoldMixin:
         ps = []
         for p in me.polygons:
             gs = [vg[i] or "body" for i in p.vertices]
-            if part is None or not any(vg) or max(set(gs), key=gs.count) == part:
+            own = max(set(gs), key=gs.count)
+            if (part is None and own not in skip) or not any(vg) or own == part:
                 ps.append(tuple(p.vertices))
         ev.to_mesh_clear()
         bvh = BVHTree.FromPolygons(V, ps) if ps else None
-        c[(part, frame_part)] = bvh
+        c[ck] = bvh
         self._pbvh = c
         return bvh
 
@@ -449,7 +446,10 @@ class HoldMixin:
                     r["inner"], r["outer"] = [float(x) for x in inner], [float(x) for x in outer]
                     r["part"] = name
                     rec["runs"].append(r)
-                opens = self._part_openings(name, P)
+                # a part much smaller than this one does not close an opening (a trigger inside its guard); a
+                # large one does (a slide over a frame's open top)
+                small = tuple(k for k, (pk, _nk) in pts.items() if k != name and len(pk) < 0.1 * len(P))
+                opens = self._part_openings(name, P, skip=small)
                 for r in rec["runs"]:
                     r["openings"] = self._attach_openings(r, opens)
                 self._part_P = getattr(self, "_part_P", {})
@@ -684,7 +684,10 @@ class HoldMixin:
         """The search's score is the gate's ruler: each purpose's error (the contact pairs, the presses on the drawn
         skin, the comfort) 10, each body rule broken 200."""
         res = self.hold_purposes(side, marks, glove_cm, other=other)
-        perr = sum(r["error"] for r in res)
+        # the hand's job first: the grip itself (a power wrap, a support) counts three times its refinements (the
+        # thumb's and the index's lines), so no search trades the palm on the grip for a finer line
+        PRIMARY = {"power_wrap": 3.0, "support": 3.0}
+        perr = sum(r["error"] * PRIMARY.get(r["purpose"], 1.0) for r in res)
         FL = self._limits()[1]
         TL = self._thumb_limits()
         fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
@@ -986,6 +989,67 @@ class HoldMixin:
                 "shoulder_deg": list(getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))),
                 "evaluations": generations * pop + 2, "try_s": round(sum(times) / max(1, len(times)), 3),
                 "try_parts_s": {k: round(v / max(1, len(times)), 3) for k, v in prof.items()}, **why}
+
+    # --- one frame mended on the contact ruler ----------------------------------------------------------------
+    def frame_fault(self, side, glove_cm=0.0, other=True):
+        """What a moving frame's hand does wrong, on the drawn skin: its press into the object and into the other
+        hand past the skin's give (cm2, deepest cm), and how far past its limits the arm is (degrees)."""
+        cp = self.contact_pairs(side, other=other)
+        return {"press_cm2": cp["press_cm2"], "deepest_cm": cp["deepest_cm"], "hand_press_cm2": cp["hand_press_cm2"],
+                "hand_deepest_cm": cp["hand_deepest_cm"], "arm_excess_deg": self.arm_excess(side)}
+
+    def repair_frame(self, side, glove_cm=0.0, other=True, keep_w=6.0, generations=6, pop=8, seed=3, sigma_cm=1.0,
+                     sigma_deg=6.0, press_cm2=0.3):
+        """A moving frame's hand mended by the contact ruler: only when its skin presses past the give (more than
+        press_cm2) or its arm is past a limit; the hand moved and turned and the elbow swung (the digits as they
+        are), each try scored by the skin's presses (25 a cm2, 100 a cm deep), the arm's excess (20 a degree) and
+        keep_w a cm away from where the motion put the hand. Returns the fault before and after, or None when the
+        frame needed nothing."""
+        import random as _random
+        f0 = self.frame_fault(side, glove_cm, other)
+        if f0["press_cm2"] + f0["hand_press_cm2"] <= press_cm2 and f0["arm_excess_deg"] <= 0.0:
+            return None
+        rnd = _random.Random(seed)
+        hn = self._n("hand", side)
+        H0 = self._bw(hn).copy()
+        P0 = H0.translation.lerp(self._bw(self._n("finger", side, "middle", "01")).translation, 0.5)
+        self.snapshot("save", "_rf")
+
+        def apply(x):
+            self.snapshot("load", "_rf")
+            rv = Vector(x[3:6])
+            q = Quaternion(rv.normalized(), math.radians(rv.length)) if rv.length > 1e-6 else Quaternion()
+            R = Matrix.Translation(Vector(x[0:3]) / 100.0) @ Matrix.Translation(P0) @ q.to_matrix().to_4x4() @ Matrix.Translation(-P0) @ H0
+            self._put_hand(side, Matrix.LocRotScale(R.translation, R.to_quaternion(), self._unit()))
+            bpy.context.view_layer.update()
+            if abs(x[6]) > 0.5:
+                self._swing_elbow(side, max(-40.0, min(40.0, x[6])))
+                bpy.context.view_layer.update()
+
+        def score(x):
+            apply(x)
+            f = self.frame_fault(side, glove_cm, other)
+            sc = (25.0 * (f["press_cm2"] + f["hand_press_cm2"]) + 100.0 * (f["deepest_cm"] + f["hand_deepest_cm"])
+                  + 20.0 * f["arm_excess_deg"] + keep_w * Vector(x[0:3]).length)
+            return sc, f
+
+        scale = [sigma_cm] * 3 + [sigma_deg] * 3 + [10.0]
+        mean = [0.0] * 7
+        s0 = score(mean)
+        best = (s0[0], list(mean), s0[1])
+        sig = 1.0
+        for _g in range(generations):
+            kids = sorted((score(x) + (x,) for x in ([mean[i] + sig * scale[i] * rnd.gauss(0, 1) for i in range(7)] for _k in range(pop))),
+                          key=lambda k: k[0])
+            if kids[0][0] < best[0]:
+                best = (kids[0][0], kids[0][2], kids[0][1])
+                sig = min(2.0, sig * 1.15)
+            else:
+                sig = max(0.1, sig * 0.85)
+            mu = max(2, pop // 4)
+            mean = [sum(k[2][i] for k in kids[:mu]) / mu for i in range(7)]
+        _sc, f1 = score(best[1])
+        return {"before": f0, "after": f1, "moved_cm": round(Vector(best[1][0:3]).length, 2)}
 
     # --- the gate --------------------------------------------------------------------------------------------
     def hold_gate(self, marks, sides=("r", "l"), glove_cm=0.0, skin=True, other=True):
