@@ -17,6 +17,7 @@ from mathutils.bvhtree import BVHTree
 
 from holdlab import HoldMixin  # noqa: E402  (holding any object: its reader, purposes, search, gate)
 from contactlab import ContactMixin  # noqa: E402  (the contact model: regions, labelled skin, pairs, pictures)
+from sdflab import SdfMixin  # noqa: E402  (the object as distance grids, built once)
 
 FINGERS = ("index", "middle", "ring", "pinky", "thumb")
 RADIUS = {"forearm": 0.030, "palm": 0.018, "finger": 0.0075}       # m: the capsules a body part is tested with
@@ -133,7 +134,7 @@ def fit(src, dst):
     return Matrix([[Rm[i, 0] * k, Rm[i, 1] * k, Rm[i, 2] * k, t[i]] for i in range(3)] + [[0.0, 0.0, 0.0, 1.0]])
 
 
-class Lab(HoldMixin, ContactMixin):
+class Lab(HoldMixin, ContactMixin, SdfMixin):
     def __init__(self, rigs_file, out_dir):
         self.rigs_file = rigs_file
         self.out_dir = os.path.realpath(out_dir)
@@ -603,11 +604,14 @@ class Lab(HoldMixin, ContactMixin):
         """save or load a named pose (the arms' bones and the rifle's parts)."""
         self._need()
         if action == "save":
-            self.snapshots[name] = ({pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones}, dict(self.travel))
+            self.snapshots[name] = ({pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones}, dict(self.travel),
+                                    dict(getattr(self, "_clav_now", {})))
             return {"saved": name}
         if name not in self.snapshots:
             raise ValueError("no snapshot %r; saved: %s" % (name, list(self.snapshots)))
-        bones, travel = self.snapshots[name]
+        bones, travel = self.snapshots[name][:2]
+        if len(self.snapshots[name]) > 2:
+            self._clav_now = dict(self.snapshots[name][2])   # the shoulder girdle's angles ride with the bones
         for pb in self.arm.pose.bones:
             pb.location, pb.rotation_quaternion = bones[pb.name]
             pb.scale = self.idle[pb.name][2]

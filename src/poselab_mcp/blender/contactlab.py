@@ -19,6 +19,8 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
+from sdflab import SDF_TOL_CM
+
 DIGITS = ("thumb", "index", "middle", "ring", "pinky")
 REGION_COLOURS = {"back": (0.85, 0.25, 0.2), "front": (0.2, 0.45, 0.9), "left": (0.2, 0.75, 0.3), "right": (0.95, 0.75, 0.15),
                   "tang": (0.75, 0.3, 0.85), "opening_edge": (0.1, 0.85, 0.85), "end": (0.6, 0.45, 0.3),
@@ -284,25 +286,16 @@ class ContactMixin:
             pv = [int(i) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side")]
             if not pv:
                 break
-            step = max(1, len(pv) // 150)
-            worst, near_, touching = None, None, 0.0
-            for i in pv[::step]:
-                p_ = Vector(P[i])
-                loc, nrm, _k, d = bvh.find_nearest(p_, 0.08)
-                if loc is None:
-                    continue
-                # inside by the face's side, confirmed by ray parity (a model's faces may point inward)
-                ins = (p_ - loc).dot(nrm) < 0.0
-                if ins != surf.inside(p_) and d < 0.02:
-                    ins = not ins
-                    nrm = -nrm
-                sd = -d if ins else d
-                if sd * 100.0 <= 0.2:
-                    touching += A[i] * step
-                if worst is None or sd < worst[0]:
-                    worst = (sd, nrm.copy())
-                if sd >= 0.0 and (near_ is None or sd < near_[0]):
-                    near_ = (sd, (loc - p_))
+            pv = np.array(pv)
+            D, _w, Nr = self.sdf_query(P[pv])            # the grids: signed distance (cm) and outward normal
+            touching = float(A[pv][D <= 0.2].sum())
+            kw = int(np.argmin(D))
+            worst = (float(D[kw]) / 100.0, Vector(Nr[kw]))
+            outs = np.nonzero(D >= 0.0)[0]
+            near_ = None
+            if len(outs):
+                kn = outs[int(np.argmin(D[outs]))]
+                near_ = (float(D[kn]) / 100.0, -Vector(Nr[kn]) * (float(D[kn]) / 100.0))
             if worst is None:
                 break
             left = worst[0] * 100.0
@@ -346,12 +339,11 @@ class ContactMixin:
             for fi in sorted(live):
                 k0, vi = verts[fi]
                 deep = {}
-                for i in vi:
-                    p_ = Vector(P[i])
-                    loc, nrm, _k, d = bvh.find_nearest(p_, 0.03)
-                    if loc is not None and d * 100.0 > allow_cm and (p_ - loc).dot(nrm) < 0.0 and surf.inside(p_):
+                D, _w, _n = self.sdf_query(P[vi], want_normal=False)
+                for i, dcm in zip(vi, D):
+                    if dcm < -allow_cm:
                         j = int(segi[i]) - k0
-                        deep[j] = max(deep.get(j, 0.0), d)
+                        deep[j] = max(deep.get(j, 0.0), -dcm / 100.0)
                 if not deep:
                     live.discard(fi)
                     continue
@@ -456,12 +448,10 @@ class ContactMixin:
 
             def gap(j):
                 best = None
-                for q in pts[j]:
+                if len(pts[j]):
+                    best = float(self.sdf_query(pts[j], want_normal=False)[0].min()) / 100.0
+                for q in (pts[j] if oh is not None else ()):
                     v = Vector(q)
-                    loc, nrm, _k, d = bvh.find_nearest(v, 0.03)
-                    if loc is not None:
-                        sd = -d if (v - loc).dot(nrm) < 0.0 and surf.inside(v) else d
-                        best = sd if best is None else min(best, sd)
                     if oh is not None:
                         l2, n2, _t2, d2 = oh[0].find_nearest(v, 0.03)
                         if l2 is not None:
@@ -794,21 +784,22 @@ class ContactMixin:
         cos_f = math.cos(math.radians(facing_max_deg))
         touched = set()
         r_cov = max(band_cm, 0.35) / 100.0
-        for k in np.nonzero(near)[0]:
+        ks = np.nonzero(near)[0]
+        if len(ks):
+            vi_n = idx[ks]
+            Dn, _wp, Nn = self.sdf_query(P[vi_n])           # the grids: distance (cm), outward normal, at once
+        for kk, k in enumerate(ks):
             i = int(idx[k])
-            p_ = Vector(P[i])
-            loc, nrm, _pi, dist = bvh.find_nearest(p_, near_cm / 100.0)
-            if loc is None:
+            d_cm = float(Dn[kk])
+            if d_cm > near_cm:
                 continue
-            ins = (p_ - loc).dot(nrm) < 0.0 and dist < 0.02
-            if ins and not surf.inside(p_):
-                ins = False
-            d_cm = (-dist if ins else dist) * 100.0
+            nrm = Vector(Nn[kk])
+            loc = Vector(P[i]) - nrm * (d_cm / 100.0)     # the nearest surface point
             _c, si, _dd = kd.find(loc)
             reg = SL[si] if si is not None else "other"
             pr = pairs.setdefault((labs[i], reg), [0.0, 0.0, 0.0])
             give = SKIN_GIVE.get(_lab_key(labs[i]), SKIN_GIVE["default"])
-            if d_cm < -give:
+            if d_cm < -give - SDF_TOL_CM:                   # past the give by more than the grid can tell
                 pr[1] += A[i]
                 pr[2] = max(pr[2], -d_cm - give)
                 press += A[i]

@@ -69,6 +69,11 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-19 | In the score the grip's own purpose (power wrap, support) counts three times its refinements (thumb and index lines); the stance grid reaches 8 cm down | The search traded the palm on the grip (10 to 0.4 cm2) for a better thumb line; the stance pick sat at the grid's edge |
 | 2026-10-19 | Hard rules: no clipping either way (skin in the object, the object in the flesh, a hand in the other, past the give) and holding-digit limits (no backward bend, no twist past a grasp's); known answers in examples/clip_tests.py | Run B had a support hand's fingers bent backward and the firing index through the guard's ring; the old checks passed both (vertices only, free-hand ranges) |
 | 2026-10-19 | No random search (owner): a target solver to replace it, fallback to be chosen | The search guessed; results swung run to run |
+| 2026-10-19 | The fallback when a target is unmet, with no chance in it: 1 the purposes in priority order (hard rules, the grip, its refinements); 2 the body moves in a set order (wrist, elbow, shoulder girdle, stance); 3 a fixed list of starts; 4 an honest report of what is unmet and why; 5 a refinement loosened only with the owner's yes, per purpose | The owner: no random; agreed 2026-10-19 |
+| 2026-10-19 | No GPU ray tracing for now (a GTX 1060 3GB has no RT cores; Blender gives OptiX and CUDA only to Cycles); the object as per-part signed distance grids instead (`sdflab.py`, 0.2 cm cells, built once, kept on disk) | A ray cast costs 0.9 us on the CPU; the cost was Python loops, one query per vertex. The grid answers 20000 points with normals in 0.02 s |
+| 2026-10-19 | The grid's error near the surface is measured (examples/sdf_tests.py: median 0.002 cm, 99 of 100 points under 0.022, worst 0.056), and the press rule does not count skin sunk less than SDF_TOL_CM (0.03 cm) past its give | A rule cannot ask for more than its ruler can tell: 0.15 cm2 sunk 0.004 cm failed the hard rule |
+| 2026-10-19 | **The target solver** (`target_hold`) replaces the random search: each purpose names where its hand part goes (the palm's half by the knuckles onto the run, its facing into the surface, the web onto its point or the nearest surface, the knuckle line along the run in the start's way); the hand fitted onto them by weighted least squares (Kabsch), a fit the arm cannot take refused; the palm settled; the body eased past a limit (elbow, then girdle); the fingers closed by the skin, then laid down by a fixed step pattern (base closing while the end opens); the thumb's base and bends stepped out of the object; last a fixed-step polish of the whole hold on the gate's own score (the hand around and along the run, moved and turned, the elbow, the girdle, each joint) | The owner: the search must look toward the holding part, not guess. The cylinder passes with a score of 0, the same answer on every run |
+| 2026-10-19 | A power wrap seats the handle across the distal palm (the palm's half by the knuckles), not the palm's middle | Seated at the middle only the fingertips reached (pads 3.4 of 4 cm2); a real power grip lies by the knuckle crease |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 
@@ -77,9 +82,12 @@ reason. Read it before changing the hold code, and check each change against it.
 - Reader known answers: `blender -b --factory-startup -P examples/hold_reader_tests.py` (a cylinder, a pistol block,
   a box).
 - Geometry known answers: `blender -b --factory-startup -P examples/geometry_tests.py`.
+- Distance grid known answers and its measured error: `blender -b --factory-startup -P examples/sdf_tests.py`.
+- Clipping known answers: `blender -b --factory-startup -P examples/clip_tests.py`.
 - The hold benchmark (the arms are yours): `blender -b --factory-startup -P examples/hold_bench.py -- --arms-folder
   <folder> --arms Arms.fbx --idle Arms_Idle.fbx --eye 0 -2.3 162.6 --bone-edits bone_edits.json --out <folder>`.
-  It writes bench_cylinder.json (every number) and the pictures (hand, heat, contact).
+  It writes bench_cylinder.json (every number) and the pictures (hand, heat, contact). `--solver target` (the
+  default) runs the target solver; `--solver search` the old random search, for comparison.
 - Gun Kit on a gun: the hands step with the grip style's purposes; `contact_view` draws the contact map of a saved
   clip frame.
 
@@ -90,6 +98,11 @@ reason. Read it before changing the hold code, and check each change against it.
 - The cylinder (3.5 cm, leaned 20 degrees) PASSES the gate (2026-10-19): palm 9.3 cm2, finger pads 8.3, web 0.83,
   thumb 1.67, cover 41% over the hand's span, press 0.34 cm2 at 0.06 cm, wrist 14, forearm 33; the third of three
   starts passed; a try 0.36 s.
+- The target solver on the cylinder (2026-10-19): PASSES with a score of 0, the same numbers on two runs. Palm 10.95
+  cm2, finger pads 4.19, web 0.40, thumb 3.75, cover 31.6%, nothing pressed or pierced, no digit fault, wrist 21
+  (comfort 22), forearm 34, elbow 52, girdle forward 10 and down 6. The third of three fixed starts passed (the first
+  two: palm short, or a pinky tip twisted 16). 36 s for the passing start, 116 s for all three; the contact read
+  0.08 s.
 - The contact areas the purposes ask for are first estimates; set them from holds the owner accepts.
 - The M1911 idle on the new search (2026-10-19): a two-hand grip that looks right (firing hand high, fingers round
   the front strap, index along the frame over the guard; support hand over the firing fingers, both thumbs forward

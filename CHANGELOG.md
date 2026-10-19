@@ -33,6 +33,17 @@ docs/HOLD_DECISIONS.md.
   between its vertices is caught; `inside_flesh`), no hand inside the other past the skin's give; a holding finger's
   joints (`hold_digit_rule`, HOLD_DIGIT_LIMITS: no backward bend, no twist past a grasp's). `examples/clip_tests.py`:
   known answers (a thin ring through a coarse finger).
+* **The target solver** (`target_hold`, no chance in it): the purposes name targets, the hand is fitted onto them by
+  weighted least squares, the body eases past a limit, the fingers close by the skin and are laid down by a fixed step
+  pattern, the thumb steps out of the object, and a fixed-step polish tunes the whole hold on the gate's own score.
+  It stops at the first round that passes, keeps the best, and reports each unmet purpose with its numbers. The
+  cylinder passes with a score of 0, the same on every run. `hold_bench.py --solver target|search`.
+* **Distance grids** (`sdflab.py`): each part's signed distance on a 0.2 cm grid in its own frame, built once and kept
+  on disk; `sdf_query` gives distance, nearest part and outward normal for many points at once (20000 in 0.02 s).
+  The contact read, the palm settle, the closing and the relax use it. `examples/sdf_tests.py`: known answers and the
+  measured error near the surface (99 of 100 points under 0.022 cm); the press rule ignores sinking under
+  SDF_TOL_CM (0.03 cm) past the give.
+* Snapshots keep the shoulder girdle's angles with the bones.
 * `close_hand(mend=False)` closes without turning the wrist (the old mend rotated a settled hand into the object).
 * `render(centre=...)` aims the outside views at a world point.
 * Removed: the coverage-ring and capsule versions of the power wrap, support and no-touch purposes (one ruler left).

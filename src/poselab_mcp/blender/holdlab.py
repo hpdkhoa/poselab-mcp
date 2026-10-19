@@ -993,6 +993,402 @@ class HoldMixin:
                 "evaluations": generations * pop + 2, "try_s": round(sum(times) / max(1, len(times)), 3),
                 "try_parts_s": {k: round(v / max(1, len(times)), 3) for k, v in prof.items()}, **why}
 
+    # --- the target solver: each purpose says where its hand part goes, the hand goes there --------------------
+    def _region_points(self, names):
+        """World points of the labelled samples in these regions (fnmatch patterns), as the object is posed."""
+        import fnmatch
+        SW, SL = self._object_now()[2:4]
+        keep = [k for k, l_ in enumerate(SL) if any(fnmatch.fnmatch(l_, n_) for n_ in names)]
+        return SW[keep] if keep else np.zeros((0, 3))
+
+    def _skin_part(self, side, patterns):
+        """World points of this hand's skin labelled as any of patterns (fnmatch), as posed."""
+        import fnmatch
+        P, N, _A, _b, _t = self._skin_arrays()
+        idx, lab = self._hand_label_arrays(side, P, N)
+        sel = [int(i) for i, l_ in zip(idx, lab) if any(fnmatch.fnmatch(l_, p_) for p_ in patterns)]
+        return P[sel] if sel else np.zeros((0, 3))
+
+    def _fit_hand(self, side, pairs):
+        """The hand moved and turned as one body by a weighted least-squares fit (Kabsch) of its points onto their
+        targets: pairs [(source world point, target world point, weight)]. The arm reaches it."""
+        if len(pairs) < 3:
+            return None
+        Sx = np.array([list(a) for a, _b, _w in pairs])
+        Dx = np.array([list(b) for _a, b, _w in pairs])
+        w = np.array([w_ for _a, _b, w_ in pairs])
+        w = w / w.sum()
+        cs, cd = (Sx * w[:, None]).sum(0), (Dx * w[:, None]).sum(0)
+        Hm = ((Sx - cs) * w[:, None]).T @ (Dx - cd)
+        U, _S, Vt = np.linalg.svd(Hm)
+        dd = np.sign(np.linalg.det(Vt.T @ U.T))
+        Rm = Vt.T @ np.diag([1.0, 1.0, dd]) @ U.T
+        R = Matrix([list(Rm[0]), list(Rm[1]), list(Rm[2])]).to_4x4()
+        T = Matrix.Translation(Vector(list(cd))) @ R @ Matrix.Translation(-Vector(list(cs)))
+        hn = self._n("hand", side)
+        M = T @ self._bw(hn)
+        short = self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+        bpy.context.view_layer.update()
+        return short
+
+    def _place_targets(self, side, mark):
+        """Where the hand goes for its purpose, as fit pairs: the palm patch's middle onto the nearest point of its
+        regions and its facing into the surface there (weight 3, the grip itself), the web onto its point (2), the
+        knuckles' line along the run toward its inner end (1)."""
+        own, far = self._sides_named(side)
+        named = bool(mark.get("palm_dir")) and own != "side_?"
+        RUN = ["back", "front", "side_?", "left", "right", "tang", "end"]
+        if mark["purpose"] == "support":
+            regs = [own] if named else RUN
+        else:
+            regs = ["back", own, "tang"] if named else RUN
+        palm = self._skin_part(side, ["palm"])
+        R = self._region_points(regs)
+        if not len(palm) or not len(R):
+            return []
+        if mark["purpose"] == "power_wrap":
+            # a power wrap seats the handle across the distal palm, by the knuckle crease (the base segments then
+            # wrap it; seated at the palm's middle only the fingertips reach): the palm's half nearest the knuckles
+            kn = np.array(list(self._bw(self._n("finger", side, "middle", "01")).translation))
+            dk = np.linalg.norm(palm - kn, axis=1)
+            palm = palm[dk <= np.median(dk)]
+        pc = palm.mean(0)
+        k = int(np.argmin(np.linalg.norm(R - pc, axis=1)))
+        tgt = R[k]
+        D, _w, Nn = self.sdf_query(tgt[None, :])
+        n_s = Nn[0]
+        f0 = np.array(list(self._palm_facing(side)))
+        pairs = [(Vector(pc), Vector(tgt), 3.0),
+                 (Vector(pc + f0 * 0.03), Vector(tgt - n_s * 0.03), 3.0)]
+        run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
+        RW = self._run_world(run)
+        ax = np.array(list((RW["inner"] - RW["outer"]).normalized()))
+        a0 = np.array(list(self._bw(self._n("finger", side, "index", "01")).translation
+                           - self._bw(self._n("finger", side, "pinky", "01")).translation))
+        a0 /= max(1e-9, np.linalg.norm(a0))
+        if np.dot(a0, ax) < 0 and not (mark.get("_web") and mark["purpose"] == "power_wrap"):
+            ax = -ax        # the knuckles keep their start's way along the run (the body chose it); a web point pins it
+        pairs += [(Vector(pc + a0 * 0.03), Vector(tgt + ax * 0.03), 1.0), (Vector(pc - a0 * 0.03), Vector(tgt - ax * 0.03), 1.0)]
+        if mark.get("_web") and mark["purpose"] == "power_wrap":
+            web = np.array(list(self._anchor(side, "web")))
+            wt = np.array(list(self._obj_frame(mark["part"]) @ Vector(mark["_web"])))
+            Dw, _w2, Nw = self.sdf_query(wt[None, :])
+            pairs.append((Vector(web), Vector(wt + Nw[0] * 0.009), 2.0))   # the web's middle is a cm inside its skin
+        elif mark["purpose"] == "power_wrap":
+            # no web point read: the web onto the run's surface nearest it, just pressing (a power wrap seats it)
+            web_s = self._skin_part(side, ["web"])
+            if len(web_s):
+                wc = web_s.mean(0)
+                kw = int(np.argmin(np.linalg.norm(R - wc, axis=1)))
+                _Dw, _w2, Nw = self.sdf_query(R[kw][None, :])
+                pairs.append((Vector(wc), Vector(R[kw] - Nw[0] * 0.001), 2.0))
+        return pairs
+
+    def _body_eases(self, side, keep):
+        """The body helps when the arm is past a limit, in a set order: the elbow swung (40 to -40 in 10 degree
+        steps), then the shoulder girdle (forward and up, a small grid), each taken only if it leaves the arm less
+        past its limits; the hand kept where it is (keep: its matrix)."""
+        best = self.arm_excess(side)
+        if best <= 0.0:
+            return 0.0
+        self.snapshot("save", "_ease")
+        choice = None
+        for sw in (-40.0, -30.0, -20.0, -10.0, 10.0, 20.0, 30.0, 40.0):
+            self.snapshot("load", "_ease")
+            self._swing_elbow(side, sw)
+            bpy.context.view_layer.update()
+            ex = self.arm_excess(side)
+            if ex < best - 0.5:
+                best, choice = ex, ("swing", sw)
+        if best > 0.0:
+            for pr in (-10.0, -5.0, 5.0, 10.0):
+                for el in (-6.0, 0.0, 6.0):
+                    self.snapshot("load", "_ease")
+                    self.shoulder(side, pr, el)
+                    self._put_hand(side, keep)
+                    bpy.context.view_layer.update()
+                    ex = self.arm_excess(side)
+                    if ex < best - 0.5:
+                        best, choice = ex, ("shoulder", pr, el)
+        self.snapshot("load", "_ease")
+        if choice and choice[0] == "swing":
+            self._swing_elbow(side, choice[1])
+        elif choice:
+            self.shoulder(side, choice[1], choice[2])
+            if not hasattr(self, "_clav_now"):
+                self._clav_now = {}
+            self._clav_now[side] = (choice[1], choice[2])
+            self._put_hand(side, keep)
+        bpy.context.view_layer.update()
+        return best
+
+    def _descend(self, err_fn, moves, steps=(8.0, 4.0, 2.0)):
+        """A fixed pattern search (no chance in it): each move (a function of a step in degrees) tried both ways
+        at each step size, kept when the error falls; until no move helps at the finest step. Returns the error."""
+        self.snapshot("save", "_ds")
+        e0 = err_fn()
+        for st in steps:
+            improved = True
+            while improved:
+                improved = False
+                for mv in moves:
+                    for sg in (1.0, -1.0):
+                        self.snapshot("save", "_ds")
+                        mv(sg * st)
+                        bpy.context.view_layer.update()
+                        e1 = err_fn()
+                        if e1 < e0 - 1e-6:
+                            e0, improved = e1, True
+                        else:
+                            self.snapshot("load", "_ds")
+        return e0
+
+    def _fit_index(self, side, mark, glove_cm):
+        """An extended index turned joint by joint onto its line (its error from the purpose; a press into the
+        object counted ten times over)."""
+        FL = self._limits()[1]
+
+        def err():
+            r = self.purpose_index_extended(side, mark, glove_cm)
+            pts = self._skin_part(side, ["index?_*"])
+            pr = max(0.0, -float(self.sdf_query(pts, want_normal=False)[0].min()) - 0.15) if len(pts) else 0.0
+            dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith("index")]
+            return r["error"] + 10.0 * pr + 50.0 * len(dig)
+
+        def turn(j):
+            def mv(deg):
+                cur = self._finger_report(side, FL)[0]["index_" + j][0]
+                self._set_curl(side, "index", j, cur + deg, FL)
+            return mv
+        return self._descend(err, [turn("01"), turn("02"), turn("03")])
+
+    def _fit_pads(self, side, fingers):
+        """Each wrapping finger's joints turned by a fixed step pattern so more of its pads rest on the surface (within
+        0.1 cm, not past a pad's give) and no skin sinks past its give: a closing stops the joints behind a touching
+        fingertip, and this lays the base and middle segments down too. The holding-digit rule is kept."""
+        FL = self._limits()[1]
+        P_, N_ = self._skin_arrays()[:2]
+        ix, lb = self._hand_label_arrays(side, P_, N_)
+        for fi in fingers:
+            sel = np.array([i for i, l_ in zip(ix, lb) if l_.startswith(fi)])
+            if not len(sel):
+                continue
+            is_pad = np.array([lb[k].endswith("_pad") for k in range(len(lb)) if lb[k].startswith(fi)])
+            give = np.where(is_pad, 0.15, 0.05)
+
+            def err(sel=sel, is_pad=is_pad, give=give, fi=fi):
+                P, _N, A = self._skin_arrays()[:3]
+                D = self.sdf_query(P[sel], want_normal=False)[0]
+                on = is_pad & (D <= 0.1) & (D >= -0.15)
+                sunk = float((A[sel] * np.maximum(0.0, -D - give)).sum())
+                dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith(fi)]
+                return -float(A[sel][on].sum()) + 20.0 * sunk + 50.0 * len(dig)
+
+            def turn(js, fi=fi):
+                # js: (joint, share) turned together; a base closing while its end opens rolls a finger down onto
+                # the surface without pushing the touching tip in
+                def mv(deg):
+                    fr = self._finger_report(side, FL)[0]
+                    for j, k in js:
+                        self._set_curl(side, fi, j, fr["%s_%s" % (fi, j)][0] + deg * k, FL)
+                return mv
+            self._descend(err, [turn([("01", 1.0)]), turn([("02", 1.0)]), turn([("03", 1.0)]),
+                                turn([("01", 1.0), ("03", -1.0)]), turn([("01", 1.0), ("02", -1.0)]),
+                                turn([("02", 1.0), ("03", -1.0)])], steps=(6.0, 3.0))
+
+    def _fit_thumb(self, side, mark, glove_cm, along=None, inline=True):
+        """A thumb placed: its base turned about three axes and its two joints bent, a fixed step pattern, so no
+        skin sinks past its give, the pad just presses the object (a gap of -0.1 cm wanted), no joint breaks the
+        holding digit's rule, and an inline thumb lies on the index's line (or along)."""
+        TL = self._thumb_limits()
+        n1 = self._n("finger", side, "thumb", "01")
+
+        P_, N_, A_ = self._skin_arrays()[:3]
+        ix, lb = self._hand_label_arrays(side, P_, N_)
+        th = np.array([i for i, l_ in zip(ix, lb) if l_.startswith("thumb")])
+        pad = np.array([i for i, l_ in zip(ix, lb) if l_.startswith("thumb") and l_.endswith("_pad")])
+        give = np.array([0.15 if lb[k].endswith("_pad") else 0.05 for k in range(len(lb)) if lb[k].startswith("thumb")])
+
+        def err():
+            P, _N, A = self._skin_arrays()[:3]
+            D = self.sdf_query(P[th], want_normal=False)[0]
+            sunk = float((A[th] * np.maximum(0.0, -D - give)).sum())          # cm2 x cm past the skin's give
+            gap = float(self.sdf_query(P[pad], want_normal=False)[0].min()) if len(pad) else 5.0
+            dig = [f for f in self.hold_digit_rule(side)["faults"] if f.startswith("thumb")]
+            e = 20.0 * sunk + abs(gap + 0.1) / 0.3 + 50.0 * (len(self._thumb_report(side, TL)[1]) + len(dig))
+            if inline:
+                e += self.purpose_thumb_inline(side, mark, glove_cm, along=along)["error"]
+            return e
+
+        def base(ax):
+            def mv(deg):
+                head = self._bw(n1).translation.copy()
+                self._turn_about(n1, Vector(ax), deg, head)
+            return mv
+
+        def bend(j):
+            def mv(deg):
+                if self.R.get("thumb_hinge") == "ray":
+                    self._thumb_flex(side, j, deg)
+                else:
+                    tr = self._thumb_report(side, TL)[0]
+                    b2, b3 = tr.get("thumb_02", [0, 0])[0], tr.get("thumb_03", [0, 0])[0]
+                    self._set_thumb_bend(side, b2 + (deg if j == "02" else 0.0), b3 + (deg if j == "03" else 0.0), TL)
+            return mv
+        return self._descend(err, [base((1, 0, 0)), base((0, 1, 0)), base((0, 0, 1)), bend("02"), bend("03")])
+
+    def _polish(self, side, marks, glove_cm, other, fingers):
+        """The whole hold tuned on the gate's own ruler (the hold score) by a fixed step pattern: the hand moved
+        along and turned about three axes (a step of 4 is 0.2 cm or 2 degrees), then each finger's joints and the
+        thumb's bends. Returns the score."""
+        FL = self._limits()[1]
+        TL = self._thumb_limits()
+        hn = self._n("hand", side)
+
+        def err():
+            return self._hold_score(side, marks, glove_cm, other, None, self._tree())[0]
+
+        def move(ax):
+            def mv(st):
+                M = Matrix.Translation(Vector(ax) * (st * 0.0005)) @ self._bw(hn)
+                self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            return mv
+
+        def turn(ax):
+            def mv(st):
+                M = self._bw(hn)
+                pc = Vector(list(self._skin_part(side, ["palm"]).mean(0)))
+                R = Matrix.Translation(pc) @ Matrix.Rotation(math.radians(st * 0.5), 4, Vector(ax)) @ Matrix.Translation(-pc)
+                M = R @ M
+                self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            return mv
+
+        def curl(fi, j):
+            def mv(st):
+                self._set_curl(side, fi, j, self._finger_report(side, FL)[0]["%s_%s" % (fi, j)][0] + st, FL)
+            return mv
+
+        def tbend(j):
+            def mv(st):
+                if self.R.get("thumb_hinge") == "ray":
+                    self._thumb_flex(side, j, st)
+                else:
+                    tr = self._thumb_report(side, TL)[0]
+                    b2, b3 = tr.get("thumb_02", [0, 0])[0], tr.get("thumb_03", [0, 0])[0]
+                    self._set_thumb_bend(side, b2 + (st if j == "02" else 0.0), b3 + (st if j == "03" else 0.0), TL)
+            return mv
+        def swing(st):
+            self._swing_elbow(side, st * 2.0)                 # the elbow about the shoulder-wrist line, the hand kept
+            self._roll_forearm(side)
+
+        def girdle(k):
+            def mv(st):
+                keep = self._bw(hn).copy()
+                if not hasattr(self, "_clav_now"):
+                    self._clav_now = {}
+                pr, el = self._clav_now.get(side, (0.0, 0.0))
+                pr, el = (pr + st, el) if k == 0 else (pr, el + st)
+                got = self.shoulder(side, pr, el)
+                self._clav_now[side] = (got["protraction_deg"], got["elevation_deg"])
+                self._put_hand(side, keep)
+            return mv
+        m = next(x for x in marks if x.get("role") == "hold" and x.get("hand", side) == side)
+        run = self._object["parts"][m["part"]]["runs"][m.get("run", 0)]
+
+        def around(st):
+            # the hand turned round the run's axis (st x 1.5 degrees): a hand finds its comfortable place on a handle
+            RW = self._run_world(run)
+            ax = (RW["inner"] - RW["outer"]).normalized()
+            c = RW["outer"].lerp(RW["inner"], 0.5)
+            R = Matrix.Translation(c) @ Matrix.Rotation(math.radians(st * 1.5), 4, ax) @ Matrix.Translation(-c)
+            M = R @ self._bw(hn)
+            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+
+        def along(st):
+            RW = self._run_world(run)
+            ax = (RW["inner"] - RW["outer"]).normalized()
+            M = Matrix.Translation(ax * (st * 0.001)) @ self._bw(hn)
+            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+        AX = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+        moves = [around, along] + [move(a) for a in AX] + [turn(a) for a in AX] + [swing, girdle(0), girdle(1)]
+        moves += [curl(fi, j) for fi in fingers for j in ("01", "02", "03")] + [tbend("02"), tbend("03")]
+        return self._descend(err, moves, steps=(4.0, 2.0, 1.0))
+
+    def target_hold(self, side, marks, glove_cm=0.0, other=True, rounds=4, wrap=None, polish=True):
+        """A hand's hold solved toward its purposes' targets, with no chance in it: each round the hand is fitted
+        onto its targets (palm patch and facing, web, knuckles' line), the palm settled onto the surface, the body
+        eased when the arm is past a limit (elbow, then shoulder), the wrapping fingers closed by the skin, the
+        extended index and the thumb turned onto their lines by a fixed step pattern; the best round is kept, the
+        rounds stop when the hold passes its gate or stops getting better. Returns the score's parts, the rounds
+        and what is still unmet, each with its reason."""
+        import time as _time
+        t0 = _time.time()
+        m = next(x for x in marks if x.get("role") == "hold" and x.get("hand", side) == side)
+        FL = self._limits()[1]
+        wrap = wrap or {fi: "wrap" for fi in ("index", "middle", "ring", "pinky")}
+        closing = tuple(fi for fi, how in wrap.items() if how == "wrap" and fi != "thumb")
+        best, log = None, []
+        self.snapshot("save", "_th_best")
+        for rd in range(rounds):
+            pairs = self._place_targets(side, m)
+            if pairs:
+                ex0 = self.arm_excess(side)
+                self.snapshot("save", "_th_fit")
+                self._fit_hand(side, pairs)
+                if self.arm_excess(side) > ex0 + 20.0:
+                    self.snapshot("load", "_th_fit")   # a fit the arm cannot take: the hand stays where it started
+                    log.append({"round": rd, "fit": "refused, the arm past its limits"})
+            self.settle_palm(side)
+            keep = self._bw(self._n("hand", side)).copy()
+            self._body_eases(side, keep)
+            for fi in closing:
+                for j in ("01", "02", "03"):
+                    self._set_curl(side, fi, j, 0.0, FL)
+            for fi, how in wrap.items():
+                if how == "straight" and fi != "thumb" and rd == 0:
+                    for j, cc in zip(("01", "02", "03"), (0.0, 0.0, 3.0)):
+                        self._set_curl(side, fi, j, cc, FL)
+            bpy.context.view_layer.update()
+            self.conform_digits(side, closing, other=other)
+            self._fit_pads(side, closing)
+            if m.get("index") == "extended" and wrap.get("index") == "straight":
+                self._fit_index(side, m, glove_cm)
+            if m.get("thumb") == "inline":
+                o_ = "r" if side == "l" else "l"
+                self._fit_thumb(side, m, glove_cm, along=self._thumb_dir(o_) if m["purpose"] == "support" else None)
+            elif m.get("thumb") in ("wrap", "opposed"):
+                self._set_thumb_bend(side, 6.0, 4.0, self._thumb_limits())
+                bpy.context.view_layer.update()
+                self.conform_digits(side, ("thumb",), other=other)
+                self._fit_thumb(side, m, glove_cm, inline=False)
+            self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb")))
+            sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
+            g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
+            ok = bool(g.get(side, {}).get("pass"))
+            prev = [x["score"] for x in log if "score" in x]
+            log.append({"round": rd, "score": round(sc, 2), "gate": ok})
+            if best is None or (ok, -sc) > (best[2], -best[0]):
+                best = (sc, why, ok)
+                self.snapshot("save", "_th_best")
+            if ok or (prev and sc >= prev[-1] - 0.5):
+                break
+        self.snapshot("load", "_th_best")
+        if polish and not best[2]:
+            self._polish(side, marks, glove_cm, other, tuple(fi for fi in ("index", "middle", "ring", "pinky")
+                                                              if wrap.get(fi) == "wrap"))
+            sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
+            g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
+            ok = bool(g.get(side, {}).get("pass"))
+            log.append({"round": "polish", "score": round(sc, 2), "gate": ok})
+            if (ok, -sc) > (best[2], -best[0]):
+                best = (sc, why, ok)
+                self.snapshot("save", "_th_best")
+            self.snapshot("load", "_th_best")
+        sc, why, ok = best
+        unmet = [{"purpose": r["purpose"], "why": {k: v for k, v in r.items() if k not in ("purpose", "met", "error", "hard", "why")}}
+                 for r in why["purposes"] if not r["met"]]
+        return {"score": round(sc, 2), "gate": ok, "rounds": log, "unmet": unmet, "solve_s": round(_time.time() - t0, 1), **why}
+
     # --- one frame mended on the contact ruler ----------------------------------------------------------------
     def frame_fault(self, side, glove_cm=0.0, other=True):
         """What a moving frame's hand does wrong, on the drawn skin: its press into the object and into the other
