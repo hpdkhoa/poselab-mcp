@@ -688,11 +688,14 @@ class HoldMixin:
         # thumb's and the index's lines), so no search trades the palm on the grip for a finer line
         PRIMARY = {"power_wrap": 3.0, "support": 3.0}
         perr = sum(r["error"] * PRIMARY.get(r["purpose"], 1.0) for r in res)
+        # the hard rules (no clipping either way, digits as a holding hand's) are never traded: each broken one costs
+        # as much as a broken body rule
+        hard = sum(1 for r in res if r.get("hard") and not r["met"])
         FL = self._limits()[1]
         TL = self._thumb_limits()
         fbad = len(self._finger_report(side, FL)[1]) + len(self._thumb_report(side, TL)[1])
         abad = len(self._arm_report(side, self._limits()[0])[1])
-        sc = 10.0 * perr + 200.0 * (fbad + abad)
+        sc = 10.0 * perr + 200.0 * (fbad + abad + hard)
         pr = next((r for r in res if r["purpose"] == "press"), {})
         return sc, {"purposes_error": round(perr, 3), "press": round(pr.get("object_cm2", 0.0) + pr.get("hand_cm2", 0.0), 3),
                     "presses": [], "digit_rules": fbad, "arm_rules": abad, "purposes": res}

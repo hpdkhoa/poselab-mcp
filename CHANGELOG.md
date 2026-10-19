@@ -28,6 +28,11 @@ docs/HOLD_DECISIONS.md.
 * **Soft tissue give:** a press counts only past the palm's 3 mm, a finger or thumb pad's 1.5 mm, 0.5 mm elsewhere.
 * `examples/hold_bench.py`: the hold benchmark; a 3.5 cm handle leaned 20 degrees passes the gate (palm 9.3 cm2,
   finger pads 8.3, web 0.8, thumb 1.7, cover 41 percent, press 0.34 cm2).
+* **Hard rules** (never traded by the search, each fails the gate): no clipping, tested from both sides (skin inside the
+  object past its tissue's give, and the object's surface inside the flesh past it, so a thin part through a finger
+  between its vertices is caught; `inside_flesh`), no hand inside the other past the skin's give; a holding finger's
+  joints (`hold_digit_rule`, HOLD_DIGIT_LIMITS: no backward bend, no twist past a grasp's). `examples/clip_tests.py`:
+  known answers (a thin ring through a coarse finger).
 * `close_hand(mend=False)` closes without turning the wrist (the old mend rotated a settled hand into the object).
 * `render(centre=...)` aims the outside views at a world point.
 * Removed: the coverage-ring and capsule versions of the power wrap, support and no-touch purposes (one ruler left).

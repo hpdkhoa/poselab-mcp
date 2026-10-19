@@ -33,6 +33,12 @@ reason. Read it before changing the hold code, and check each change against it.
 - **No-touch:** no skin on moving parts (slide, hammer), the trigger outside the fire frames, the magazine release.
 - **A hand off its part fails.** A gate that passes a hand that is not doing its job is a wrong gate.
 - **Thicker or thinner skins** of the same object must still hold without clipping (the skin check).
+- **Never clipping, never twisted fingers** (hard rules, 2026-10-19: "in real life that will not happen"). No skin
+  inside the object past its tissue's give, no object inside the flesh past it (tested from both sides, so a thin
+  part through a finger is caught), no hand inside the other past the skin's give. A holding finger never bends a
+  joint backward (knuckle at most 5 degrees, middle joint 0, end joint 5) or twists out of its plane past a grasp's
+  (knuckle 20, middle 8, end 10 degrees). A broken hard rule fails the gate and costs the search as much as a broken
+  body rule: it is never traded for a gain elsewhere.
 
 ## Decisions
 
@@ -61,6 +67,8 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-19 | The gun's stance is searched: a grid of places ahead and up, judged by both hands' best starts (arm excess first, then the purposes) | Both shoulders sat at their limits: the style's guessed stance was far for these arms |
 | 2026-10-19 | The per-frame repair moves onto the contact ruler (`repair_frame`: skin presses past the give, the arm's excess, a pull back to the motion) | Closes the open item: no second ruler on moving frames |
 | 2026-10-19 | In the score the grip's own purpose (power wrap, support) counts three times its refinements (thumb and index lines); the stance grid reaches 8 cm down | The search traded the palm on the grip (10 to 0.4 cm2) for a better thumb line; the stance pick sat at the grid's edge |
+| 2026-10-19 | Hard rules: no clipping either way (skin in the object, the object in the flesh, a hand in the other, past the give) and holding-digit limits (no backward bend, no twist past a grasp's); known answers in examples/clip_tests.py | Run B had a support hand's fingers bent backward and the firing index through the guard's ring; the old checks passed both (vertices only, free-hand ranges) |
+| 2026-10-19 | No random search (owner): a target solver to replace it, fallback to be chosen | The search guessed; results swung run to run |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 

@@ -50,6 +50,13 @@ CONTACT_PURPOSES = {
 # flattens a few mm, a finger pad less, the bony back and sides little (rigid meshes do not squash: this is where a
 # real grip's contact area comes from)
 SKIN_GIVE = {"palm": 0.3, "palm_side": 0.15, "web": 0.15, "pad": 0.15, "thumb_pad": 0.15, "default": 0.05}
+# a holding hand's digits, as a real one holds (tighter than a free hand's ranges): no joint bent backward against the
+# grip, no finger twisted out of its plane past what a grasp shows. (least curl, most twist out of plane) degrees
+HOLD_DIGIT_LIMITS = {"01": (-5.0, 20.0), "02": (0.0, 8.0), "03": (-5.0, 10.0),
+                     "thumb_02": (-5.0, 15.0), "thumb_03": (-15.0, 15.0)}
+# clipping: no skin past its tissue's give inside the object, no object inside the flesh past it, no hand inside the
+# other past the skin's give; a hair of sampling noise allowed (cm2), nothing deeper
+CLIP_NOISE_CM2 = 0.05
 PULL_W = 0.3                   # the pull's weight: a cm off its region costs 0.3 of a purpose's error
 FINGERS3 = ["middle?_pad", "ring?_pad", "pinky?_pad", "middle?_side", "ring?_side", "pinky?_side"]
 
@@ -835,6 +842,31 @@ class ContactMixin:
                         hand_deep = max(hand_deep, -dd - skin_give_cm)
                     if dd <= band_cm:
                         pr[0] += A[i]
+        # the other way round: the object's surface inside the hand's flesh past its give. A thin part (a trigger
+        # guard's ring) can pass through a finger between its skin vertices; its own surface samples cannot
+        pierced, pierce_deep, pierce_at = 0.0, 0.0, None
+        _bone, _T, sidev, kind, segi = self._skin_static()
+        sc_ = 1 if side == "r" else 2
+        selh = (sidev == sc_) & (kind > 0)
+        th = T[selh[T[:, 0]] & selh[T[:, 1]] & selh[T[:, 2]]]
+        if len(th):
+            vi = np.nonzero(selh)[0]
+            hb = BVHTree.FromPolygons([Vector(x) for x in P[vi]], [tuple(t) for t in np.searchsorted(vi, th)])
+            lo_h, hi_h = P[vi].min(0) - 0.01, P[vi].max(0) + 0.01
+            inbox = np.nonzero(np.all((SW >= lo_h) & (SW <= hi_h), axis=1))[0]
+            a_s = SAMPLE_CM * SAMPLE_CM
+            for k in inbox:
+                hit = self.inside_flesh(Vector(SW[k]), hb)
+                if hit is None:
+                    continue                           # outside the flesh
+                d_cm, t3 = hit
+                d3 = d_cm / 100.0
+                lab3 = labs.get(int(th[t3][0]), "palm")
+                give = SKIN_GIVE.get(_lab_key(lab3), SKIN_GIVE["default"])
+                if d3 * 100.0 > give + 0.02:
+                    pierced += a_s
+                    if d3 * 100.0 - give > pierce_deep:
+                        pierce_deep, pierce_at = d3 * 100.0 - give, lab3
         cover = {}
         if cover_regions:
             hit_all, tot_all = 0, 0
@@ -849,6 +881,7 @@ class ContactMixin:
             cover["_all"] = round(hit_all / float(max(1, tot_all)), 3)
         return {"pairs": pairs, "press_cm2": round(press, 2), "deepest_cm": round(deep, 2),
                 "hand_press_cm2": round(hand_press, 2), "hand_deepest_cm": round(hand_deep, 2), "cover": cover,
+                "pierced_cm2": round(pierced, 2), "pierced_deep_cm": round(pierce_deep, 2), "pierced_at": pierce_at,
                 "_P": P, "_idx": idx, "_lab": labl, "_touched": touched}
 
     def span_cover(self, cp, mark, regions):
@@ -1000,13 +1033,54 @@ class ContactMixin:
         nt_p = pa(cp, ["*"], ["notouch:*"], 1)
         res.append({"purpose": "notouch", "met": nt_c <= 0.0 and nt_p <= 0.0, "error": round(nt_c + 5.0 * nt_p, 3),
                     "contact_cm2": nt_c, "press_cm2": nt_p})
-        q = C["press"]
-        perr = (max(0.0, cp["press_cm2"] - q["object_cm2"]) + 10.0 * max(0.0, cp["deepest_cm"] - q["object_deep_cm"])
-                + max(0.0, cp["hand_press_cm2"] - q["hand_cm2"]) + 10.0 * max(0.0, cp["hand_deepest_cm"] - q["hand_deep_cm"]))
-        res.append({"purpose": "press", "met": perr <= 1e-6, "error": round(perr, 3), "object_cm2": cp["press_cm2"],
-                    "object_deepest_cm": cp["deepest_cm"], "hand_cm2": cp["hand_press_cm2"], "hand_deepest_cm": cp["hand_deepest_cm"]})
+        # no clipping, ever: no skin inside the object past its give, no object inside the flesh past it, no hand
+        # inside the other past the skin's give (a hair of sampling noise allowed, no depth)
+        clip_a = cp["press_cm2"] + cp["pierced_cm2"] + cp["hand_press_cm2"]
+        clip_d = max(cp["deepest_cm"], cp["pierced_deep_cm"], cp["hand_deepest_cm"])
+        perr = max(0.0, clip_a - CLIP_NOISE_CM2) + 10.0 * clip_d
+        res.append({"purpose": "press", "met": clip_a <= CLIP_NOISE_CM2 and clip_d <= 0.0, "error": round(perr, 3),
+                    "hard": True, "object_cm2": cp["press_cm2"], "object_deepest_cm": cp["deepest_cm"],
+                    "pierced_cm2": cp["pierced_cm2"], "pierced_deep_cm": cp["pierced_deep_cm"], "pierced_at": cp["pierced_at"],
+                    "hand_cm2": cp["hand_press_cm2"], "hand_deepest_cm": cp["hand_deepest_cm"]})
+        res.append(self.hold_digit_rule(side))
         res.append(self.purpose_comfort(side))
         return res
+
+    @staticmethod
+    def inside_flesh(q, skin_bvh, reach_m=0.03):
+        """A point inside a closed skin (its BVH): (how deep, cm; the nearest triangle) or None when outside. Inside
+        is the nearest face's back side (a skin's faces point out)."""
+        loc, nrm, ti, d = skin_bvh.find_nearest(q, reach_m)
+        if loc is None or (q - loc).dot(nrm) >= 0.0:
+            return None
+        return d * 100.0, ti
+
+    def hold_digit_rule(self, side):
+        """A holding hand's digits as a real one's: no joint bent backward against the grip, no finger twisted out of
+        its plane past what a grasp shows (HOLD_DIGIT_LIMITS, tighter than a free hand's ranges). A hard rule."""
+        FL = self._limits()[1]
+        TL = self._thumb_limits()
+        fr = self._finger_report(side, FL)[0]
+        tr = self._thumb_report(side, TL)[0]
+        bad = []
+        for fi in ("index", "middle", "ring", "pinky"):
+            for j in ("01", "02", "03"):
+                curl, twist = fr["%s_%s" % (fi, j)]
+                lo, tw = HOLD_DIGIT_LIMITS[j]
+                if curl < lo:
+                    bad.append("%s %s bent %d backward (a holding finger: at most %d)" % (fi, j, -curl, -lo))
+                if abs(twist) > tw:
+                    bad.append("%s %s twisted %d out of its plane (a holding finger: at most %d)" % (fi, j, abs(twist), tw))
+        for j in ("02", "03"):
+            if "thumb_" + j not in tr:
+                continue
+            bend, twist = tr["thumb_" + j]
+            lo, tw = HOLD_DIGIT_LIMITS["thumb_" + j]
+            if bend < lo:
+                bad.append("thumb %s bent %d backward (at most %d)" % (j, -bend, -lo))
+            if abs(twist) > tw:
+                bad.append("thumb %s twisted %d out of its plane (at most %d)" % (j, abs(twist), tw))
+        return {"purpose": "digits", "met": not bad, "error": float(len(bad)), "hard": True, "faults": bad}
 
     def _thumb_contact(self, side, mark, glove_cm, cp, regions, along):
         """The thumb in line (its direction and end joint, geometric) and its pad's contact on regions."""
