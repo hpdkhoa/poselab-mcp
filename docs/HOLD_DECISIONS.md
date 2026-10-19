@@ -89,5 +89,12 @@ reason. Read it before changing the hold code, and check each change against it.
   off the guard line (15), thumb 19 deg off the index (15), thumb pad 0/0.8. Support: palm 3.5/4 cm2, panel cover
   15%/20%, thumb 30 deg off. Both shoulders at their limits (support back 20, both down 8): the stance may be far.
   A try 0.38 to 0.44 s on the gun; the idle run 18 minutes.
+- Later runs (2026-10-19, after the stance search, the guard edge fix, the repair on the contact ruler, the grip
+  purpose weighted x3): the firing hand keeps a high grip (palm 10 cm2, pads 6.4 + 2.8), its index within 17 deg and
+  its thumb within 18 deg of their lines (limit 15), web 0, cover 20%; the support hand swings between runs (run A:
+  palm 3.5 cm2 on the panel, fingers over the firing fingers; run B: under the grip, 3.9 cm2 pressed into the firing
+  hand). Results swing run to run: the search is random and the area thresholds are estimates.
+- Needed from the owner: pick the run whose hold looks right (or say what is wrong in each), so the areas the
+  purposes ask for can be set from a hold the owner accepts, not guessed.
 - Not yet: the other clips, the working holds
   (magazine, slide) on purposes, the skin check baseline, the game check loop.
