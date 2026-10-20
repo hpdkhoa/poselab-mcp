@@ -1461,9 +1461,10 @@ class HoldMixin:
     def open_fingers(self, side, index_straight=False):
         """The fingers opened from the rig's bind pose (a relaxed hand, each finger in its own plane), then uncurled
         flat: the idle pose's fingers can sit swung out of their plane (the shared arms' left hand by about 35
-        degrees), and _set_curl sets only the curl."""
+        degrees), and _set_curl sets only the curl. The thumb goes to the bind pose too: the idle right thumb's
+        knuckle sits 19 degrees out of its hinge's plane, the bind pose's 2 on both hands."""
         FL = self._limits()[1]
-        for fi in ("index", "middle", "ring", "pinky"):
+        for fi in ("index", "middle", "ring", "pinky", "thumb"):
             for j in ("01", "02", "03"):
                 pb = self.arm.pose.bones[self._n("finger", side, fi, j)]
                 pb.rotation_mode = "QUATERNION"
@@ -1532,6 +1533,9 @@ class HoldMixin:
             W(lambda: self.conform_digits(side, ("thumb",), other=other))
             self._fit_thumb(side, m, glove_cm, inline=False, other=other)
         W(lambda: self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb"))))
+        # the drawn skin bends at the joints a little unlike the rigid segments the solver turns, so a second
+        # closing reads the posed skin again (and the gun inside its flesh) and moves each segment by what is left
+        out["steps"]["D_close_again"] = self.conform_digits(side, closing, other=other)
         walls = self.wall_faults(side, other)
         sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
         g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)

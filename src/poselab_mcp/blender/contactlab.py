@@ -455,6 +455,7 @@ class ContactMixin:
                         step_ = math.copysign(min(20.0, max(0.5, abs(s_))), s_)
                 except (KeyError, IndexError):
                     pass
+                if fi == "thumb":
                     if self.R.get("thumb_hinge") == "ray":
                         self._thumb_flex(side, jn, step_)
                     else:
@@ -502,6 +503,34 @@ class ContactMixin:
         if other:
             o = "r" if side == "l" else "l"
             oh = self._other_hand_bvh(o, P, N)
+        # the object's samples inside each digit segment's flesh past (nearly) its give: an edge between skin
+        # vertices that no skin point sees (the ring finger's back on the M1911, 0.86 cm in). Each becomes an inner
+        # point of its segment for the solver, its distance 0 at the press wall's edge less press_cm, so the
+        # solver's pressed rule is the wall's
+        inner_by = {}
+        if side not in getattr(self, "_pierce_static", {}):
+            self.contact_pairs(side, other=False)
+        hk_ = getattr(self, "_pierce_static", {}).get(side)
+        if hk_ is not None:
+            th_, vi_, polys_ = hk_
+            SW_ = self._object_now()[2]
+            Ph_ = P[vi_]
+            ix_, lb_ = self._hand_label_arrays(side, P, N)
+            for k_, (dq, lq, t3) in self._pierced_samples(side, Ph_, th_, polys_, SW_, dict(zip(ix_.tolist(), lb_))).items():
+                head = lq.split("_")[0]
+                if head[:-1] not in DIGITS or not head[-1:].isdigit():
+                    continue
+                gq = SKIN_GIVE.get(_lab_key(lq), SKIN_GIVE["default"])
+                if dq <= gq - 0.05:
+                    continue
+                tri = Ph_[list(polys_[t3])]
+                nh = np.cross(tri[1] - tri[0], tri[2] - tri[0])
+                if np.linalg.norm(nh) < 1e-12:
+                    continue
+                e_ = inner_by.setdefault((head[:-1], "0" + head[-1]), ([], [], []))
+                e_[0].append(SW_[k_])
+                e_[1].append(gq + 0.02 - dq - press_cm)
+                e_[2].append(-nh / np.linalg.norm(nh))
         out = {}
         for fi in digits:
             k0 = DIGITS.index(fi) * 3
@@ -586,7 +615,8 @@ class ContactMixin:
             closed, touching, n_round, slog = CS.chain_close(
                 {j: pts[j] for j in ("01", "02", "03")}, hd, hinge,
                 {j: room[j] for j in js_}, room_open, {j: rate[j] for j in js_}, query,
-                touch_cm=touch_cm, target_cm=0.0, press_cm=press_cm)
+                touch_cm=touch_cm, target_cm=0.0, press_cm=press_cm,
+                inner={j: inner_by[(fi, j)] for j in ("01", "02", "03") if (fi, j) in inner_by})
             for _ in range(n_round):
                 self._cnt("closing rounds")
             # the bones turned once, by the angles found
@@ -604,7 +634,7 @@ class ContactMixin:
                     cur = self._finger_report(side, FL)[0]["%s_%s" % (fi, j)][0]
                     self._set_curl(side, fi, j, cur + d_ang, FL)
             out[fi] = {"closed_deg": {j: round(v, 1) for j, v in closed.items()}, "touching": sorted(touching),
-                       "rounds": n_round}
+                       "rounds": n_round, "inner_points": sum(len(inner_by[(fi, j)][0]) for j in ("01", "02", "03") if (fi, j) in inner_by)}
         bpy.context.view_layer.update()
         return out
 

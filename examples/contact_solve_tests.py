@@ -123,6 +123,17 @@ h0 = [-math.sin(math.radians(25)), math.cos(math.radians(25)), 0.0]
 a, parts_, past = CS.best_wrist_turn(fore, h0, ts, [0, 0, 1], lim, -45, 45)
 check("the best turn clears the radial wall", past == 0.0 and abs(parts_[0]) < 0.5, (a, parts_, past))
 
+# 10. An object edge inside the flesh (no skin point sees it): an inner point at the tip, 0.5 cm past what is
+# allowed, its way out +z. Closing about +y takes the tip toward -z (deeper), so the joint opens until it is out
+far = lambda X: (np.full(len(X), 5.0), np.tile([0.0, 0.0, 1.0], (len(X), 1)))   # noqa: E731  (skin far from the object)
+tip = seg[-1:]
+closed, touching, rounds, log = CS.chain_close({"01": seg}, {"01": np.zeros(3)}, {"01": np.array([0.0, 1.0, 0.0])},
+                                               {"01": 90.0}, {"01": 20.0}, {"01": 1.0}, far, press_cm=press,
+                                               inner={"01": (tip, [-0.5], [[0.0, 0.0, 1.0]])})
+moved = CS.rodrigues(tip, np.zeros(3), np.array([0.0, 1.0, 0.0]), math.radians(closed["01"]))
+d_after = -0.5 + float((moved - tip)[0] @ np.array([0.0, 0.0, 1.0])) * 100.0
+check("an edge inside the flesh opens the joint", closed["01"] < 0.0 and d_after >= -press - 0.02, (closed, d_after))
+
 if fails:
     print("CONTACT SOLVE failed: " + "; ".join(fails))
     sys.exit(1)

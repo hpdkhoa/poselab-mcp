@@ -55,7 +55,7 @@ def min_shift(Nr, need, sweeps=300, tol=1e-6):
 
 
 def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm=0.05, target_cm=0.0,
-                press_cm=0.12, step_cap_deg=15.0, most=24):
+                press_cm=0.12, step_cap_deg=15.0, most=24, inner=None):
     """A finger's joints closed onto the object by calculated steps. The knuckle leads: every free joint turns at its
     rate (a joint's angle = rate * s), s solved each round as the first touch: for each skin point coming closer
     (dd/ds < 0), s_i = (d_i - target) / (-dd/ds), s = min s_i, cut at the joints' room and at step_cap_deg (the
@@ -68,10 +68,20 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
     hinges: {joint: unit axis, + closes}; room_close / room_open: {joint: degrees it may still close / open};
     rate: {joint: share}; query(X) -> (d cm, n unit outward) for points X.
     A pressed segment that no joint here can move out (no room left to open, or no lever) is left out and logged.
+
+    inner: {joint: (points, d_cm, normals)}: the object's points inside that segment's flesh (an edge between skin
+    vertices, which no skin point sees). Each is taken as a point of the finger at that place with distance d_cm
+    (below 0 inside past what is allowed) and normal = minus the skin's outward normal there: the finger moving
+    by v takes its skin past the object point by -n_skin . v. They ride their segment like its skin, and their
+    distance is carried forward linearly from where they started (d = d0 + n . (p - p0)): the flesh has no field
+    to read again.
     Returns ({joint: degrees closed, below 0 opened}, touching segments, rounds, the steps' log)."""
     js = [j for j in pts if j in hinges]
     order = list(pts)
     pts = {j: np.array(v, dtype=float).copy() for j, v in pts.items()}
+    inner = {j: (np.array(v[0], dtype=float).reshape(-1, 3), np.asarray(v[1], dtype=float), np.array(v[2], dtype=float).reshape(-1, 3))
+             for j, v in (inner or {}).items() if len(v[0])}
+    ipts = {j: v[0].copy() for j, v in inner.items()}
     hd = {j: np.array(v, dtype=float).copy() for j, v in heads.items()}
     ax = {j: np.array(v, dtype=float) / max(1e-12, np.linalg.norm(v)) for j, v in hinges.items()}
     closed = {j: 0.0 for j in js}
@@ -91,6 +101,8 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
                 continue
             for k in ride(j):
                 pts[k] = rodrigues(pts[k], hd[j], ax[j], ang)
+                if k in ipts:
+                    ipts[k] = rodrigues(ipts[k], hd[j], ax[j], ang)
                 if k != j and k in hd:
                     hd[k] = rodrigues(hd[k][None, :], hd[j], ax[j], ang)[0]
                 if k != j and k in ax:
@@ -107,6 +119,15 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
         d, n = query(X)
         d = np.asarray(d, dtype=float)
         n = np.asarray(n, dtype=float)
+        iseg = [k for k in segs if k in ipts]
+        if iseg:
+            Xi = np.concatenate([ipts[k] for k in iseg])
+            di = np.concatenate([inner[k][1] + np.einsum("ij,ij->i", inner[k][2], ipts[k] - inner[k][0]) * 100.0 for k in iseg])
+            ni = np.concatenate([inner[k][2] for k in iseg])
+            X = np.concatenate([X, Xi])
+            sid = np.concatenate([sid, np.concatenate([np.full(len(ipts[k]), order.index(k)) for k in iseg])])
+            d = np.concatenate([d, di])
+            n = np.concatenate([n, ni])
         seg_min = {k: float(d[sid == order.index(k)].min()) for k in segs}
         for k in segs:
             if seg_min[k] <= touch_cm:
