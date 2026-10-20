@@ -108,6 +108,21 @@ psi, left = CS.align_turn([1, 0, 0], [0, math.cos(math.radians(30)), math.sin(ma
 check("align turn is 90 degrees", abs(math.degrees(psi) - 90.0) < 1e-6, math.degrees(psi))
 check("align leaves the 30 degree tilt", abs(left - 30.0) < 1e-6, left)
 
+# 8. The wrist's parts: a hand bent 30 degrees toward the palm reads flexion 30, radial 0; toward the thumb, radial 30
+fore = [0.0, 1.0, 0.0]                         # forearm along +y; palm faces -z (right hand: thumb_side x hand)
+ts = [-1.0, 0.0, 0.0]
+palm = np.cross(ts, [0, 1, 0])
+tot, fl, dv = CS.wrist_parts(fore, [0.0, math.cos(math.radians(30)), math.sin(math.radians(30)) * np.sign(palm[2])], ts)
+check("a palm-ward bend reads as flexion", abs(tot - 30) < 1e-6 and abs(fl - 30) < 1e-6 and abs(dv) < 1e-6, (tot, fl, dv))
+tot, fl, dv = CS.wrist_parts(fore, [-math.sin(math.radians(30)), math.cos(math.radians(30)), 0.0], ts)
+check("a thumb-ward bend reads as radial", abs(tot - 30) < 1e-6 and abs(dv - 30) < 1e-6 and abs(fl) < 1e-6, (tot, fl, dv))
+# 9. The best turn: a hand bent 25 degrees toward the thumb (radial 25, past 20) about a turn axis along z: turning it
+# brings it in line; the best turn ends inside every wall
+lim = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension_deg": 70.0, "wrist_radial_deg": 20.0, "wrist_ulnar_deg": 30.0}
+h0 = [-math.sin(math.radians(25)), math.cos(math.radians(25)), 0.0]
+a, parts_, past = CS.best_wrist_turn(fore, h0, ts, [0, 0, 1], lim, -45, 45)
+check("the best turn clears the radial wall", past == 0.0 and abs(parts_[0]) < 0.5, (a, parts_, past))
+
 if fails:
     print("CONTACT SOLVE failed: " + "; ".join(fails))
     sys.exit(1)

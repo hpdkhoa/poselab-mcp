@@ -1366,6 +1366,8 @@ class HoldMixin:
         return {"wrist_deg": round(w, 1), "roll_deg": round(roll, 1), "girdle_share": round(share, 2), "J": round(J(), 3),
                 "gun_shift_cm": [round(x, 2) for x in shifted()],
                 "wrist_past_range_deg": round(past_range(), 1),
+                "wrist_flexion_deg": self._arm_report(side, Lm)[0].get("wrist_flexion_deg"),
+                "wrist_radial_deg": self._arm_report(side, Lm)[0].get("wrist_radial_deg"),
                 "before": {"wrist_deg": round(w0_, 1), "roll_deg": round(r0_, 1), "girdle_share": round(s0_, 2)}}
 
     def rest_on_other(self, side):
@@ -1412,9 +1414,12 @@ class HoldMixin:
         """Step A2: the hand turned about its grip's axis until its long line (wrist to the middle knuckle) lies as
         near the forearm's line as that turn allows: the gun in line with the forearm (FM 3-23.35, the grip). The
         turn is solved, not searched: psi = atan2((g x h_perp) . f, h_perp . f) (contactsolve.align_turn), g the
-        run's axis, h the hand's line, f the forearm's. The arm then reaches the turned hand, which moves the
-        forearm a little, so the turn is solved again, at most `rounds` times, at most most_deg in all. Returns the
-        turn and the wrist's bend before and after."""
+        run's axis, h the hand's line, f the forearm's. That lines up the total bend only; the wrist's range parts
+        (flexion 80, extension 70, radial 20, ulnar 30) are walls too, so the turn is then chosen from the closed
+        form of all four for every turn in range (contactsolve.best_wrist_turn: 100 per degree past a wall plus
+        (bend / 10)^2). The arm then reaches the turned hand, which moves the forearm a little, so the turn is
+        solved again, at most `rounds` times, at most most_deg in all. Returns the turn and the wrist's bend and
+        its parts before and after."""
         import contactsolve as CS
         run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
         RW = self._run_world(run)
@@ -1423,17 +1428,26 @@ class HoldMixin:
         hn = self._n("hand", side)
         b = lambda part: self._bw(self._n(part, side)).translation      # noqa: E731
 
+        Lm = self._limits()[0]
+        fk = lambda fi: self._bw(self._n("finger", side, fi, "01")).translation      # noqa: E731
+
         def bend():
             W, E = b("hand"), b("lowerarm")
-            K = self._bw(self._n("finger", side, "middle", "01")).translation
-            return math.degrees((K - W).angle(W - E)), K - W, W - E
+            K = fk("middle")
+            return math.degrees((K - W).angle(W - E)), K - W, W - E, fk("index") - fk("pinky")
+
+        def parts_now():
+            _b_, h, f, ts = bend()
+            tot, fl, dv = CS.wrist_parts(list(f), list(h), list(ts), left=(side == "l"))
+            return {"total_deg": round(tot, 1), "flexion_deg": round(fl, 1), "radial_deg": round(dv, 1),
+                    "past_deg": round(CS.wrist_past(tot, fl, dv, Lm), 1)}
         before = bend()[0]
+        before_parts = parts_now()
         total, n = 0.0, 0
         for n in range(1, rounds + 1):
-            _b0, h, f = bend()
-            psi, _left = CS.align_turn(list(h), list(f), list(g))
-            d = math.degrees(psi)
-            d = max(-most_deg - total, min(most_deg - total, d))
+            _b0, h, f, ts = bend()
+            d, _p, _past = CS.best_wrist_turn(list(f), list(h), list(ts), list(g), Lm, -most_deg - total,
+                                              most_deg - total, left=(side == "l"))
             if abs(d) < 0.5:
                 break
             H = self._bw(hn).copy()
@@ -1442,7 +1456,7 @@ class HoldMixin:
             bpy.context.view_layer.update()
             total += d
         return {"turn_deg": round(total, 1), "wrist_before_deg": round(before, 1), "wrist_after_deg": round(bend()[0], 1),
-                "rounds": n}
+                "rounds": n, "parts_before": before_parts, "parts_after": parts_now()}
 
     def open_fingers(self, side, index_straight=False):
         """The fingers opened from the rig's bind pose (a relaxed hand, each finger in its own plane), then uncurled

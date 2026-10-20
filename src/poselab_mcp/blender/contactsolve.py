@@ -184,3 +184,52 @@ def align_turn(h, f, g):
     psi = math.atan2(float(np.cross(g, hp) @ f), float(hp @ f))
     h2 = turn_vec(h, g, psi)
     return psi, math.degrees(math.acos(max(-1.0, min(1.0, float(h2 @ f)))))
+
+
+def wrist_parts(fore, hand, thumb_side, left=False):
+    """The wrist's bend as the walls read it (lab._arm_report): the total angle between the forearm (elbow to wrist)
+    and the hand (wrist to the middle knuckle), and its split into flexion (+ toward the palm) and radial deviation
+    (+ toward the thumb), degrees. thumb_side: the index knuckle minus the little finger's."""
+    fore, hand, ts = (np.asarray(v, dtype=float) for v in (fore, hand, thumb_side))
+    fn = fore / max(1e-12, np.linalg.norm(fore))
+    hn = hand / max(1e-12, np.linalg.norm(hand))
+    flat = lambda v: v - fn * float(v @ fn)                         # noqa: E731
+    palm = np.cross(ts, hand) * (-1.0 if left else 1.0)
+    e1 = flat(palm)
+    e1 = e1 / np.linalg.norm(e1) if np.linalg.norm(e1) > 1e-12 else np.zeros(3)
+    t = flat(ts)
+    e2 = t - e1 * float(t @ e1)
+    e2 = e2 / np.linalg.norm(e2) if np.linalg.norm(e2) > 1e-12 else np.zeros(3)
+    c = float(hn @ fn)
+    off = hn - fn * c
+    total = math.degrees(math.acos(max(-1.0, min(1.0, c))))
+    return total, math.degrees(math.atan2(float(off @ e1), c)), math.degrees(math.atan2(float(off @ e2), c))
+
+
+def wrist_past(total, flex, dev, lim):
+    """Degrees past the wrist's walls: the total bend past wrist_max_deg and each range part past its limit (the
+    largest), 0 inside them all. lim: the arm limits (wrist_max_deg, wrist_flexion_deg, wrist_extension_deg,
+    wrist_radial_deg, wrist_ulnar_deg)."""
+    return max(0.0, total - lim["wrist_max_deg"], flex - lim["wrist_flexion_deg"], -flex - lim["wrist_extension_deg"],
+               dev - lim["wrist_radial_deg"], -dev - lim["wrist_ulnar_deg"])
+
+
+def best_wrist_turn(fore, hand, thumb_side, g, lim, lo_deg, hi_deg, left=False, step_deg=0.25):
+    """The turn about the grip's axis g (degrees, in [lo_deg, hi_deg]) that puts the wrist inside its walls with the
+    least bend: cost = 100 * (degrees past any wrist wall) + (total / 10)^2, read from the closed form of the bend
+    for every turn (the hand's two lines turned by Rodrigues; no pose is set). The forearm is held as it is; the
+    caller places the hand and solves again, since the arm follows. Returns (turn, (total, flexion, radial) after,
+    degrees past after)."""
+    g = np.asarray(g, dtype=float) / max(1e-12, np.linalg.norm(g))
+    best = None
+    n = int(round((hi_deg - lo_deg) / step_deg))
+    for i in range(n + 1):
+        a = lo_deg + i * step_deg
+        r = math.radians(a)
+        p = wrist_parts(fore, turn_vec(np.asarray(hand, dtype=float), g, r),
+                        turn_vec(np.asarray(thumb_side, dtype=float), g, r), left)
+        past = wrist_past(*p, lim)
+        cost = 100.0 * past + (p[0] / 10.0) ** 2 + 1e-6 * a * a          # the smallest turn breaks a tie
+        if best is None or cost < best[0]:
+            best = (cost, a, p, past)
+    return best[1], best[2], best[3]
