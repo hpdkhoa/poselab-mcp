@@ -1284,19 +1284,30 @@ class HoldMixin:
         W = self._bw(self._n("hand", side)).translation
         return (E - S).length, (W - E).length, (W - S).length
 
-    def arm_comfort(self, side, gun_shift=None, gun_most_cm=3.0):
+    def arm_comfort(self, side, gun_shift=None, gun_most_cm=(5.0, 3.0, 5.0)):
         """Step C: the elbow's swing and the shoulder girdle set by a fixed step search on the joint angles alone,
         the hand kept where it is: J = (wrist bend / 10)^2 + (forearm roll / 30)^2 + (girdle share)^2, every step
-        inside the angle walls. With gun_shift (a function that moves the gun d metres along the sight line, the
-        first hand's solve only: the other hand is not on it yet), the gun's distance is a move too, the hand
-        carried with it, at most gun_most_cm either way from where Step B put it: the gun stays on the sight line,
-        so the aim does not change. These moves are on joint angles, where no distance field gives a direction, so
-        they stay a fixed step search (4, 2, 1). Returns J's parts after and the gun's shift (cm)."""
+        inside the angle walls. With gun_shift (a function that moves the gun by a world vector in metres, the
+        first hand's solve only: the other hand is not on it yet), the gun's place in the ready hold is solved
+        too, the hand carried with it, the gun still pointing forward: right/left, forward/back and up/down, at most
+        gun_most_cm (right, forward, up) either way from where Step B put it. The ready hold has no sight line to
+        keep (owner, 2026-10-20: the ready place is solved, not the style's guess; the muzzle is not tipped down).
+        These moves are on joint angles, where no distance field gives a direction, so they stay a fixed step
+        search (4, 2, 1). Returns J's parts after and the gun's shift (cm, right, forward, up)."""
         hn = self._n("hand", side)
         rest0 = self.rifle_rest.translation.copy()
 
+        Lm = self._limits()[0]
+
+        def past_range():
+            """How far the wrist is past its joint range (degrees; 0 inside): flexion, extension, radial, ulnar."""
+            rep_ = self._arm_report(side, Lm)[0]
+            fl, dv = rep_.get("wrist_flexion_deg", 0.0), rep_.get("wrist_radial_deg", 0.0)
+            return max(0.0, fl - Lm["wrist_flexion_deg"], -fl - Lm["wrist_extension_deg"],
+                       dv - Lm["wrist_radial_deg"], -dv - Lm["wrist_ulnar_deg"])
+
         def parts():
-            rep_ = self._arm_report(side, self._limits()[0])[0]
+            rep_ = self._arm_report(side, Lm)[0]
             w = abs(rep_.get("wrist_bend_deg", 0.0) or 0.0)
             roll = abs(rep_.get("forearm_rotation_deg", 0.0) or 0.0)
             cl = getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))
@@ -1305,8 +1316,10 @@ class HoldMixin:
             return w, roll, share
 
         def J():
+            # the wrist past its joint range is a wall: its message carries no measure the wall check can compare,
+            # so its excess leads the aim (each degree past outweighs the comfort terms) until it is 0
             w, roll, share = parts()
-            return (w / 10.0) ** 2 + (roll / 30.0) ** 2 + share ** 2
+            return 100.0 * past_range() + (w / 10.0) ** 2 + (roll / 30.0) ** 2 + share ** 2
 
         def swing(st):
             self._swing_elbow(side, st * 2.0)
@@ -1323,31 +1336,36 @@ class HoldMixin:
                 self._clav_now[side] = (got["protraction_deg"], got["elevation_deg"])
                 self._put_hand(side, keep)
             return mv
-        from lab import VIEW_FWD                          # noqa: E402  (lab imports this module)
+        from lab import VIEW_FWD, VIEW_RIGHT, VIEW_UP     # noqa: E402  (lab imports this module)
+        axes = (VIEW_RIGHT, VIEW_FWD, VIEW_UP)
 
         def shifted():
-            return (self.rifle_rest.translation - rest0).dot(VIEW_FWD) * 100.0
+            d = self.rifle_rest.translation - rest0
+            return [d.dot(a) * 100.0 for a in axes]
 
-        def gun(st):
-            d_cm = st * 0.5                                 # a step of 4 moves the gun 2 cm
-            if abs(shifted() + d_cm) > gun_most_cm + 1e-6:
-                return
-            T = Matrix.Translation(Vector(VIEW_FWD) * (d_cm / 100.0))
-            H = self._bw(hn).copy()
-            gun_shift(d_cm / 100.0)
-            self._put_hand(side, T @ H)
+        def gun(k):
+            def mv(st):
+                d_cm = st * 0.5                             # a step of 4 moves the gun 2 cm
+                if abs(shifted()[k] + d_cm) > gun_most_cm[k] + 1e-6:
+                    return
+                v = Vector(axes[k]) * (d_cm / 100.0)
+                H = self._bw(hn).copy()
+                gun_shift(v)
+                self._put_hand(side, Matrix.Translation(v) @ H)
+            return mv
         w0_, r0_, s0_ = parts()
-        moves = [swing, girdle(0), girdle(1)] + ([gun] if gun_shift is not None else [])
+        moves = [swing, girdle(0), girdle(1)] + ([gun(0), gun(1), gun(2)] if gun_shift is not None else [])
         self._snap_gun = gun_shift is not None              # an undone step puts the gun back too
         try:
             self._descend(J, moves, side, False, steps=(4.0, 2.0, 1.0), angles_only=True)
         finally:
             self._snap_gun = False
         if gun_shift is not None:
-            gun_shift(0.0)                                  # the caller's caches follow the gun's last place
+            gun_shift(Vector((0.0, 0.0, 0.0)))              # the caller's caches follow the gun's last place
         w, roll, share = parts()
         return {"wrist_deg": round(w, 1), "roll_deg": round(roll, 1), "girdle_share": round(share, 2), "J": round(J(), 3),
-                "gun_shift_cm": round(shifted(), 2),
+                "gun_shift_cm": [round(x, 2) for x in shifted()],
+                "wrist_past_range_deg": round(past_range(), 1),
                 "before": {"wrist_deg": round(w0_, 1), "roll_deg": round(r0_, 1), "girdle_share": round(s0_, 2)}}
 
     def rest_on_other(self, side):
