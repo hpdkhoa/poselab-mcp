@@ -20,6 +20,7 @@ from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
 import contactsolve as CS
+from deprecation import deprecated
 from sdflab import SDF_TOL_CM
 
 DIGITS = ("thumb", "index", "middle", "ring", "pinky")
@@ -272,6 +273,7 @@ class ContactMixin:
             lab[pal] = np.where(nearw, "web", np.where(c > 0.3, "palm", np.where(c < -0.3, "palm_back", "palm_side")))
         return idx, lab.tolist()
 
+    @deprecated()
     def settle_palm(self, side, rounds=4, gap_cm=-0.15, other=False, sample=3, turn=True, turn_len_m=0.15,
                     turn_most_deg=15.0):
         """The hand slid as one body until its palm's skin just meets the object (v0.10.0, calculated): each round

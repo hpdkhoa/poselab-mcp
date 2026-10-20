@@ -23,6 +23,7 @@ from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 
 from contactlab import CLIP_NOISE_CM2, SKIN_GIVE, _lab_key
+from deprecation import deprecated
 
 # the shoulder girdle: the sternoclavicular joint's range, a working share of it kept
 CLAVICLE = {"protraction_deg": 15.0, "retraction_deg": 20.0, "elevation_deg": 30.0, "depression_deg": 8.0,
@@ -748,6 +749,7 @@ class HoldMixin:
         q, kk = prof[i][2], prof[i][0]
         return [float(x) for x in q], round(kk * 100.0, 2)
 
+    @deprecated()
     def open_dir(self, other, mark, glove_cm=0.0):
         """Which way the run is left open by the other hand (as it holds now): the direction, square to the run's
         axis and in the part's frame, from the run's middle line to the middle of the girth the other hand does not
@@ -773,6 +775,7 @@ class HoldMixin:
         Fq = self._obj_frame(mark["part"]).to_quaternion()
         return list(Fq.inverted() @ acc.normalized()), round(n_open / float(max(1, n_all)), 3)
 
+    @deprecated()
     def seed_hold(self, side, mark, palm_dir=None, roll_deg=0.0, along_cm=0.0, flip=False):
         """A first place for a hand on its mark, from the run's geometry alone: the hand turned so its palm faces
         into the run from palm_dir (object frame; without one the run's own u), turned roll_deg about the run's
@@ -831,6 +834,7 @@ class HoldMixin:
         bpy.context.view_layer.update()
         return {"short_cm": round(short, 2), "roll_deg": roll_deg}
 
+    @deprecated()
     def hold_object(self, side, marks, glove_cm=0.0, other=True, soft=None, generations=None, pop=None, seed=None,
                     wrap=None, **_old):
         """A hand's hold on its marks: the target solver (target_hold), inside the walls. The old random search
@@ -937,6 +941,7 @@ class HoldMixin:
         sel = [int(i) for i, l_ in zip(idx, lab) if any(fnmatch.fnmatch(l_, p_) for p_ in patterns)]
         return P[sel] if sel else np.zeros((0, 3))
 
+    @deprecated()
     def _fit_hand(self, side, pairs, share=1.0):
         """The hand moved and turned as one body by a weighted least-squares fit (Kabsch) of its points onto their
         targets: pairs [(source world point, target world point, weight)]. The arm reaches it."""
@@ -964,6 +969,7 @@ class HoldMixin:
         bpy.context.view_layer.update()
         return short
 
+    @deprecated()
     def _place_targets(self, side, mark):
         """Where the hand goes for its purpose, as fit pairs: the palm patch's middle onto the nearest point of its
         regions and its facing into the surface there (weight 3, the grip itself), the web onto its point (2), the
@@ -1034,6 +1040,7 @@ class HoldMixin:
                 pairs.append((Vector(wc), Vector(R[kw] - Nw[0] * 0.001), 2.0))
         return pairs
 
+    @deprecated()
     def _body_eases(self, side, keep):
         """The body helps when the arm is past a limit, in a set order: the elbow swung (40 to -40 in 10 degree
         steps), then the shoulder girdle (forward and up, a small grid), each taken only if it leaves the arm less
@@ -1118,6 +1125,7 @@ class HoldMixin:
                             self._cnt("no gain")
         return e0
 
+    @deprecated()
     def _fit_index(self, side, mark, glove_cm, other=True):
         """An extended index turned joint by joint onto its line (its error from the purpose), inside the walls."""
         FL = self._limits()[1]
@@ -1132,6 +1140,7 @@ class HoldMixin:
             return mv
         return self._descend(err, [turn("01"), turn("02"), turn("03")], side, other)
 
+    @deprecated()
     def _fit_pads(self, side, fingers, other=True):
         """Each wrapping finger's joints turned by a fixed step pattern so more of its pads rest on the surface (within
         0.1 cm): a closing stops the joints behind a touching fingertip, and this lays the base and middle segments
@@ -1199,6 +1208,7 @@ class HoldMixin:
             return mv
         return self._descend(err, [base((1, 0, 0)), base((0, 1, 0)), base((0, 0, 1)), bend("02"), bend("03")], side, other)
 
+    @deprecated()
     def _polish(self, side, marks, glove_cm, other, fingers):
         """The whole hold tuned on the gate's own ruler (the hold score) by a fixed step pattern: the hand moved
         along and turned about three axes (a step of 4 is 0.2 cm or 2 degrees), then each finger's joints and the
@@ -1398,6 +1408,9 @@ class HoldMixin:
         idx, lab = self._hand_label_arrays(side, P, N)
         body = [(int(i), l_) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side", "palm_back", "web")]
         Pb = tf(Hi, P[[i for i, _l in body]])
+        if not hasattr(self, "_fit_rigid"):
+            self._fit_rigid = {}
+        self._fit_rigid[side] = ([i for i, _l in body], [l_ for _i, l_ in body], Pb.copy())
         gb = np.array([SKIN_GIVE[_lab_key(l_)] if _lab_key(l_) in SKIN_GIVE else SKIN_GIVE["default"] for _i, l_ in body])
         if side not in getattr(self, "_pierce_static", {}):
             self.contact_pairs(side, other=False)
@@ -1569,6 +1582,12 @@ class HoldMixin:
                 f = M[:3, :3] @ f_loc
                 dist["palm facing (deg)"] = round(math.degrees(math.acos(max(-1.0, min(1.0, float(
                     -(f / np.linalg.norm(f)) @ np.array(list(p["normal_w"]))))))), 1)
+        G_ = self._obj_frame("Root")
+        parts_ = {p_: (G_.inverted() @ self._obj_frame(p_)).copy() for p_ in self.object_sdf()}
+        Xb_ = tf(M, Pb)
+        D_fit = self.sdf_query(Xb_, want_normal=False)[0]
+        W_fit = self.sdf_query(Xb_, want_normal=False)[1]
+        self._fit_rigid[side] = self._fit_rigid[side] + (Matrix([list(row) for row in M]), G_.copy(), parts_, D_fit, W_fit)
         return Matrix([list(row) for row in M]), {"pair_cm": dist, "pairs_alone_cm": free, "pair_geometry": geo,
                                                   "walls_unmet_cm": round(viol * 100.0, 3),
                                                   "deepest_past_give_cm": round(worst, 3), "rounds": n_round}
@@ -1657,6 +1676,64 @@ class HoldMixin:
         out.update({"result": "every body the formulas kept broke a wall the formulas cannot read", "tried_rows": tried})
         return out
 
+    def start_clip_diagnosis(self, side, top=12):
+        """Why the hand's body clips at the start when Step A said it would not. Step A moved the hand as one rigid
+        body: each body skin point kept its place in the hand bone's frame (the rigid model). The posed skin is
+        bent by every bone it is weighed to. For each body skin point past its give now: where the rigid model puts
+        it and its distance to the gun there, where the posed skin really is and its distance, how far the two are
+        apart, and the bones that move it (weights). Also whether the posed hand bone landed where Step A put it."""
+        fr = getattr(self, "_fit_rigid", {}).get(side)
+        if fr is None or len(fr) < 8:
+            return {"note": "no Step A on this hand"}
+        body_i, body_l, Pb_local, H_fit, G_fit, parts_fit, D_fit, W_fit = fr
+        hn = self._n("hand", side)
+        Hn = self._bw(hn)
+        Hm = np.array(Hn)
+        P = self._skin_arrays()[0]
+        actual = P[body_i]
+        rigid = Pb_local @ Hm[:3, :3].T + Hm[:3, 3]
+        Da = self.sdf_query(actual, want_normal=False)[0]
+        Dr, Wr, _n = self.sdf_query(rigid, want_normal=False)
+        give = np.array([SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"]) for l_ in body_l])
+        past = -Da - give
+        ob = self.meshes[0]
+        names = {g.index: g.name for g in ob.vertex_groups}
+        rows = []
+        for k in np.argsort(-past)[:top]:
+            if past[k] <= 0.0:
+                break
+            v = ob.data.vertices[body_i[k]]
+            ws = sorted(((names.get(g.group, "?"), round(g.weight, 2)) for g in v.groups if g.weight > 0.02), key=lambda x: -x[1])
+            rows.append({"vertex": int(body_i[k]), "part": body_l[k], "past_give_cm": round(float(past[k]), 3),
+                         "posed_gap_cm": round(float(Da[k]), 3), "rigid_gap_cm": round(float(Dr[k]), 3),
+                         "gap_at_fit_cm": round(float(D_fit[k]), 3), "gun_part_now": str(Wr[k]), "gun_part_at_fit": str(W_fit[k]),
+                         "posed_vs_rigid_cm": round(float(np.linalg.norm(actual[k] - rigid[k])) * 100.0, 3),
+                         "bones": ws[:4]})
+        moved = np.linalg.norm(actual - rigid, axis=1) * 100.0
+        # the hand against the gun: where Step A put it in the gun's frame, and where it is in the gun's frame now
+        G_now = self._obj_frame("Root")
+        rel_fit, rel_now = G_fit.inverted() @ H_fit, G_now.inverted() @ Hn
+        gb = self.names["gun"]
+        chain, pb_ = [], self.arm.pose.bones[gb].parent
+        while pb_ is not None:
+            chain.append(pb_.name)
+            pb_ = pb_.parent
+        parts_moved = {}
+        for p_, R0 in parts_fit.items():
+            R1 = G_now.inverted() @ self._obj_frame(p_)
+            dm = (R1.translation - R0.translation).length * 100.0
+            if dm > 0.01:
+                parts_moved[p_] = round(dm, 3)
+        return {"gun_parts_moved_on_the_gun_cm": parts_moved,
+                "hand_on_gun_moved_cm": round((rel_now.translation - rel_fit.translation).length * 100.0, 3),
+                "hand_on_gun_turned_deg": round(math.degrees(rel_now.to_quaternion().rotation_difference(rel_fit.to_quaternion()).angle), 2),
+                "gun_moved_since_fit_cm": round((G_now.translation - G_fit.translation).length * 100.0, 3),
+                "gun_bone": gb, "gun_bone_parents": chain,
+                "body_points": len(body_i), "past_give_now": int((past > 0.0).sum()),
+                "past_give_in_the_rigid_model": int(((-Dr - give) > 0.0).sum()),
+                "posed_vs_rigid_cm": {"mean": round(float(moved.mean()), 3), "max": round(float(moved.max()), 3)},
+                "worst": rows}
+
     def direct_hold(self, side, marks, pairs, glove_cm=0.0, other=True, wrap=None, gun_shift=None, f_pref=20.0):
         """The direct hold, in the owner's order (docs/DIRECT_HOLD_PLAN.md). Step A: the fingers open (the rig's
         bind pose), the hand placed directly at its touch points on the gun (touch_fit, by formula). The hand is then
@@ -1693,6 +1770,7 @@ class HoldMixin:
         out["start"] = {"valid": ok, "walls": walls, "reach_margin_cm": margin,
                         "body_clip_by": dict(getattr(self, "_start_by", {}))}
         if not ok:
+            out["start"]["diagnosis"] = self.start_clip_diagnosis(side)
             return stop("invalid start: no hold made", walls)
         # Step D: the fingers, every step inside the walls (a step that breaks one, or goes further past one, is
         # undone; the step's own numbers and whether it was kept are reported)
@@ -1723,6 +1801,7 @@ class HoldMixin:
         out["solve_s"] = round(_time.time() - t0, 1)
         return out
 
+    @deprecated()
     def target_hold(self, side, marks, glove_cm=0.0, other=True, rounds=4, wrap=None, polish=True):
         """A hand's hold solved toward its purposes' targets, with no chance in it: each round the hand is fitted
         onto its targets (palm patch and facing, web, knuckles' line), the palm settled onto the surface, the body
