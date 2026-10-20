@@ -90,6 +90,24 @@ check("min shift out of a corner", np.allclose(x, [0.005, 0, 0.01], atol=1e-6), 
 x, viol = CS.min_shift(Nr, np.full(3, -0.01))
 check("free rows give no shift", np.allclose(x, 0.0), x)
 
+# 6. A turn as well as a shift: a bar pressed down at one end and up at the other (no shift helps: the needs pull
+# opposite ways); with the turn's columns ((p - c) x n) / Lr the smallest move is a turn about y alone
+Lr = 0.05
+pA, pB = np.array([0.05, 0.0, 0.0]), np.array([-0.05, 0.0, 0.0])
+nA, nB = np.array([0.0, 0.0, 1.0]), np.array([0.0, 0.0, -1.0])
+rows6 = np.array([np.r_[nA, np.cross(pA, nA) / Lr], np.r_[nB, np.cross(pB, nB) / Lr]])
+x6, viol6 = CS.min_shift(rows6, np.array([0.01, 0.01]))
+check("a pinch needs a turn: the turn meets it", viol6 < 1e-6 and np.allclose(x6[:3], 0.0, atol=1e-7), (x6, viol6))
+check("the turn is about y by 0.2 rad", abs(x6[4] / Lr + 0.2) < 1e-4, x6)
+x3, viol3 = CS.min_shift(rows6[:, :3], np.array([0.01, 0.01]))
+check("a shift alone cannot meet a pinch", viol3 > 0.009, (x3, viol3))
+
+# 7. The turn about an axis that lines a direction up with another: h along x, f in the y-z plane at 30 degrees
+# from y, g along z: the best turn is 90 degrees, leaving the 30 degree tilt out of the plane
+psi, left = CS.align_turn([1, 0, 0], [0, math.cos(math.radians(30)), math.sin(math.radians(30))], [0, 0, 1])
+check("align turn is 90 degrees", abs(math.degrees(psi) - 90.0) < 1e-6, math.degrees(psi))
+check("align leaves the 30 degree tilt", abs(left - 30.0) < 1e-6, left)
+
 if fails:
     print("CONTACT SOLVE failed: " + "; ".join(fails))
     sys.exit(1)

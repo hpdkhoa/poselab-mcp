@@ -1369,14 +1369,19 @@ class HoldMixin:
         if getattr(self, "_object", None):
             cp = self.contact_pairs(side, other=other)
             area, deep = 0.0, 0.0
-            for (lab, _reg), v in cp["pairs"].items():
-                if lab in self.BODY_LABELS:
+            by = {}
+            for (lab, reg), v in cp["pairs"].items():
+                if lab in self.BODY_LABELS and v[1] > 0.0:
                     area += v[1]
                     deep = max(deep, v[2])
+                    k_ = "%s in %s" % (lab, reg)
+                    by[k_] = (round(by.get(k_, (0.0, 0.0))[0] + v[1], 2), round(max(by.get(k_, (0.0, 0.0))[1], v[2]), 2))
             for lab, (a_, d_) in cp.get("pierced_by", {}).items():
                 if lab in self.BODY_LABELS:
                     area += a_
                     deep = max(deep, d_)
+                    by["gun inside the " + lab] = (round(a_, 2), round(d_, 2))
+            self._start_by = by
             if area > CLIP_NOISE_CM2 or deep > 0.0:
                 w["clip:body area_cm2"], w["clip:body deepest_cm"] = round(area, 2), round(deep, 2)
         l1, l2, d = self.reach_now(side)
@@ -1384,6 +1389,42 @@ class HoldMixin:
         if margin < 1.0:
             w["reach:short of a 1 cm margin"] = round(1.0 - margin, 2)
         return (not w), {k: round(float(v), 2) for k, v in w.items()}, round(margin, 2)
+
+    def align_to_forearm(self, side, mark, rounds=4, most_deg=45.0):
+        """Step A2: the hand turned about its grip's axis until its long line (wrist to the middle knuckle) lies as
+        near the forearm's line as that turn allows: the gun in line with the forearm (FM 3-23.35, the grip). The
+        turn is solved, not searched: psi = atan2((g x h_perp) . f, h_perp . f) (contactsolve.align_turn), g the
+        run's axis, h the hand's line, f the forearm's. The arm then reaches the turned hand, which moves the
+        forearm a little, so the turn is solved again, at most `rounds` times, at most most_deg in all. Returns the
+        turn and the wrist's bend before and after."""
+        import contactsolve as CS
+        run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
+        RW = self._run_world(run)
+        g = RW["axis"].normalized()
+        o = RW["inner"]
+        hn = self._n("hand", side)
+        b = lambda part: self._bw(self._n(part, side)).translation      # noqa: E731
+
+        def bend():
+            W, E = b("hand"), b("lowerarm")
+            K = self._bw(self._n("finger", side, "middle", "01")).translation
+            return math.degrees((K - W).angle(W - E)), K - W, W - E
+        before = bend()[0]
+        total, n = 0.0, 0
+        for n in range(1, rounds + 1):
+            _b0, h, f = bend()
+            psi, _left = CS.align_turn(list(h), list(f), list(g))
+            d = math.degrees(psi)
+            d = max(-most_deg - total, min(most_deg - total, d))
+            if abs(d) < 0.5:
+                break
+            H = self._bw(hn).copy()
+            M = Matrix.Translation(o) @ Matrix.Rotation(math.radians(d), 4, g) @ Matrix.Translation(-o) @ H
+            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            bpy.context.view_layer.update()
+            total += d
+        return {"turn_deg": round(total, 1), "wrist_before_deg": round(before, 1), "wrist_after_deg": round(bend()[0], 1),
+                "rounds": n}
 
     def open_fingers(self, side, index_straight=False):
         """The fingers opened from the rig's bind pose (a relaxed hand, each finger in its own plane), then uncurled
@@ -1419,8 +1460,16 @@ class HoldMixin:
         # Step A
         out["steps"]["A_seat"] = self.seed_hold(side, m, palm_dir=palm_dir, roll_deg=0.0)
         self.open_fingers(side, index_straight=wrap.get("index") == "straight")
-        g_, _t_, mv_ = self.settle_palm(side)
-        out["steps"]["A_settle"] = {"palm_gap_cm": g_, "shift_cm": mv_, "rounds": list(getattr(self, "_settle_log", []))}
+        # the turn that lines the hand up with the forearm and the move that takes the palm out of the gun pull
+        # against each other a little (the settle may turn the hand), so they run in turn until both hold
+        out["steps"]["A2_align"], out["steps"]["A_settle"] = [], []
+        for _ in range(3):
+            al_ = self.align_to_forearm(side, m)
+            g_, _t_, mv_ = self.settle_palm(side)
+            out["steps"]["A2_align"].append(al_)
+            out["steps"]["A_settle"].append({"palm_gap_cm": g_, "shift_cm": mv_, "rounds": list(getattr(self, "_settle_log", []))})
+            if abs(al_["turn_deg"]) < 2.0 and mv_ < 0.2:
+                break
         if rest_on_hand:
             out["steps"]["A_rest_on_other"] = self.rest_on_other(side)
             out["steps"]["A_rest_on_other"]["rounds"] = list(getattr(self, "_settle_log", []))
@@ -1428,7 +1477,8 @@ class HoldMixin:
         out["steps"]["C_arm"] = self.arm_comfort(side, gun_shift=gun_shift)
         # the valid-start rule
         ok, walls, margin = self.start_check(side, other)
-        out["start"] = {"valid": ok, "walls": walls, "reach_margin_cm": margin}
+        out["start"] = {"valid": ok, "walls": walls, "reach_margin_cm": margin,
+                        "body_clip_by": dict(getattr(self, "_start_by", {}))}
         if not ok:
             out["result"] = "invalid start: no hold made"
             out["walls"] = walls

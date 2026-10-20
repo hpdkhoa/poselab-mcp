@@ -170,3 +170,17 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
         log.append({"round": n_round, "s_deg": round(math.degrees(s), 2), "by": "touch" if s == s_hit else ("room" if s == s_room else "cap"),
                     "joints": moving})
     return closed, touching, n_round, log
+
+
+def align_turn(h, f, g):
+    """The turn psi (radians) about the unit axis g that brings the direction h closest to the direction f: h split
+    into its part along g (fixed) and across it (h_perp, which turns), h(psi) . f = h_par . f + cos(psi) h_perp . f
+    + sin(psi) (g x h_perp) . f, largest at psi = atan2((g x h_perp) . f, h_perp . f). Returns (psi, the angle
+    between h(psi) and f in degrees after)."""
+    g = np.asarray(g, dtype=float) / max(1e-12, np.linalg.norm(g))
+    h = np.asarray(h, dtype=float) / max(1e-12, np.linalg.norm(h))
+    f = np.asarray(f, dtype=float) / max(1e-12, np.linalg.norm(f))
+    hp = h - g * float(h @ g)
+    psi = math.atan2(float(np.cross(g, hp) @ f), float(hp @ f))
+    h2 = turn_vec(h, g, psi)
+    return psi, math.degrees(math.acos(max(-1.0, min(1.0, float(h2 @ f)))))

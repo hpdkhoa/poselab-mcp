@@ -272,7 +272,8 @@ class ContactMixin:
             lab[pal] = np.where(nearw, "web", np.where(c > 0.3, "palm", np.where(c < -0.3, "palm_back", "palm_side")))
         return idx, lab.tolist()
 
-    def settle_palm(self, side, rounds=4, gap_cm=-0.15, other=False, sample=3):
+    def settle_palm(self, side, rounds=4, gap_cm=-0.15, other=False, sample=3, turn=True, turn_len_m=0.15,
+                    turn_most_deg=15.0):
         """The hand slid as one body until its palm's skin just meets the object (v0.10.0, calculated): each round
         every palm vertex's signed distance d to the object and the outward normal n there (the grids), and the
         shift x solved as the smallest one with
@@ -280,8 +281,13 @@ class ContactMixin:
             n_k . x <= gap_cm - d_k    for the nearest palm point k (it meets the surface, gap_cm in)
         (contactsolve.min_shift). With other, the rows also hold every skin point of this hand out of the other
         hand past the skin's give, and out of the object past its own give, so a support hand lies on the firing
-        fingers. The step is linear, so the next round reads the skin again. Returns the gap left (cm; below 0
-        still in the object), the palm's touching area (cm2) and the total shift (cm)."""
+        fingers. With turn, the move is a turn w about the palm's middle c as well as a shift t: each row's
+        n . (t + w x (p - c)) = n . t + ((p - c) x n) . w, the turn weighed as a move of turn_len_m (15 cm: a turn
+        of 0.1 rad costs what a 1.5 cm shift does, so the hand shifts first and turns only when it must, and keeps
+        the turn Step A2 gave it), so a palm in the object from two sides (no shift alone gets it
+        out) is turned out; at most turn_most_deg a round. The step is linear, so the next round reads the skin
+        again. Returns the gap left (cm; below 0 still in the object), the palm's touching area (cm2) and the total
+        move (cm; the turns in self._settle_log)."""
         hn = self._n("hand", side)
         left, touching, total = None, 0.0, 0.0
         o = "r" if side == "l" else "l"
@@ -290,20 +296,22 @@ class ContactMixin:
             self._cnt("rounds")
             P, N, A, _b, _t = self._skin_arrays()
             idx, lab = self._hand_label_arrays(side, P, N)
-            pv = np.array([int(i) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side")])
+            pv = np.array([int(i) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side", "web")])
             if not len(pv):
                 break
-            give = np.array([SKIN_GIVE[l_] for l_ in lab if l_ in ("palm", "palm_side")])
+            give = np.array([SKIN_GIVE[l_] for l_ in lab if l_ in ("palm", "palm_side", "web")])
             D, _w, Nr = self.sdf_query(P[pv])            # the grids: signed distance (cm) and outward normal
             touching = float(A[pv][D <= 0.2].sum())
             left = float(D.min())
             near = D < 1.0
             rows = [Nr[near]]
+            at = [P[pv][near]]
             need = [(-give[near] + 0.05 - D[near]) / 100.0]
             k = int(np.argmin(D))
             if np.linalg.norm(Nr[k]) > 1e-6:
                 gap_k = max(gap_cm, -give[k] + 0.05 + 0.03)     # inside its own give's band (a palm side gives less)
                 rows.append(-Nr[k][None, :])
+                at.append(P[pv][k][None, :])
                 need.append(np.array([(D[k] - gap_k) / 100.0]))
             if other:
                 # every skin point of this hand (sampled): out of the object past its give, out of the other hand
@@ -313,13 +321,14 @@ class ContactMixin:
                 gv = np.array([SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"]) for l_ in labs_])
                 m_ = Da < 1.0
                 rows.append(Na[m_])
+                at.append(P[sel][m_])
                 need.append((-gv[m_] + 0.03 - Da[m_]) / 100.0)
                 oh = self._other_hand_bvh(o, P, N)
                 if oh is not None:
                     hb, _ts, _ol, olo, ohi = oh
                     for i in sel[np.all((P[sel] >= olo) & (P[sel] <= ohi), axis=1)]:
                         v = Vector(P[i])
-                        l2, n2, _ti, d2 = hb.find_nearest(v, 0.01)
+                        l2, n2, _ti, d2 = hb.find_nearest(v, 0.03)      # a deep point is up to a finger's width in
                         if l2 is None:
                             continue
                         w_ = v - l2
@@ -327,20 +336,57 @@ class ContactMixin:
                         dd = -d2 if inside else d2
                         nv = (-w_ if inside else w_).normalized() if w_.length > 1e-9 else n2
                         rows.append(np.array([list(nv)]))
+                        at.append(P[i][None, :])
                         need.append(np.array([-0.003 + 0.0003 - dd]))
-            x, viol = CS.min_shift(np.concatenate(rows), np.concatenate(need))
-            step = float(np.linalg.norm(x))
-            if step < 1e-5:
+            # the other way round: the gun's samples inside the hand's flesh past its give (an edge between skin
+            # vertices). Sample q at depth delta under the skin, whose outward normal there is n_h: the hand moved by
+            # (t, w) takes its skin past q by -n_h . (t + w x (q - c)), so the row is -n_h with need delta - give
+            if side not in getattr(self, "_pierce_static", {}):
+                self.contact_pairs(side, other=False)       # builds this hand's triangles once
+            hk_ = getattr(self, "_pierce_static", {}).get(side)
+            if hk_ is not None:
+                th_, vi_, polys_ = hk_
+                SW_ = self._object_now()[2]
+                Ph_ = P[vi_]
+                labs_all = dict(zip(idx.tolist(), lab))
+                for k_, (dq, lq, t3) in self._pierced_samples(side, Ph_, th_, polys_, SW_, labs_all).items():
+                    gq = SKIN_GIVE.get(_lab_key(lq), SKIN_GIVE["default"])
+                    if dq <= gq - 0.05:
+                        continue
+                    tri = Ph_[list(polys_[t3])]
+                    nh = np.cross(tri[1] - tri[0], tri[2] - tri[0])
+                    if np.linalg.norm(nh) < 1e-12:
+                        continue
+                    nh /= np.linalg.norm(nh)
+                    rows.append(-nh[None, :])
+                    at.append(SW_[k_][None, :])
+                    need.append(np.array([(dq - gq + 0.05) / 100.0]))
+                    left = min(left, -(dq - gq))
+            R3 = np.concatenate(rows)
+            c = P[pv].mean(0)
+            Rm = np.c_[R3, np.cross(np.concatenate(at) - c, R3) / turn_len_m] if turn else R3
+            x, viol = CS.min_shift(Rm, np.concatenate(need))
+            tr_ = x[:3]
+            w = x[3:] / turn_len_m if turn else np.zeros(3)
+            ang = float(np.linalg.norm(w))
+            if ang > math.radians(turn_most_deg):
+                w, tr_ = w * (math.radians(turn_most_deg) / ang), tr_ * (math.radians(turn_most_deg) / ang)
+                ang = math.radians(turn_most_deg)
+            step = float(np.linalg.norm(tr_))
+            if step < 1e-5 and ang < 1e-4:
                 break
             self._cnt("palm shifts")
             total += step * 100.0
             H = self._bw(hn).copy()
-            M = Matrix.Translation(Vector(list(x))) @ H
+            Rt = Matrix.Rotation(ang, 4, Vector(list(w / ang))) if ang > 1e-9 else Matrix.Identity(4)
+            cv = Vector(list(c))
+            M = Matrix.Translation(Vector(list(tr_))) @ Matrix.Translation(cv) @ Rt @ Matrix.Translation(-cv) @ H
             short = self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
             bpy.context.view_layer.update()
             got = (self._bw(hn).translation - H.translation).length * 100.0
             self._settle_log.append({"deepest_cm": round(left, 2), "rows": int(sum(len(r_) for r_ in rows)),
-                                     "shift_asked_cm": round(step * 100.0, 2), "shift_got_cm": round(got, 2),
+                                     "shift_asked_cm": round(step * 100.0, 2), "turn_deg": round(math.degrees(ang), 2),
+                                     "shift_got_cm": round(got, 2),
                                      "arm_short_cm": round(short, 2), "left_unmet_cm": round(viol * 100.0, 2)})
         return (round(left, 2) if left is not None else None), round(touching, 2), round(total, 2)
 
@@ -886,7 +932,7 @@ class ContactMixin:
                 if hit is None:
                     continue
                 d_cm, t3 = hit
-                res[int(k)] = (d_cm, labs.get(int(th[t3][0]), "palm"))
+                res[int(k)] = (d_cm, labs.get(int(th[t3][0]), "palm"), int(t3))
         if not whole:
             cache[side] = {"gun": gk, "Ph": Ph.copy(), "res": res}
             self._pierce_cache = cache
@@ -1007,7 +1053,7 @@ class ContactMixin:
                     ar = sum(a_s_ for v in res.values() if v[0] > give_(v[1]) + 0.02)
                     self._cnt("pierce check: clip area off (0.01 cm2)", int(round(abs(af - ar) * 100)))
             a_s = SAMPLE_CM * SAMPLE_CM
-            for k, (d_cm, lab3) in res.items():
+            for k, (d_cm, lab3, _t3) in res.items():
                 give = SKIN_GIVE.get(_lab_key(lab3), SKIN_GIVE["default"])
                 if d_cm > give + 0.02:
                     pierced += a_s
