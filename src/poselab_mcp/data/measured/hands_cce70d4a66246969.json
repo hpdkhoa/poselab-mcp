@@ -1,0 +1,62 @@
+{
+ "measured_from": {
+  "arms": {
+   "file": "Arms.fbx",
+   "sha1": "3b3dd93eac065112"
+  },
+  "idle": {
+   "file": "Arms_Idle.fbx",
+   "sha1": "721694a15c3974f2"
+  },
+  "bone_edits": {
+   "file": "bone_edits.json",
+   "sha1": "cf67698e53c9965c"
+  }
+ },
+ "sides": {
+  "r": {
+   "points": {
+    "web_fold": {
+     "bone": "hand_r",
+     "local": [
+      -8.2889042,
+      -0.9707369,
+      4.3066306
+     ]
+    },
+    "index_pip_pad": {
+     "bone": "index_02_r",
+     "local": [
+      -0.1110955,
+      -0.7696443,
+      0.1676898
+     ]
+    },
+    "palm_skin": {
+     "bone": "hand_r",
+     "local": [
+      -5.3845162,
+      -1.6350636,
+      0.1164899
+     ]
+    }
+   },
+   "tip_len_m": {
+    "thumb": 0.037012,
+    "index": 0.027452,
+    "middle": 0.028033,
+    "ring": 0.027947,
+    "pinky": 0.023256
+   },
+   "method": {
+    "web_fold": "skin exit of the ray thumb base joint -> middle of thumb knuckle and index knuckle",
+    "index_pip_pad": "skin exit of the ray index middle joint -> palm facing",
+    "palm_skin": "skin exit of the ray wrist/middle-knuckle midpoint -> palm facing",
+    "tip_len_m": "farthest end-segment skin along the end segment's line, from its joint",
+    "pose": "fingers open (bind pose, uncurled flat)"
+   }
+  }
+ },
+ "date": "2026-10-21",
+ "rig_key": "cce70d4a66246969"
+}

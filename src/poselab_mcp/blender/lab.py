@@ -2292,6 +2292,11 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         (the middle finger's), index_knuckle, pinky_knuckle, wrist, thumb_tip, middle_tip, palm (its middle)."""
         B = lambda n: self._bw(n).translation      # noqa: E731
         f = lambda fi, j: B(self._n("finger", side, fi, j))    # noqa: E731
+        if name in ("web_fold", "index_pip_pad", "palm_skin"):
+            p = self.measured_point(side, name)             # measured on the skin, cached (holdlab.measure_hand)
+            if p is None:
+                raise ValueError("%s is measured on the skin: run measure_hand(%r) first" % (name, side))
+            return p
         if name == "web":
             return f("thumb", "01").lerp(f("index", "01"), 0.5)
         if name == "knuckle":
@@ -2853,7 +2858,11 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         if rest.length < 1e-9:
             return self._tip(fi, s)
         P = self.arm.pose.bones[n3].matrix @ b3.matrix_local.inverted()
-        return self.arm.matrix_world @ (P @ (b3.head_local + rest.normalized() * rest.length * 0.8))
+        # the tip's length measured on the skin when the hand has been measured (holdlab.measure_hand); else the old
+        # estimate, 0.8 of the middle segment (marked for removal: a guess)
+        tl = self.measured_tip_len(s, fi) if hasattr(self, "measured_tip_len") else None
+        length = tl if tl else rest.length * 0.8
+        return self.arm.matrix_world @ (P @ (b3.head_local + rest.normalized() * length))
 
     def _finger_report(self, s, FL):
         """Each finger joint's curl (+ toward the palm) and its bend out of the finger's own plane; the joints out of

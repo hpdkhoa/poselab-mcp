@@ -121,17 +121,12 @@ moved = CS.rodrigues(tip, np.zeros(3), np.array([0.0, 1.0, 0.0]), math.radians(c
 d_after = -0.5 + float((moved - tip)[0] @ np.array([0.0, 0.0, 1.0])) * 100.0
 check("an edge inside the flesh opens the joint", closed["01"] < 0.0 and d_after >= -press - 0.02, (closed, d_after))
 
-# 11. The constrained fit: a point pulled to (0, 0, -1 cm) by its aim, a wall row keeping it at z >= -0.4 cm: the fit
-# stops it on the wall; the shift alone (no turn needed)
-J = CS.rigid_rows(np.array([[0.0, 0.0, 0.0]]), np.zeros(3))
-x, viol, x0 = CS.constrained_fit(J, np.array([0.0, 0.0, -0.01]), np.array([[0, 0, 1.0, 0, 0, 0]]), np.array([-0.004]))
-check("the free fit reaches its aim", np.allclose(x0[:3], [0, 0, -0.01], atol=1e-6), x0)
-check("the wall stops the fit at the wall", abs(x[2] + 0.004) < 1e-6 and viol < 1e-6, x)
-# two aims a turn meets: points (+-1, 0, 0) to (0, +-1, 0) about the origin: a 90 degree turn about z; one Newton step
-# of the linear rows gives the small-angle move, so check the turn's direction and its size order
-J = CS.rigid_rows(np.array([[0.05, 0, 0], [-0.05, 0, 0]]), np.zeros(3))
-x, viol, x0 = CS.constrained_fit(J, np.array([-0.005, 0.005, 0, 0.005, -0.005, 0]), None, None)
-check("a turn about z", x0[5] > 0.09 and np.allclose(x0[:5], 0.0, atol=1e-6), x0)
+# 11. Step A's exact placement: on the line y = 0.03 (along x), the point 0.05 from the origin is x = +-0.04; the one
+# nearer (0.03, 0.03, 0) is +0.04. A line 0.06 away never comes within 0.05: its nearest point, 1 cm short
+X, ok, short = CS.point_on_line_at([0, 0, 0], 0.05, [0, 0.03, 0], [1, 0, 0], [0.03, 0.03, 0])
+check("the point on the line at the hand's distance", ok and np.allclose(X, [0.04, 0.03, 0]), (X, ok))
+X, ok, short = CS.point_on_line_at([0, 0, 0], 0.05, [0, 0.06, 0], [1, 0, 0], [0, 0.06, 0])
+check("a line out of reach reports how far short", (not ok) and abs(short - 0.01) < 1e-9 and np.allclose(X, [0, 0.06, 0]), (X, short))
 
 if fails:
     print("CONTACT SOLVE failed: " + "; ".join(fails))

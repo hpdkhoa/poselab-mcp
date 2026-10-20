@@ -221,29 +221,18 @@ def wrist_past(total, flex, dev, lim):
                dev - lim["wrist_radial_deg"], -dev - lim["wrist_ulnar_deg"])
 
 
-def rigid_rows(P, c):
-    """How points P (n x 3) move for a small rigid move x = (t, w) about c: dP = t + w x (P - c), as n 3 x 6 blocks
-    [I, -[P - c]x] stacked (3n x 6)."""
-    n = len(P)
-    R = np.zeros((3 * n, 6))
-    for i, p in enumerate(np.asarray(P, dtype=float) - c):
-        R[3 * i:3 * i + 3, :3] = np.eye(3)
-        R[3 * i:3 * i + 3, 3:] = np.array([[0.0, p[2], -p[1]], [-p[2], 0.0, p[0]], [p[1], -p[0], 0.0]])
-    return R
-
-
-def constrained_fit(J, r, A, b, damp=1e-9):
-    """The move x (6: shift, turn) that best meets the aims J x = r (least squares) while keeping every wall row
-    A x >= b. Unconstrained, x0 solves (J'J) x0 = J'r; with H = J'J = L L' the aim is |L'(x - x0)|^2, so with
-    y = L'(x - x0) the walls read (A L'^-1) y >= b - A x0 and the smallest y meeting them is Hildreth's (min_shift).
-    Returns (x, the largest wall row still unmet, x0)."""
-    J = np.asarray(J, dtype=float)
-    H = J.T @ J + damp * np.eye(J.shape[1])
-    x0 = np.linalg.solve(H, J.T @ np.asarray(r, dtype=float))
-    if A is None or not len(A):
-        return x0, 0.0, x0
-    Lc = np.linalg.cholesky(H)
-    Li = np.linalg.inv(Lc.T)
-    A = np.asarray(A, dtype=float)
-    y, viol = min_shift(A @ Li, np.asarray(b, dtype=float) - A @ x0)
-    return x0 + Li @ y, viol, x0
+def point_on_line_at(T0, r, L0, d, near):
+    """Step A's exact placement: the point X on the line L0 + u d at distance r from T0 (|X - T0| = r, the
+    quadratic u^2 + 2u d.(L0 - T0) + |L0 - T0|^2 - r^2 = 0), the root nearest `near`. When the line never comes
+    within r, its point nearest T0 and how far short it is. Returns (X, reached, short)."""
+    T0, L0, near = (np.asarray(v, dtype=float) for v in (T0, L0, near))
+    d = np.asarray(d, dtype=float) / max(1e-12, np.linalg.norm(d))
+    bq = float(d @ (L0 - T0))
+    cq = float((L0 - T0) @ (L0 - T0)) - r * r
+    disc = bq * bq - cq
+    if disc < 0.0:
+        X = L0 - d * bq
+        return X, False, float(np.linalg.norm(X - T0)) - r
+    us = (-bq - math.sqrt(disc), -bq + math.sqrt(disc))
+    X = min((L0 + u * d for u in us), key=lambda x_: float(np.linalg.norm(x_ - near)))
+    return X, True, 0.0

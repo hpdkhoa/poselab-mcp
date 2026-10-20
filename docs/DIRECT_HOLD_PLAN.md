@@ -92,3 +92,66 @@ yet, so no run uses it.
 ## Time
 
 Hard stop at 10 minutes; the run plans its work to 9.
+
+## Planned next (v0.12, agreed 2026-10-21, not built yet)
+
+The owner's words: "leave the support hand out of equation, after done firing hand then come to support hand so only
+one hand at a time"; "never pull out the touch point, never rotate the palm direction out of the object"; "choice 1
+but count the finger need to touch A-to-B line ... must not clipping or crossed the wall by default calculation";
+the thumb "need to touch the left side of the object or opposite side of index finger to complete a grab"; the
+support hand: "the pattern is the same, index finger in one side and thumb is in another side".
+
+One template for both hands, one hand at a time (the support hand only after the firing hand passes):
+
+1. Place, exact: the center touch point (a point) and the line touch point (a line), one calculation.
+2. Roll about the center-to-line axis: the only move; both touches stay exact. For each roll angle (1 degree
+   steps, the hand's fixed shape, no posing), work out:
+   a. the fingers' angles for the hold, calculated onto their touch places (option 1), inside their AAOS and
+      holding ranges, no skin past its give;
+   b. the thumb's 4 angles onto the opposite side (pad on the surface within its give, facing in), inside its ranges;
+   c. the grab: the thumb's side and the fingers' side face opposite ways (n_thumb . n_fingers < 0);
+   d. no palm, web or touching-finger skin past its give, the touching finger kept on its line, the palm facing in.
+   Keep the angles that meet all; take the one with the palm squarest to its panel and the digits nearest relaxed.
+   None: stop and report which condition fails, by how much, at the nearest angle. No pulling away.
+3. Then the body (Steps B, C), the start check, and the pose read by the real walls.
+
+Targets (kind, source):
+
+| Hand | Part | Target | Kind |
+|---|---|---|---|
+| firing | web | the crook under the grip safety | point (center) |
+| firing | index middle joint, index straight | the frame's right side by the guard's top edge | line |
+| firing | middle, ring, little | wrap the front strap under the guard | surface |
+| firing | thumb pad | the frame's left side, by the slide stop | line or area |
+| firing | palm | into the right panel | facing |
+| support | palm | the left panel's open part (the support mark) | point (center) |
+| support | thumb pad | forward along the frame's left side, under the firing thumb | line |
+| support | fingers | over the firing fingers, round the front to the right side | surface (the firing hand's skin) |
+| support | palm | into the left panel | facing |
+
+Grab check: firing hand, index (right) against thumb (left); support hand, thumb (left) against fingers (right, over
+the firing fingers).
+
+## Measured, not guessed (v0.12, 2026-10-21)
+
+The owner's rule: "in 3D the target need to be the surface or the skin of the real final object, not guessing not
+scale from bone ... you have the tools to get exact numbers". Built so far:
+
+| Number | Before | Now |
+|---|---|---|
+| The web's touch point | a point between two bone heads, a guessed 0.9 cm under the skin | the skin fold, measured by a ray (that bone point is 2.71 cm under the skin) |
+| The index's touch point | the middle joint's bone head plus a 0.75 cm capsule radius | the pad skin at the middle joint, measured by a ray |
+| The support palm's touch point | a bone midpoint plus the fitted palm radius | the palm skin at its middle, measured by a ray |
+| Each fingertip's length | 0.8 of the middle segment | the farthest tip skin along the end segment, measured |
+| The gun's touch points | a step back along the distance grid's gradient (missed by 0.89 cm in the crook) | the gun mesh's nearest point |
+| The frame line by the guard | pushed 3 cm sideways, then snapped | a ray from outside the firing side, its first hit |
+| A gap that decides a wall | the distance grid (error 0.03 cm) | the mesh's exact distance for points within 0.06 cm of the wall |
+
+The numbers are kept next to the code: poselab_mcp/data/measured/hands_<rig hash>.json (in the carrying bone's
+frame, with the source files' names and hashes) and weaponlab/gunkit/data/measured/<gun>.json.
+
+Still guessed (no mesh can measure them; each needs a published source): the skin's give (palm 0.3, palm side and
+web and pads 0.15, else 0.05 cm), the glove's thickness (0.15 cm, "a guess"), the working arm and finger limits
+marked "working value" in ranges.py, a holding finger's limits, the purpose and comfort numbers marked "estimate",
+the ready place in the view and the preferred elbow flexion (20). Solver settings (step sizes, tolerances) are
+choices, listed in the audit, not body facts.
