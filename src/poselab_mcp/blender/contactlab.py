@@ -19,6 +19,7 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
+import contactsolve as CS
 from sdflab import SDF_TOL_CM
 
 DIGITS = ("thumb", "index", "middle", "ring", "pinky")
@@ -271,53 +272,87 @@ class ContactMixin:
             lab[pal] = np.where(nearw, "web", np.where(c > 0.3, "palm", np.where(c < -0.3, "palm_back", "palm_side")))
         return idx, lab.tolist()
 
-    def settle_palm(self, side, rounds=4, gap_cm=-0.15):
-        """The hand slid as one body until its palm's skin just meets the object: each round every palm vertex's
-        signed distance to the surface (inside below 0, by the nearest face's side); palm skin inside pushes the
-        hand out along that face's normal by the deepest, else the hand moves in toward the nearest by its gap less
-        gap_cm (the arm follows). Returns the gap left (cm; below 0 still in the object) and the palm's touching
-        area (cm2)."""
+    def settle_palm(self, side, rounds=4, gap_cm=-0.15, other=False, sample=3):
+        """The hand slid as one body until its palm's skin just meets the object (v0.10.0, calculated): each round
+        every palm vertex's signed distance d to the object and the outward normal n there (the grids), and the
+        shift x solved as the smallest one with
+            n_i . x >= lo_i - d_i      for every palm point (no palm skin past its give: lo = -give + 0.05 cm)
+            n_k . x <= gap_cm - d_k    for the nearest palm point k (it meets the surface, gap_cm in)
+        (contactsolve.min_shift). With other, the rows also hold every skin point of this hand out of the other
+        hand past the skin's give, and out of the object past its own give, so a support hand lies on the firing
+        fingers. The step is linear, so the next round reads the skin again. Returns the gap left (cm; below 0
+        still in the object), the palm's touching area (cm2) and the total shift (cm)."""
         hn = self._n("hand", side)
-        bvh, surf = self._object_now()[:2]
-        left, touching = None, 0.0
+        left, touching, total = None, 0.0, 0.0
+        o = "r" if side == "l" else "l"
+        self._settle_log = []
         for _ in range(rounds):
+            self._cnt("rounds")
             P, N, A, _b, _t = self._skin_arrays()
             idx, lab = self._hand_label_arrays(side, P, N)
-            pv = [int(i) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side")]
-            if not pv:
+            pv = np.array([int(i) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side")])
+            if not len(pv):
                 break
-            pv = np.array(pv)
+            give = np.array([SKIN_GIVE[l_] for l_ in lab if l_ in ("palm", "palm_side")])
             D, _w, Nr = self.sdf_query(P[pv])            # the grids: signed distance (cm) and outward normal
             touching = float(A[pv][D <= 0.2].sum())
-            kw = int(np.argmin(D))
-            worst = (float(D[kw]) / 100.0, Vector(Nr[kw]))
-            outs = np.nonzero(D >= 0.0)[0]
-            near_ = None
-            if len(outs):
-                kn = outs[int(np.argmin(D[outs]))]
-                near_ = (float(D[kn]) / 100.0, -Vector(Nr[kn]) * (float(D[kn]) / 100.0))
-            if worst is None:
+            left = float(D.min())
+            near = D < 1.0
+            rows = [Nr[near]]
+            need = [(-give[near] + 0.05 - D[near]) / 100.0]
+            k = int(np.argmin(D))
+            if np.linalg.norm(Nr[k]) > 1e-6:
+                gap_k = max(gap_cm, -give[k] + 0.05 + 0.03)     # inside its own give's band (a palm side gives less)
+                rows.append(-Nr[k][None, :])
+                need.append(np.array([(D[k] - gap_k) / 100.0]))
+            if other:
+                # every skin point of this hand (sampled): out of the object past its give, out of the other hand
+                sel = np.array([int(i) for i in idx[::sample]])
+                labs_ = [lab[j] for j in range(0, len(lab), sample)]
+                Da, _w2, Na = self.sdf_query(P[sel])
+                gv = np.array([SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"]) for l_ in labs_])
+                m_ = Da < 1.0
+                rows.append(Na[m_])
+                need.append((-gv[m_] + 0.03 - Da[m_]) / 100.0)
+                oh = self._other_hand_bvh(o, P, N)
+                if oh is not None:
+                    hb, _ts, _ol, olo, ohi = oh
+                    for i in sel[np.all((P[sel] >= olo) & (P[sel] <= ohi), axis=1)]:
+                        v = Vector(P[i])
+                        l2, n2, _ti, d2 = hb.find_nearest(v, 0.01)
+                        if l2 is None:
+                            continue
+                        w_ = v - l2
+                        inside = w_.dot(n2) < 0.0
+                        dd = -d2 if inside else d2
+                        nv = (-w_ if inside else w_).normalized() if w_.length > 1e-9 else n2
+                        rows.append(np.array([list(nv)]))
+                        need.append(np.array([-0.003 + 0.0003 - dd]))
+            x, viol = CS.min_shift(np.concatenate(rows), np.concatenate(need))
+            step = float(np.linalg.norm(x))
+            if step < 1e-5:
                 break
-            left = worst[0] * 100.0
-            give = SKIN_GIVE["palm"] / 100.0
-            if worst[0] < -give - 0.0005:
-                move = worst[1].normalized() * (-worst[0] - give + 0.0005)              # out, to its give
-            elif near_ is not None and near_[0] * 100.0 > gap_cm + 0.02 and near_[1].length > 1e-9:
-                move = near_[1].normalized() * (near_[0] - gap_cm / 100.0)           # in, until it meets
-            else:
-                break
+            self._cnt("palm shifts")
+            total += step * 100.0
             H = self._bw(hn).copy()
-            M = Matrix.Translation(move) @ H
-            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
+            M = Matrix.Translation(Vector(list(x))) @ H
+            short = self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
             bpy.context.view_layer.update()
-        return (round(left, 2) if left is not None else None), round(touching, 2)
+            got = (self._bw(hn).translation - H.translation).length * 100.0
+            self._settle_log.append({"deepest_cm": round(left, 2), "rows": int(sum(len(r_) for r_ in rows)),
+                                     "shift_asked_cm": round(step * 100.0, 2), "shift_got_cm": round(got, 2),
+                                     "arm_short_cm": round(short, 2), "left_unmet_cm": round(viol * 100.0, 2)})
+        return (round(left, 2) if left is not None else None), round(touching, 2), round(total, 2)
 
     def relax_fingers(self, side, fingers=("index", "middle", "ring", "pinky", "thumb"), step_deg=4.0, rounds=8,
                       allow_cm=0.05):
         """Every finger opened, by the drawn skin, until it no longer presses into the object: each round one read
-        of the skin, and in each finger still pressing the joint whose segment presses deepest opens step_deg
-        (closing by capsules leaves skin a little inside: the capsules are thinner than the flesh at the pads).
-        Returns each finger's degrees opened."""
+        of the skin, and in each finger still pressing the joint whose segment presses deepest opens by the angle
+        that brings its deepest point back to allow_cm (v0.10.0): s = (-allow - d) / (dd/ds) with
+        dd/ds = n . (a x (p - c)) for that joint's hinge, cut to 0.5 to 20 degrees; step_deg is used only when the
+        lever reads near 0. When closing moves that point out (the lever's sign) the joint closes instead. The drawn
+        skin bends at the joints, so the angle is checked on the next round's read. Returns each finger's degrees
+        opened (below 0: closed)."""
         bvh, surf = self._object_now()[:2]
         _bone, _T, sidev, kind, segi = self._skin_static()
         sc_ = 1 if side == "r" else 2
@@ -332,6 +367,7 @@ class ContactMixin:
         opened = {fi: 0.0 for fi in verts}
         live = set(verts)
         for _ in range(rounds):
+            self._cnt("rounds")
             if not live:
                 break
             P, _N, _A, _b, _t = self._skin_arrays()
@@ -339,27 +375,50 @@ class ContactMixin:
             for fi in sorted(live):
                 k0, vi = verts[fi]
                 deep = {}
-                D, _w, _n = self.sdf_query(P[vi], want_normal=False)
-                for i, dcm in zip(vi, D):
+                D, _w, Nn = self.sdf_query(P[vi])
+                at = {}
+                for i, dcm, nv in zip(vi, D, Nn):
                     if dcm < -allow_cm:
                         j = int(segi[i]) - k0
-                        deep[j] = max(deep.get(j, 0.0), -dcm / 100.0)
+                        if -dcm / 100.0 > deep.get(j, 0.0):
+                            deep[j] = -dcm / 100.0
+                            at[j] = (P[i], dcm, nv)
                 if not deep:
                     live.discard(fi)
                     continue
-                jn = ("01", "02", "03")[max(deep, key=deep.get)]
+                jj = max(deep, key=deep.get)
+                jn = ("01", "02", "03")[jj]
                 if fi == "thumb":
                     jn = "02" if jn == "01" else jn
+                # the opening angle: the joint's hinge (its finger's plane, + closes) and the deepest point's lever
+                step_ = -step_deg                     # degrees of closing (below 0 opens)
+                p_, dcm_, nv_ = at[jj]
+                try:
+                    if fi == "thumb":
+                        a_ = np.array(list(self._thumb_report(side, TL)[2][jn]))
+                    else:
+                        a_ = np.array(list(self._finger_report(side, FL)[2][fi]))
+                    c_ = np.array(list(self._bw(self._n("finger", side, fi, jn)).translation))
+                    a_ = a_ / max(1e-12, np.linalg.norm(a_))
+                    tip_ = np.array(list(self._finger_tip(fi, side)))
+                    if float(np.dot(np.cross(a_, tip_ - c_), np.array(list(self._palm_facing(side))))) < 0.0 and fi != "thumb":
+                        a_ = -a_
+                    lever = float(np.dot(nv_, np.cross(a_, p_ - c_))) * 100.0     # cm per radian of closing
+                    if abs(lever) > 1e-4:
+                        s_ = math.degrees((-allow_cm - dcm_) / lever)            # below 0 opens
+                        step_ = math.copysign(min(20.0, max(0.5, abs(s_))), s_)
+                except (KeyError, IndexError):
+                    pass
                     if self.R.get("thumb_hinge") == "ray":
-                        self._thumb_flex(side, jn, -step_deg)
+                        self._thumb_flex(side, jn, step_)
                     else:
                         tr = self._thumb_report(side, TL)[0]
                         b2, b3 = tr.get("thumb_02", [0, 0])[0], tr.get("thumb_03", [0, 0])[0]
-                        self._set_thumb_bend(side, b2 - (step_deg if jn == "02" else 0.0), b3 - (step_deg if jn == "03" else 0.0), TL)
+                        self._set_thumb_bend(side, b2 + (step_ if jn == "02" else 0.0), b3 + (step_ if jn == "03" else 0.0), TL)
                 else:
                     cur = self._finger_report(side, FL)[0]["%s_%s" % (fi, jn)][0]
-                    self._set_curl(side, fi, jn, cur - step_deg, FL)
-                opened[fi] += step_deg
+                    self._set_curl(side, fi, jn, cur + step_, FL)
+                opened[fi] -= step_
                 moved = True
             if moved:
                 bpy.context.view_layer.update()
@@ -376,10 +435,13 @@ class ContactMixin:
         """The digits closed onto the object the way a hand closes on a handle: every joint of a finger closes
         together (the end joints a little slower); when a segment's skin touches the object (or, with other, the
         other hand) the joints behind it stop and the ones past it keep closing, until each segment rests on the
-        surface or its joint is at its limit; a step that would press a segment past press_cm is taken back. The skin
-        is read once and turned with the joints in numpy (a segment's skin rides its joint's hinge rigidly), so a
-        closing costs no scene update per step; the bones are set once at the end. Returns per digit the degrees
-        each joint closed and which segments touch."""
+        surface or its joint is at its limit; a segment pressed past press_cm is moved back out. Each step's angle is
+        calculated (contactsolve.chain_close) from the object's signed distance and outward normal at the skin and
+        each joint's lever, not a fixed step: the joints close until the first point would reach the surface, and a
+        pressed segment opens by the angle that brings it back to half the press. The skin is read once and turned
+        with the joints in numpy (a segment's skin rides its joint's hinge rigidly), so a closing costs no scene
+        update per step; the bones are set once at the end. step_deg and max_steps are no longer used. Returns per
+        digit the degrees each joint closed (below 0 opened), which segments touch, and the rounds taken."""
         bvh, surf = self._object_now()[:2]
         P, N, _A, _b, _t = self._skin_arrays()
         _bone, _T, sidev, kind, segi = self._skin_static()
@@ -442,58 +504,48 @@ class ContactMixin:
             # the knuckle leads, as a hand closes on a handle: the base segment comes down first, then the middle,
             # then the end (all three at once land the fingertip first and stop the finger short of a wrap)
             rate = {"01": 1.0, "02": 0.5, "03": 0.35} if fi != "thumb" else {"02": 1.0, "03": 0.6}
-            closed = {j: 0.0 for j in hinge}
-            active = set(hinge)
-            touching = set()
+            # v0.10.0: each step's angle is calculated from the object's distance and normal at the skin (contactsolve),
+            # not a fixed 3 degrees: s = (d - target) / (-dd/ds), dd/ds = n . (a x (p - c)). The joints may open
+            # (a pressed segment) down to a holding finger's least bend
+            room_open = {}
+            for j in hinge:
+                if fi == "thumb":
+                    cur = tr.get("thumb_" + j, [0.0])[0]
+                    room_open[j] = max(0.0, cur - HOLD_DIGIT_LIMITS["thumb_" + j][0])
+                else:
+                    cur = fr["%s_%s" % (fi, j)][0]
+                    room_open[j] = max(0.0, cur - HOLD_DIGIT_LIMITS[j][0])
 
-            def gap(j):
-                best = None
-                if len(pts[j]):
-                    best = float(self.sdf_query(pts[j], want_normal=False)[0].min()) / 100.0
-                for q in (pts[j] if oh is not None else ()):
-                    v = Vector(q)
-                    if oh is not None:
+            def query(X):
+                D, _w, Nr = self.sdf_query(X)
+                D = np.array(D, dtype=float)
+                Nr = np.array(Nr, dtype=float)
+                if oh is not None:
+                    for i_, q in enumerate(X):
+                        v = Vector(q)
                         l2, n2, _t2, d2 = oh[0].find_nearest(v, 0.03)
-                        if l2 is not None:
-                            sd2 = -d2 if (v - l2).dot(n2) < 0.0 else d2
-                            best = sd2 if best is None else min(best, sd2)
-                return 99.0 if best is None else best * 100.0
-
-            for _ in range(max_steps):
-                if not active:
-                    break
-                order = [j for j in ("01", "02", "03") if j in active]
-                for j in order:
-                    d_ang = min(step_deg * rate[j], room[j] - closed[j])
-                    if d_ang <= 0.0:
-                        active.discard(j)
-                        continue
-                    ang = math.radians(d_ang)
-                    ride = [k for k in ("01", "02", "03") if k >= j]
-                    saved = {k: pts[k].copy() for k in ride}
-                    saved_h = {k: hd[k].copy() for k in ("01", "02", "03")}
-                    for k in ride:
-                        pts[k] = self._rodrigues(pts[k], hd[j], hinge[j], ang)
-                    for k in ("02", "03"):
-                        if k > j:
-                            hd[k] = self._rodrigues(hd[k][None, :], hd[j], hinge[j], ang)[0]
-                    worst = min(gap(k) for k in ride)
-                    if worst < -press_cm:
-                        for k in ride:                     # pressed in: the step taken back, this joint stops
-                            pts[k] = saved[k]
-                        hd.update(saved_h)
-                        active.discard(j)
-                        continue
-                    closed[j] += d_ang
-                    for k in ride:
-                        if gap(k) <= touch_cm:
-                            touching.add(k)
-                            for q in ("01", "02", "03"):  # a segment that touches stops its own joint and those behind it
-                                if q <= k:
-                                    active.discard(q)
+                        if l2 is None:
+                            continue
+                        out_ = v - l2
+                        sd2 = (-d2 if out_.dot(n2) < 0.0 else d2) * 100.0
+                        if sd2 < D[i_]:
+                            D[i_] = sd2
+                            nv = out_.normalized() if out_.length > 1e-9 else n2
+                            if sd2 < 0.0:
+                                nv = -nv
+                            Nr[i_] = list(nv)
+                return D, Nr
+            js_ = [j for j in ("01", "02", "03") if j in hinge]
+            self._cnt("fingers solved")
+            closed, touching, n_round, slog = CS.chain_close(
+                {j: pts[j] for j in ("01", "02", "03")}, hd, hinge,
+                {j: room[j] for j in js_}, room_open, {j: rate[j] for j in js_}, query,
+                touch_cm=touch_cm, target_cm=0.0, press_cm=press_cm)
+            for _ in range(n_round):
+                self._cnt("closing rounds")
             # the bones turned once, by the angles found
             for j, d_ang in closed.items():
-                if d_ang <= 0.0:
+                if abs(d_ang) < 0.05:
                     continue
                 if fi == "thumb":
                     if self.R.get("thumb_hinge") == "ray":
@@ -505,7 +557,8 @@ class ContactMixin:
                 else:
                     cur = self._finger_report(side, FL)[0]["%s_%s" % (fi, j)][0]
                     self._set_curl(side, fi, j, cur + d_ang, FL)
-            out[fi] = {"closed_deg": {j: round(v, 1) for j, v in closed.items()}, "touching": sorted(touching)}
+            out[fi] = {"closed_deg": {j: round(v, 1) for j, v in closed.items()}, "touching": sorted(touching),
+                       "rounds": n_round}
         bpy.context.view_layer.update()
         return out
 
@@ -678,8 +731,28 @@ class ContactMixin:
         self._skin_st = (bone, np.array(tris, dtype=np.int64), side, kind, segi)
         return self._skin_st
 
+    def _pose_key(self):
+        """Every arm bone's location, turn and scale, and the arms' place: the skin's shape is a function of these."""
+        k = [tuple(self.arm.matrix_world.translation)]
+        for pb in self.arm.pose.bones:
+            k.append((tuple(pb.location), tuple(pb.rotation_quaternion), tuple(pb.scale)))
+        return hash(tuple(k))
+
     def _skin_arrays(self):
-        """The skin as posed, read in bulk: world points, normals, each vertex's area (cm2)."""
+        """The skin as posed, read in bulk: world points, normals, each vertex's area (cm2). Kept for the pose it
+        was read in (v0.9.0): a wall check and the aim's error read the same pose, and reading the deformed mesh is
+        most of a skin read's cost. The arrays are read only, so no caller can change the kept copy."""
+        key = self._pose_key()
+        c = getattr(self, "_skin_cache", None)
+        if c is not None and c[0] == key:
+            return c[1]
+        out = self._skin_arrays_read()
+        for a_ in out[:3]:
+            a_.flags.writeable = False
+        self._skin_cache = (key, out)
+        return out
+
+    def _skin_arrays_read(self):
         ob = self.meshes[0]
         bone, T = self._skin_static()[:2]
         dg = bpy.context.evaluated_depsgraph_get()
@@ -763,8 +836,64 @@ class ContactMixin:
         self._ohb[other] = (key, val)
         return val
 
+    def _pierced_samples(self, side, Ph, th, polys, SW, labs, whole=False):
+        """The object's samples inside this hand's flesh: {sample: (depth cm, the hand label there)}.
+
+        Step E (v0.10.0): only the part that moved is tested again. The last answer is kept per hand with the skin
+        it was read on; a sample can change only when skin near it moved, so the samples within a 2 cm grid cell
+        (grown by one cell) of a moved vertex, at its old place or its new one, are tested again, and every other
+        sample keeps its answer. A point in the flesh is within half the palm's thickness (1.5 cm) of a skin vertex,
+        so the grown cells hold every sample whose answer can change. The object moving, or whole, tests all."""
+        cell = 0.02
+        key = lambda c: (c[:, 0] * 4096 + c[:, 1]) * 4096 + c[:, 2]   # noqa: E731  a cell as one integer
+        offs = np.array([(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)])
+        lo_h, hi_h = Ph.min(0) - 0.01, Ph.max(0) + 0.01
+        cache = getattr(self, "_pierce_cache", {})
+        pc = None if whole else cache.get(side)
+        gk = (self._gun_key(), len(SW), round(float(SW.sum()), 6))      # a part that moves (a slide) moves its samples
+        if pc is not None and (pc["gun"] != gk or len(pc["Ph"]) != len(Ph)):
+            pc = None
+        if pc is None:
+            near_v = Ph
+            keep = {}
+        else:
+            mv = np.any(Ph != pc["Ph"], axis=1)             # any move at all: a sample on the skin flips on a hair
+            if not mv.any():
+                self._cnt("pierce: nothing moved")
+                return dict(pc["res"])
+            near_v = np.concatenate([Ph[mv], pc["Ph"][mv]])
+            keep = None
+        base = np.floor(np.minimum(lo_h, near_v.min(0)) / cell).astype(np.int64) - 2     # cells compared within a call
+        inbox = np.nonzero(np.all((SW >= np.minimum(lo_h, near_v.min(0) - 0.01)) & (SW <= np.maximum(hi_h, near_v.max(0) + 0.01)), axis=1))[0]
+        if len(inbox):
+            hc = np.floor(near_v / cell).astype(np.int64) - base
+            cells = np.unique(key((hc[:, None, :] + offs[None, :, :]).reshape(-1, 3)))
+            sc = np.floor(SW[inbox] / cell).astype(np.int64) - base
+            test = inbox[np.isin(key(sc), cells)]
+        else:
+            test = inbox
+        if keep is None:
+            tset = set(test.tolist())
+            keep = {k: v for k, v in pc["res"].items() if k not in tset}
+            self._cnt("pierce: part tested")
+        else:
+            self._cnt("pierce: whole tested")
+        res = dict(keep)
+        if len(test):
+            hb = BVHTree.FromPolygons(Ph.tolist(), polys)
+            for k in test:
+                hit = self.inside_flesh(Vector(SW[k]), hb)
+                if hit is None:
+                    continue
+                d_cm, t3 = hit
+                res[int(k)] = (d_cm, labs.get(int(th[t3][0]), "palm"))
+        if not whole:
+            cache[side] = {"gun": gk, "Ph": Ph.copy(), "res": res}
+            self._pierce_cache = cache
+        return dict(res)
+
     def contact_pairs(self, side, other=True, band_cm=0.2, near_cm=1.0, facing_max_deg=70.0, skin_give_cm=0.3,
-                      cover_regions=None):
+                      cover_regions=None, clip_bound=None):
         """One hand's contact as posed now, quickly: {(hand part, region): [contact cm2, press cm2, deepest cm]},
         the totals (contact, press into the object, press into the other hand past the skin's give), and the share
         of each of cover_regions this hand's skin touches. The same reading the contact map makes, for the
@@ -784,6 +913,8 @@ class ContactMixin:
         cos_f = math.cos(math.radians(facing_max_deg))
         touched = set()
         r_cov = max(band_cm, 0.35) / 100.0
+        st_ = self.steps
+        st_.begin("contact: object side")
         ks = np.nonzero(near)[0]
         if len(ks):
             vi_n = idx[ks]
@@ -809,6 +940,8 @@ class ContactMixin:
             if cover_regions and d_cm * 0.01 <= r_cov:
                 for (_co, sk, _d) in kd.find_range(loc, r_cov):
                     touched.add(sk)
+        st_.end()
+        st_.begin("contact: other hand")
         hand_press, hand_deep = 0.0, 0.0
         o = "r" if side == "l" else "l"
         if other:
@@ -835,29 +968,56 @@ class ContactMixin:
                         pr[0] += A[i]
         # the other way round: the object's surface inside the hand's flesh past its give. A thin part (a trigger
         # guard's ring) can pass through a finger between its skin vertices; its own surface samples cannot
+        st_.end()
+        st_.begin("contact: pierced test")
         pierced, pierce_deep, pierce_at = 0.0, 0.0, None
+        # v0.9.0: clip_bound (area cm2, depth cm) is a wall the caller already knows this pose must stay within. The
+        # pierced test only adds to the clipping, so when the skin's side and the other hand already go past it the
+        # answer is known: the test is skipped and the result says so (pierced_skipped).
+        skip_ = clip_bound is not None and (press + hand_press > clip_bound[0] or max(deep, hand_deep) > clip_bound[1])
         _bone, _T, sidev, kind, segi = self._skin_static()
         sc_ = 1 if side == "r" else 2
-        selh = (sidev == sc_) & (kind > 0)
-        th = T[selh[T[:, 0]] & selh[T[:, 1]] & selh[T[:, 2]]]
-        if len(th):
-            vi = np.nonzero(selh)[0]
-            hb = BVHTree.FromPolygons([Vector(x) for x in P[vi]], [tuple(t) for t in np.searchsorted(vi, th)])
-            lo_h, hi_h = P[vi].min(0) - 0.01, P[vi].max(0) + 0.01
-            inbox = np.nonzero(np.all((SW >= lo_h) & (SW <= hi_h), axis=1))[0]
+        # v0.9.0: the hand's vertices and triangles are the same every call (only their places move), so they are
+        # worked out once per hand; the tree takes plain lists, not one Vector per vertex; and only the object's
+        # samples near the skin are tested: a point in the flesh is within half the palm's thickness (1.5 cm) of a
+        # skin vertex, and a 2 cm grid of the skin grown by one cell keeps every sample within 2 cm, found in numpy
+        # instead of testing the hand's whole box.
+        hk = getattr(self, "_pierce_static", {})
+        if side not in hk:
+            selh = (sidev == sc_) & (kind > 0)
+            th_ = T[selh[T[:, 0]] & selh[T[:, 1]] & selh[T[:, 2]]]
+            vi_ = np.nonzero(selh)[0]
+            hk[side] = (th_, vi_, [tuple(int(x) for x in t) for t in np.searchsorted(vi_, th_)])
+            self._pierce_static = hk
+        th, vi, polys = hk[side]
+        pierced_by = {}
+        if len(th) and not skip_:
+            Ph = P[vi]
+            res = self._pierced_samples(side, Ph, th, polys, SW, labs)
+            if os.environ.get("POSELAB_PIERCE_CHECK"):
+                # Step E's check: the moved-part answer against the whole test, every call (slow; for measuring)
+                full = self._pierced_samples(side, Ph, th, polys, SW, labs, whole=True)
+                self._cnt("pierce check: calls")
+                if set(full) != set(res) or any(abs(full[k][0] - res[k][0]) > 1e-6 for k in full if k in res):
+                    self._cnt("pierce check: different")
+                    self._cnt("pierce check: samples different", len(set(full) ^ set(res)))
+                    a_s_ = SAMPLE_CM * SAMPLE_CM
+                    give_ = lambda l_: SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"])   # noqa: E731
+                    af = sum(a_s_ for v in full.values() if v[0] > give_(v[1]) + 0.02)
+                    ar = sum(a_s_ for v in res.values() if v[0] > give_(v[1]) + 0.02)
+                    self._cnt("pierce check: clip area off (0.01 cm2)", int(round(abs(af - ar) * 100)))
             a_s = SAMPLE_CM * SAMPLE_CM
-            for k in inbox:
-                hit = self.inside_flesh(Vector(SW[k]), hb)
-                if hit is None:
-                    continue                           # outside the flesh
-                d_cm, t3 = hit
-                d3 = d_cm / 100.0
-                lab3 = labs.get(int(th[t3][0]), "palm")
+            for k, (d_cm, lab3) in res.items():
                 give = SKIN_GIVE.get(_lab_key(lab3), SKIN_GIVE["default"])
-                if d3 * 100.0 > give + 0.02:
+                if d_cm > give + 0.02:
                     pierced += a_s
-                    if d3 * 100.0 - give > pierce_deep:
-                        pierce_deep, pierce_at = d3 * 100.0 - give, lab3
+                    pb_ = pierced_by.setdefault(lab3, [0.0, 0.0])
+                    pb_[0] += a_s
+                    pb_[1] = max(pb_[1], d_cm - give)
+                    if d_cm - give > pierce_deep:
+                        pierce_deep, pierce_at = d_cm - give, lab3
+        st_.end()
+        st_.begin("contact: cover")
         cover = {}
         if cover_regions:
             hit_all, tot_all = 0, 0
@@ -870,9 +1030,12 @@ class ContactMixin:
                 hit_all += h_
                 tot_all += len(ks)
             cover["_all"] = round(hit_all / float(max(1, tot_all)), 3)
+        st_.end()
         return {"pairs": pairs, "press_cm2": round(press, 2), "deepest_cm": round(deep, 2),
                 "hand_press_cm2": round(hand_press, 2), "hand_deepest_cm": round(hand_deep, 2), "cover": cover,
                 "pierced_cm2": round(pierced, 2), "pierced_deep_cm": round(pierce_deep, 2), "pierced_at": pierce_at,
+                "pierced_by": {k: (round(v[0], 2), round(v[1], 2)) for k, v in pierced_by.items()},
+                "pierced_skipped": bool(skip_),
                 "_P": P, "_idx": idx, "_lab": labl, "_touched": touched}
 
     def span_cover(self, cp, mark, regions):

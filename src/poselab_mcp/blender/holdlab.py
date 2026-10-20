@@ -837,7 +837,16 @@ class HoldMixin:
         this name ran priced a broken body rule against contact and is gone; its search settings are ignored."""
         return self.target_hold(side, marks, glove_cm=glove_cm, other=other, wrap=wrap)
 
-    def wall_faults(self, side, other=True):
+    # --- the walls: a real body's limits and physics. Never scored, never weighed, never traded ---------------
+    WALL_TOL = {"deg": 0.5, "clip_cm2": 0.02, "clip_cm": 0.005}
+    REPAIR_FRAME_S = 3.0      # a moving frame's repair stops after this long (the run has a time budget)
+
+    def angle_faults(self, side):
+        """The walls that need no contact read: the arm's rules, the fingers' and thumb's ranges, a holding digit's
+        limits (v0.9.0). A step that breaks one of these is undone before the costly contact read."""
+        return {k: v for k, v in self.wall_faults(side, angles_only=True).items()}
+
+    def wall_faults(self, side, other=True, angles_only=False, within=None):
         """Every wall this hand breaks as posed now, each with how far past it is: the arm's rules, the fingers' and
         the thumb's ranges, a holding digit's limits (degrees past), and clipping (skin in the object past its give,
         the object in the flesh past it, a hand in the other: cm2 and cm). Empty when the hand is inside every wall."""
@@ -861,8 +870,16 @@ class HoldMixin:
             add("thumb", msg)
         for msg in self.hold_digit_rule(side)["faults"]:
             add("holding", msg)
+        if angles_only:
+            return out
         if getattr(self, "_object", None):
-            cp = self.contact_pairs(side, other=other)
+            # within: the walls this pose must stay inside (the last kept pose's); the pierced test is skipped when the
+            # skin's side alone already goes past their clipping, since it can only add to it (v0.9.0)
+            bound = None
+            if within is not None:
+                bound = (within.get("clip:area_cm2", CLIP_NOISE_CM2) + self.WALL_TOL["clip_cm2"],
+                         within.get("clip:deepest_cm", 0.0) + self.WALL_TOL["clip_cm"])
+            cp = self.contact_pairs(side, other=other, clip_bound=bound)
             area = cp["press_cm2"] + cp["pierced_cm2"] + cp["hand_press_cm2"]
             deep = max(cp["deepest_cm"], cp["pierced_deep_cm"], cp["hand_deepest_cm"])
             if area > CLIP_NOISE_CM2 or deep > 0.0:
@@ -898,8 +915,10 @@ class HoldMixin:
         bpy.context.view_layer.update()
         w1 = self.wall_faults(side, other)
         if self._walls_hold(w1, w0):
+            self._cnt("kept")
             return True, w1
         self.snapshot("load", tag)
+        self._cnt("undone at a wall")
         return False, w0
 
     # --- the target solver: each purpose says where its hand part goes, the hand goes there --------------------
@@ -1025,6 +1044,7 @@ class HoldMixin:
         self.snapshot("save", "_ease")
         choice = None
         for sw in (-40.0, -30.0, -20.0, -10.0, 10.0, 20.0, 30.0, 40.0):
+            self._cnt("elbow swings tried")
             self.snapshot("load", "_ease")
             self._swing_elbow(side, sw)
             bpy.context.view_layer.update()
@@ -1034,6 +1054,7 @@ class HoldMixin:
         if best > 0.0:
             for pr in (-10.0, -5.0, 5.0, 10.0):
                 for el in (-6.0, 0.0, 6.0):
+                    self._cnt("girdle places tried")
                     self.snapshot("load", "_ease")
                     self.shoulder(side, pr, el)
                     self._put_hand(side, keep)
@@ -1053,32 +1074,48 @@ class HoldMixin:
         bpy.context.view_layer.update()
         return best
 
-    def _descend(self, err_fn, moves, side, other, steps=(8.0, 4.0, 2.0)):
+    def _descend(self, err_fn, moves, side, other, steps=(8.0, 4.0, 2.0), angles_only=False):
         """A fixed pattern search (no chance in it): each move (a function of a step in degrees) tried both ways
         at each step size. A step that breaks a wall, or goes further past one, is undone whatever it does for the
         aim (the walls are not in the error); a step that leaves the walls less broken is kept first; else a step
         is kept when the error falls. Until no move helps at the finest step. Returns the error."""
         self.snapshot("save", "_ds")
         e0 = err_fn()
-        w0 = self.wall_faults(side, other)
+        w0 = self.angle_faults(side) if angles_only else self.wall_faults(side, other)
+        import time as _t
         for st in steps:
             improved = True
             while improved:
                 improved = False
+                self._cnt("passes")
                 for mv in moves:
                     for sg in (1.0, -1.0):
+                        # the run's time budget (self._deadline): stop here, keeping the best pose so far
+                        dl = getattr(self, "_deadline", None)
+                        if dl is not None and _t.time() > dl:
+                            self._cnt("stopped at the time budget")
+                            return e0
+                        self._cnt("steps tried")
                         self.snapshot("save", "_ds")
                         mv(sg * st)
                         bpy.context.view_layer.update()
-                        w1 = self.wall_faults(side, other)
+                        a1 = self.angle_faults(side)
+                        if not self._walls_hold(a1, w0):
+                            self.snapshot("load", "_ds")
+                            self._cnt("undone at an angle wall")
+                            continue
+                        w1 = a1 if angles_only else self.wall_faults(side, other, within=w0)
                         if not self._walls_hold(w1, w0):
                             self.snapshot("load", "_ds")
+                            self._cnt("undone at a wall")
                             continue
                         e1 = err_fn()
                         if self._walls_rank(w1) < self._walls_rank(w0) or e1 < e0 - 1e-6:
                             e0, w0, improved = e1, w1, True
+                            self._cnt("kept")
                         else:
                             self.snapshot("load", "_ds")
+                            self._cnt("no gain")
         return e0
 
     def _fit_index(self, side, mark, glove_cm, other=True):
@@ -1239,6 +1276,192 @@ class HoldMixin:
         moves += [curl(fi, j) for fi in fingers for j in ("01", "02", "03")] + [tbend("02"), tbend("03")]
         return self._descend(err, moves, side, other, steps=(4.0, 2.0, 1.0))
 
+    # --- the direct hold: the hand placed from the marks, the body solved backward (docs/DIRECT_HOLD_PLAN.md) ---
+    def reach_now(self, side):
+        """The arm's lengths and the shoulder-to-wrist distance as posed now (m): (l1, l2, |W - S|)."""
+        S = self._bw(self._n("upperarm", side)).translation
+        E = self._bw(self._n("lowerarm", side)).translation
+        W = self._bw(self._n("hand", side)).translation
+        return (E - S).length, (W - E).length, (W - S).length
+
+    def arm_comfort(self, side, gun_shift=None, gun_most_cm=3.0):
+        """Step C: the elbow's swing and the shoulder girdle set by a fixed step search on the joint angles alone,
+        the hand kept where it is: J = (wrist bend / 10)^2 + (forearm roll / 30)^2 + (girdle share)^2, every step
+        inside the angle walls. With gun_shift (a function that moves the gun d metres along the sight line, the
+        first hand's solve only: the other hand is not on it yet), the gun's distance is a move too, the hand
+        carried with it, at most gun_most_cm either way from where Step B put it: the gun stays on the sight line,
+        so the aim does not change. These moves are on joint angles, where no distance field gives a direction, so
+        they stay a fixed step search (4, 2, 1). Returns J's parts after and the gun's shift (cm)."""
+        hn = self._n("hand", side)
+        rest0 = self.rifle_rest.translation.copy()
+
+        def parts():
+            rep_ = self._arm_report(side, self._limits()[0])[0]
+            w = abs(rep_.get("wrist_bend_deg", 0.0) or 0.0)
+            roll = abs(rep_.get("forearm_rotation_deg", 0.0) or 0.0)
+            cl = getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))
+            share = max(abs(cl[0]) / (CLAVICLE["protraction_deg"] if cl[0] >= 0 else CLAVICLE["retraction_deg"]),
+                        abs(cl[1]) / (CLAVICLE["elevation_deg"] if cl[1] >= 0 else CLAVICLE["depression_deg"]))
+            return w, roll, share
+
+        def J():
+            w, roll, share = parts()
+            return (w / 10.0) ** 2 + (roll / 30.0) ** 2 + share ** 2
+
+        def swing(st):
+            self._swing_elbow(side, st * 2.0)
+            self._roll_forearm(side)
+
+        def girdle(k):
+            def mv(st):
+                keep = self._bw(hn).copy()
+                if not hasattr(self, "_clav_now"):
+                    self._clav_now = {}
+                pr, el = self._clav_now.get(side, (0.0, 0.0))
+                pr, el = (pr + st, el) if k == 0 else (pr, el + st)
+                got = self.shoulder(side, pr, el)
+                self._clav_now[side] = (got["protraction_deg"], got["elevation_deg"])
+                self._put_hand(side, keep)
+            return mv
+        from lab import VIEW_FWD                          # noqa: E402  (lab imports this module)
+
+        def shifted():
+            return (self.rifle_rest.translation - rest0).dot(VIEW_FWD) * 100.0
+
+        def gun(st):
+            d_cm = st * 0.5                                 # a step of 4 moves the gun 2 cm
+            if abs(shifted() + d_cm) > gun_most_cm + 1e-6:
+                return
+            T = Matrix.Translation(Vector(VIEW_FWD) * (d_cm / 100.0))
+            H = self._bw(hn).copy()
+            gun_shift(d_cm / 100.0)
+            self._put_hand(side, T @ H)
+        w0_, r0_, s0_ = parts()
+        moves = [swing, girdle(0), girdle(1)] + ([gun] if gun_shift is not None else [])
+        self._snap_gun = gun_shift is not None              # an undone step puts the gun back too
+        try:
+            self._descend(J, moves, side, False, steps=(4.0, 2.0, 1.0), angles_only=True)
+        finally:
+            self._snap_gun = False
+        if gun_shift is not None:
+            gun_shift(0.0)                                  # the caller's caches follow the gun's last place
+        w, roll, share = parts()
+        return {"wrist_deg": round(w, 1), "roll_deg": round(roll, 1), "girdle_share": round(share, 2), "J": round(J(), 3),
+                "gun_shift_cm": round(shifted(), 2),
+                "before": {"wrist_deg": round(w0_, 1), "roll_deg": round(r0_, 1), "girdle_share": round(s0_, 2)}}
+
+    def rest_on_other(self, side):
+        """The hand laid on the other hand (a support hand over the firing fingers), calculated (v0.10.0): the
+        smallest shift that takes every skin point of this hand out of the other hand and out of the object past
+        their give, the palm still meeting the object (settle_palm with other). Returns the shift (cm) and the
+        gap left."""
+        gap, _touch, moved = self.settle_palm(side, other=True)
+        return {"shift_cm": moved, "palm_gap_cm": gap}
+
+    BODY_LABELS = ("palm", "palm_side", "palm_back", "web", "forearm")
+
+    def start_check(self, side, other=True):
+        """The valid-start rule (docs/DIRECT_HOLD_PLAN.md), after Steps A to C: the arm inside its walls, the hand's
+        body (palm, web, the forearm) not in the object or the other hand past its give, and the arm able to reach.
+        The fingers are not judged here: they are open and Step D closes them; they are judged after it. Returns
+        (valid, the walls broken with how far past, the reach margin in cm)."""
+        w = {k: v for k, v in self.wall_faults(side, other, angles_only=True).items() if k.startswith("arm:")}
+        if getattr(self, "_object", None):
+            cp = self.contact_pairs(side, other=other)
+            area, deep = 0.0, 0.0
+            for (lab, _reg), v in cp["pairs"].items():
+                if lab in self.BODY_LABELS:
+                    area += v[1]
+                    deep = max(deep, v[2])
+            for lab, (a_, d_) in cp.get("pierced_by", {}).items():
+                if lab in self.BODY_LABELS:
+                    area += a_
+                    deep = max(deep, d_)
+            if area > CLIP_NOISE_CM2 or deep > 0.0:
+                w["clip:body area_cm2"], w["clip:body deepest_cm"] = round(area, 2), round(deep, 2)
+        l1, l2, d = self.reach_now(side)
+        margin = (l1 + l2 - d) * 100.0
+        if margin < 1.0:
+            w["reach:short of a 1 cm margin"] = round(1.0 - margin, 2)
+        return (not w), {k: round(float(v), 2) for k, v in w.items()}, round(margin, 2)
+
+    def open_fingers(self, side, index_straight=False):
+        """The fingers opened from the rig's bind pose (a relaxed hand, each finger in its own plane), then uncurled
+        flat: the idle pose's fingers can sit swung out of their plane (the shared arms' left hand by about 35
+        degrees), and _set_curl sets only the curl."""
+        FL = self._limits()[1]
+        for fi in ("index", "middle", "ring", "pinky"):
+            for j in ("01", "02", "03"):
+                pb = self.arm.pose.bones[self._n("finger", side, fi, j)]
+                pb.rotation_mode = "QUATERNION"
+                pb.rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
+        bpy.context.view_layer.update()
+        for fi in ("index", "middle", "ring", "pinky"):
+            for j, cc in zip(("01", "02", "03"), (0.0, 0.0, 3.0) if (fi == "index" and index_straight) else (0.0, 0.0, 0.0)):
+                self._set_curl(side, fi, j, cc, FL)
+        bpy.context.view_layer.update()
+
+    def direct_hold(self, side, marks, palm_dir, glove_cm=0.0, other=True, wrap=None, rest_on_hand=False, gun_shift=None):
+        """The direct hold: Step A, the hand placed on its mark from palm_dir (the grip style's contact face, object
+        frame) with no turn, its web under the web point, the fingers open, the index straight when it lies along
+        the guard (from the rig's bind pose: open_fingers); the palm settled and, with rest_on_hand, laid on the
+        other hand, both by a calculated shift (settle_palm). Step C, the arm (and, with gun_shift, the gun along the
+        sight line). The valid-start rule judges the arm and the hand's body: an invalid start is reported with its
+        walls and nothing more is done. Step D, the fingers closed by calculated angles (contactsolve), the index
+        and the thumb onto their lines, the fingers relaxed; the fingers are judged by every wall at the end.
+        Returns the steps' numbers, the walls before and after the fingers and the gate's purposes."""
+        import time as _time
+        t0 = _time.time()
+        m = next(x for x in marks if x.get("role") == "hold" and x.get("hand", side) == side)
+        wrap = wrap or {fi: "wrap" for fi in ("index", "middle", "ring", "pinky")}
+        closing = tuple(fi for fi, how in wrap.items() if how == "wrap" and fi != "thumb")
+        out = {"method": "direct", "steps": {}}
+        # Step A
+        out["steps"]["A_seat"] = self.seed_hold(side, m, palm_dir=palm_dir, roll_deg=0.0)
+        self.open_fingers(side, index_straight=wrap.get("index") == "straight")
+        g_, _t_, mv_ = self.settle_palm(side)
+        out["steps"]["A_settle"] = {"palm_gap_cm": g_, "shift_cm": mv_, "rounds": list(getattr(self, "_settle_log", []))}
+        if rest_on_hand:
+            out["steps"]["A_rest_on_other"] = self.rest_on_other(side)
+            out["steps"]["A_rest_on_other"]["rounds"] = list(getattr(self, "_settle_log", []))
+        # Step C
+        out["steps"]["C_arm"] = self.arm_comfort(side, gun_shift=gun_shift)
+        # the valid-start rule
+        ok, walls, margin = self.start_check(side, other)
+        out["start"] = {"valid": ok, "walls": walls, "reach_margin_cm": margin}
+        if not ok:
+            out["result"] = "invalid start: no hold made"
+            out["walls"] = walls
+            out["gate"] = False
+            out["solve_s"] = round(_time.time() - t0, 1)
+            return out
+        # Step D
+        W = lambda f: self._walled(side, other, f)    # noqa: E731
+        out["walls_before_fingers"] = {k: round(float(v), 2) for k, v in self.wall_faults(side, other).items()}
+        # the closing is calculated (contactsolve), so it is kept as solved and judged by the walls at the end
+        out["steps"]["D_close"] = self.conform_digits(side, closing, other=other)
+        if m.get("index") == "extended" and wrap.get("index") == "straight":
+            self._fit_index(side, m, glove_cm, other)
+        if m.get("thumb") == "inline":
+            o_ = "r" if side == "l" else "l"
+            self._fit_thumb(side, m, glove_cm, along=self._thumb_dir(o_) if m["purpose"] == "support" else None, other=other)
+        elif m.get("thumb") in ("wrap", "opposed"):
+            W(lambda: self._set_thumb_bend(side, 6.0, 4.0, self._thumb_limits()))
+            W(lambda: self.conform_digits(side, ("thumb",), other=other))
+            self._fit_thumb(side, m, glove_cm, inline=False, other=other)
+        W(lambda: self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb"))))
+        walls = self.wall_faults(side, other)
+        sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
+        g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
+        out.update({"score": round(sc, 2), "gate": bool(g.get(side, {}).get("pass")) and not walls,
+                    "walls": {k: round(float(v), 2) for k, v in walls.items()}, **why})
+        if walls:
+            out["result"] = "no hold inside the walls"
+        out["unmet"] = [{"purpose": r["purpose"], "why": {k: v for k, v in r.items() if k not in ("purpose", "met", "error", "hard", "why")}}
+                        for r in why["purposes"] if not r["met"]]
+        out["solve_s"] = round(_time.time() - t0, 1)
+        return out
+
     def target_hold(self, side, marks, glove_cm=0.0, other=True, rounds=4, wrap=None, polish=True):
         """A hand's hold solved toward its purposes' targets, with no chance in it: each round the hand is fitted
         onto its targets (palm patch and facing, web, knuckles' line), the palm settled onto the surface, the body
@@ -1255,6 +1478,12 @@ class HoldMixin:
         best, log = None, []
         self.snapshot("save", "_th_best")
         for rd in range(rounds):
+            dl = getattr(self, "_deadline", None)
+            if dl is not None and rd > 0 and _time.time() > dl:
+                log.append({"round": rd, "stopped": "time budget"})
+                self._cnt("rounds stopped at the time budget")
+                break
+            self._cnt("rounds")
             self.snapshot("save", "_th_round")
             w_round = self.wall_faults(side, other)
             pairs = self._place_targets(side, m)
@@ -1267,6 +1496,7 @@ class HoldMixin:
                 self.snapshot("save", "_th_fit")
                 took = 0.0
                 for share in (1.0, 0.75, 0.5, 0.25):
+                    self._cnt("fit shares tried")
                     self.snapshot("load", "_th_fit")
                     self._fit_hand(side, pairs, share)
                     self.settle_palm(side)
@@ -1307,6 +1537,7 @@ class HoldMixin:
                 # the round as a whole may not leave the hand past a wall it started inside (nor further past one)
                 self.snapshot("load", "_th_round")
                 log.append({"round": rd, "refused": "the round broke walls: %s" % sorted(set(w_end) - set(w_round))})
+                self._cnt("rounds undone at a wall")
                 w_end = w_round
             sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
             g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
@@ -1321,7 +1552,8 @@ class HoldMixin:
             if ok or (prev and sc >= prev[-1] - 0.5):
                 break
         self.snapshot("load", "_th_best")
-        if polish and not best[2]:
+        dl = getattr(self, "_deadline", None)
+        if polish and not best[2] and (dl is None or _time.time() < dl):
             self._polish(side, marks, glove_cm, other, tuple(fi for fi in ("index", "middle", "ring", "pinky")
                                                               if wrap.get(fi) == "wrap"))
             w_p = self.wall_faults(side, other)
@@ -1363,6 +1595,9 @@ class HoldMixin:
         w0 = self.wall_faults(side, other)
         if not w0:
             return None
+        import time as _t
+        old_dl = getattr(self, "_deadline", None)
+        self._deadline = min(old_dl if old_dl is not None else float("inf"), _t.time() + self.REPAIR_FRAME_S)
         f0 = self.frame_fault(side, glove_cm, other)
         hn = self._n("hand", side)
         H0 = self._bw(hn).copy()
@@ -1388,6 +1623,7 @@ class HoldMixin:
             self._swing_elbow(side, st * 2.0)
         AX = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
         self._descend(err, [move(a) for a in AX] + [turn(a) for a in AX] + [swing], side, other, steps=(4.0, 2.0, 1.0))
+        self._deadline = old_dl
         f1 = self.frame_fault(side, glove_cm, other)
         w1 = self.wall_faults(side, other)
         return {"before": f0, "after": f1, "moved_cm": round(err(), 2), "walls": {k: round(v, 2) for k, v in w1.items()}}

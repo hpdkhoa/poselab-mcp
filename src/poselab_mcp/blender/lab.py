@@ -18,6 +18,7 @@ from mathutils.bvhtree import BVHTree
 from holdlab import HoldMixin  # noqa: E402  (holding any object: its reader, purposes, search, gate)
 from contactlab import ContactMixin  # noqa: E402  (the contact model: regions, labelled skin, pairs, pictures)
 from sdflab import SdfMixin  # noqa: E402  (the object as distance grids, built once)
+from steplog import LAB_STEPS, Steps  # noqa: E402  (every working step timed and counted)
 
 FINGERS = ("index", "middle", "ring", "pinky", "thumb")
 RADIUS = {"forearm": 0.030, "palm": 0.018, "finger": 0.0075}       # m: the capsules a body part is tested with
@@ -141,6 +142,15 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         os.makedirs(self.out_dir, exist_ok=True)
         self.rig = None
         self.snapshots = {}
+        # every working step timed and counted, nested as they call each other (steps.json, examples/steps_view.py)
+        self.steps = Steps()
+        self.steps.wrap(self, LAB_STEPS)
+
+    def _cnt(self, name, k=1):
+        """An iteration count on the step running now."""
+        st = getattr(self, "steps", None)
+        if st is not None:
+            st.count(name, k)
 
     # --- where it may write ----------------------------------------------------------------------------------
     def _own(self, path):
@@ -601,11 +611,12 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         return {"wrist_off_target_cm": round(miss, 2)}
 
     def snapshot(self, action, name):
-        """save or load a named pose (the arms' bones and the rifle's parts)."""
+        """save or load a named pose (the arms' bones and the rifle's parts). While _snap_gun is set (a solve that
+        moves the gun, Step C), the gun's place rides too; otherwise a load leaves the gun where it is."""
         self._need()
         if action == "save":
             self.snapshots[name] = ({pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones}, dict(self.travel),
-                                    dict(getattr(self, "_clav_now", {})))
+                                    dict(getattr(self, "_clav_now", {})), self.rifle_rest.copy())
             return {"saved": name}
         if name not in self.snapshots:
             raise ValueError("no snapshot %r; saved: %s" % (name, list(self.snapshots)))
@@ -616,6 +627,8 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
             pb.location, pb.rotation_quaternion = bones[pb.name]
             pb.scale = self.idle[pb.name][2]
         self.travel = dict(travel)
+        if getattr(self, "_snap_gun", False) and len(self.snapshots[name]) > 3:
+            self.rifle_rest = self.snapshots[name][3].copy()
         bpy.context.view_layer.update()
         self._place_rifle()
         return {"loaded": name}
@@ -2855,7 +2868,12 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         out, bad, planes = {}, [], {}
         asin = lambda x: math.degrees(math.asin(max(-1.0, min(1.0, x))))
         for fi in ("index", "middle", "ring", "pinky"):
-            pts = [b(fi, "01") - wrist_to_knuckle, b(fi, "01"), b(fi, "02"), b(fi, "03"), self._finger_tip(fi, s)]
+            # the knuckle's side swing is read against the finger's own metacarpal (the bones fan out from the wrist;
+            # against the middle finger's line an open pinky read 29 degrees, against its own 5). A rig without
+            # metacarpal bones: the old line, parallel to the middle finger's
+            mc = self._n("finger", s, fi, "metacarpal")
+            base = self._bw(mc).translation if mc in self.arm.pose.bones else b(fi, "01") - wrist_to_knuckle
+            pts = [base, b(fi, "01"), b(fi, "02"), b(fi, "03"), self._finger_tip(fi, s)]
             d1, d2 = pts[2] - pts[1], pts[4] - pts[1]
             n = d1.cross(d2)
             if n.length < 0.26 * d1.length * d2.length:   # under about 15 degrees of curl: no plane of its own

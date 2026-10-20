@@ -70,6 +70,7 @@ if a.bone_edits:
 rigs = os.path.join(a.out, "bench_rigs.json")
 json.dump(rig, open(rigs, "w"), indent=1)
 L = PL.Lab(rigs, a.out)
+L.steps.phase("load the arms and the handle")
 L.load_rig("bench")
 # the handle leaned: its top forward by tilt_deg about the view's right (a grip, a joystick, a hammer held up)
 lean = Quaternion(PL.VIEW_RIGHT, math.radians(-a.tilt_deg))
@@ -79,6 +80,7 @@ bpy.context.view_layer.update()
 
 out = {"case": "cylinder", "diameter_cm": 3.5, "length_cm": 12.0}
 t0 = time.time()
+L.steps.phase("the object read")
 obj = L.read_object(parts=["Root"])
 out["reader"] = L.object_summary()
 runs = obj["parts"]["Root"]["runs"]
@@ -91,6 +93,7 @@ out["regions_cm2"] = L.object_regions(marks)
 out["read_s"] = round(time.time() - t0, 2)
 
 # the contact read's speed, as the search pays it each try
+L.steps.phase("contact read timing (5 reads)")
 t1 = time.time()
 for _ in range(5):
     L.contact_pairs("r", other=False, cover_regions=["back", "front", "side_a", "side_b", "end"])
@@ -101,6 +104,7 @@ plan = {fi: {"pose": "wrap", "max_curl": [90.0, 100.0, 80.0]} for fi in WRAP if 
 plan["thumb"] = {"pose": "wrap", "max_curl": [0.0, 55.0, 80.0]}
 L.snapshot("save", "_seed")
 tries = []
+L.steps.phase("starts (24 turns, settled, closed, scored)")
 t2 = time.time()
 for roll, flip in [(r_, f_) for f_ in (False, True) for r_ in range(0, 360, 30)]:
     L.snapshot("load", "_seed")
@@ -183,6 +187,7 @@ out["seed_s"] = round(time.time() - t2, 1)
 # the search from the best starts in turn (the arm's excess first, then the score), the best hold kept, stopping
 # as soon as one passes the gate: a random search can miss what another run meets, and a try is cheap now
 t3 = time.time()
+L.steps.phase("the target solver from the best starts")
 order = sorted(tries, key=lambda t_: (t_[2], t_[0]))[: a.restarts]
 best = None
 out["restarts"] = []
@@ -220,6 +225,7 @@ if os.environ.get("BENCH_DEBUG"):
     print("DBG arm", {k: rep__.get(k) for k in ("wrist_bend_deg", "forearm_rotation_deg", "elbow_bend_deg")})
 out["hold"], out["gate"] = best
 out["search_s"] = round(time.time() - t3, 1)
+L.steps.phase("contact map and pictures")
 cm = L.contact_map(("r",), marks=marks)
 out["contact"] = {"hands": cm["hands"], "regions": {k: v for k, v in cm["regions"].items() if not k.startswith("other")},
                   "pairs": cm["pairs"][:12]}
@@ -227,6 +233,8 @@ centre = L._obj_frame("Root") @ Vector(runs[0]["sections"][len(runs[0]["sections
 out["pictures"] = L.contact_pictures(os.path.join(a.out, "bench_cylinder"), centre=list(centre), frame_part="Root",
                                      kinds=("hand", "heat", "contact"), ortho_cm=24.0)
 json.dump(out, open(os.path.join(a.out, "bench_cylinder.json"), "w"), indent=1, default=str)
+L.steps.end_all()
+out["steps_s"] = L.steps.write(os.path.join(a.out, "steps.json"), {"run": "hold bench: cylinder", "restarts": a.restarts})["wall_s"]
 json.dump(out, open(os.path.join(a.out, "bench_cylinder.json"), "w"), indent=1, default=str)
 print("BENCH cylinder gate %s, walls %s, solve %.1f s, all starts %.0f s, contact read %.3f s" % (out["gate"]["pass"], out["hold"].get("walls"), out["hold"]["try_s"],
                                                                          out["search_s"], out["contact_read_s"]))
