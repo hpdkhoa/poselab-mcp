@@ -22,7 +22,7 @@ import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 
-from contactlab import CLIP_NOISE_CM2
+from contactlab import CLIP_NOISE_CM2, SKIN_GIVE, _lab_key
 
 # the shoulder girdle: the sternoclavicular joint's range, a working share of it kept
 CLAVICLE = {"protraction_deg": 15.0, "retraction_deg": 20.0, "elevation_deg": 30.0, "depression_deg": 8.0,
@@ -1284,100 +1284,6 @@ class HoldMixin:
         W = self._bw(self._n("hand", side)).translation
         return (E - S).length, (W - E).length, (W - S).length
 
-    def arm_comfort(self, side, gun_shift=None, gun_most_cm=(5.0, 3.0, 5.0)):
-        """Step C: the elbow's swing and the shoulder girdle set by a fixed step search on the joint angles alone,
-        the hand kept where it is: J = (wrist bend / 10)^2 + (forearm roll / 30)^2 + (girdle share)^2, every step
-        inside the angle walls. With gun_shift (a function that moves the gun by a world vector in metres, the
-        first hand's solve only: the other hand is not on it yet), the gun's place in the ready hold is solved
-        too, the hand carried with it, the gun still pointing forward: right/left, forward/back and up/down, at most
-        gun_most_cm (right, forward, up) either way from where Step B put it. The ready hold has no sight line to
-        keep (owner, 2026-10-20: the ready place is solved, not the style's guess; the muzzle is not tipped down).
-        These moves are on joint angles, where no distance field gives a direction, so they stay a fixed step
-        search (4, 2, 1). Returns J's parts after and the gun's shift (cm, right, forward, up)."""
-        hn = self._n("hand", side)
-        rest0 = self.rifle_rest.translation.copy()
-
-        Lm = self._limits()[0]
-
-        def past_range():
-            """How far the wrist is past its joint range (degrees; 0 inside): flexion, extension, radial, ulnar."""
-            rep_ = self._arm_report(side, Lm)[0]
-            fl, dv = rep_.get("wrist_flexion_deg", 0.0), rep_.get("wrist_radial_deg", 0.0)
-            return max(0.0, fl - Lm["wrist_flexion_deg"], -fl - Lm["wrist_extension_deg"],
-                       dv - Lm["wrist_radial_deg"], -dv - Lm["wrist_ulnar_deg"])
-
-        def parts():
-            rep_ = self._arm_report(side, Lm)[0]
-            w = abs(rep_.get("wrist_bend_deg", 0.0) or 0.0)
-            roll = abs(rep_.get("forearm_rotation_deg", 0.0) or 0.0)
-            cl = getattr(self, "_clav_now", {}).get(side, (0.0, 0.0))
-            share = max(abs(cl[0]) / (CLAVICLE["protraction_deg"] if cl[0] >= 0 else CLAVICLE["retraction_deg"]),
-                        abs(cl[1]) / (CLAVICLE["elevation_deg"] if cl[1] >= 0 else CLAVICLE["depression_deg"]))
-            return w, roll, share
-
-        def J():
-            # the wrist past its joint range is a wall: its message carries no measure the wall check can compare,
-            # so its excess leads the aim (each degree past outweighs the comfort terms) until it is 0
-            w, roll, share = parts()
-            return 100.0 * past_range() + (w / 10.0) ** 2 + (roll / 30.0) ** 2 + share ** 2
-
-        def swing(st):
-            self._swing_elbow(side, st * 2.0)
-            self._roll_forearm(side)
-
-        def girdle(k):
-            def mv(st):
-                keep = self._bw(hn).copy()
-                if not hasattr(self, "_clav_now"):
-                    self._clav_now = {}
-                pr, el = self._clav_now.get(side, (0.0, 0.0))
-                pr, el = (pr + st, el) if k == 0 else (pr, el + st)
-                got = self.shoulder(side, pr, el)
-                self._clav_now[side] = (got["protraction_deg"], got["elevation_deg"])
-                self._put_hand(side, keep)
-            return mv
-        from lab import VIEW_FWD, VIEW_RIGHT, VIEW_UP     # noqa: E402  (lab imports this module)
-        axes = (VIEW_RIGHT, VIEW_FWD, VIEW_UP)
-
-        def shifted():
-            d = self.rifle_rest.translation - rest0
-            return [d.dot(a) * 100.0 for a in axes]
-
-        def gun(k):
-            def mv(st):
-                d_cm = st * 0.5                             # a step of 4 moves the gun 2 cm
-                if abs(shifted()[k] + d_cm) > gun_most_cm[k] + 1e-6:
-                    return
-                v = Vector(axes[k]) * (d_cm / 100.0)
-                H = self._bw(hn).copy()
-                gun_shift(v)
-                self._put_hand(side, Matrix.Translation(v) @ H)
-            return mv
-        w0_, r0_, s0_ = parts()
-        moves = [swing, girdle(0), girdle(1)] + ([gun(0), gun(1), gun(2)] if gun_shift is not None else [])
-        self._snap_gun = gun_shift is not None              # an undone step puts the gun back too
-        try:
-            self._descend(J, moves, side, False, steps=(4.0, 2.0, 1.0), angles_only=True)
-        finally:
-            self._snap_gun = False
-        if gun_shift is not None:
-            gun_shift(Vector((0.0, 0.0, 0.0)))              # the caller's caches follow the gun's last place
-        w, roll, share = parts()
-        return {"wrist_deg": round(w, 1), "roll_deg": round(roll, 1), "girdle_share": round(share, 2), "J": round(J(), 3),
-                "gun_shift_cm": [round(x, 2) for x in shifted()],
-                "wrist_past_range_deg": round(past_range(), 1),
-                "wrist_flexion_deg": self._arm_report(side, Lm)[0].get("wrist_flexion_deg"),
-                "wrist_radial_deg": self._arm_report(side, Lm)[0].get("wrist_radial_deg"),
-                "before": {"wrist_deg": round(w0_, 1), "roll_deg": round(r0_, 1), "girdle_share": round(s0_, 2)}}
-
-    def rest_on_other(self, side):
-        """The hand laid on the other hand (a support hand over the firing fingers), calculated (v0.10.0): the
-        smallest shift that takes every skin point of this hand out of the other hand and out of the object past
-        their give, the palm still meeting the object (settle_palm with other). Returns the shift (cm) and the
-        gap left."""
-        gap, _touch, moved = self.settle_palm(side, other=True)
-        return {"shift_cm": moved, "palm_gap_cm": gap}
-
     BODY_LABELS = ("palm", "palm_side", "palm_back", "web", "forearm")
 
     def start_check(self, side, other=True):
@@ -1410,54 +1316,6 @@ class HoldMixin:
             w["reach:short of a 1 cm margin"] = round(1.0 - margin, 2)
         return (not w), {k: round(float(v), 2) for k, v in w.items()}, round(margin, 2)
 
-    def align_to_forearm(self, side, mark, rounds=4, most_deg=45.0):
-        """Step A2: the hand turned about its grip's axis until its long line (wrist to the middle knuckle) lies as
-        near the forearm's line as that turn allows: the gun in line with the forearm (FM 3-23.35, the grip). The
-        turn is solved, not searched: psi = atan2((g x h_perp) . f, h_perp . f) (contactsolve.align_turn), g the
-        run's axis, h the hand's line, f the forearm's. That lines up the total bend only; the wrist's range parts
-        (flexion 80, extension 70, radial 20, ulnar 30) are walls too, so the turn is then chosen from the closed
-        form of all four for every turn in range (contactsolve.best_wrist_turn: 100 per degree past a wall plus
-        (bend / 10)^2). The arm then reaches the turned hand, which moves the forearm a little, so the turn is
-        solved again, at most `rounds` times, at most most_deg in all. Returns the turn and the wrist's bend and
-        its parts before and after."""
-        import contactsolve as CS
-        run = self._object["parts"][mark["part"]]["runs"][mark.get("run", 0)]
-        RW = self._run_world(run)
-        g = RW["axis"].normalized()
-        o = RW["inner"]
-        hn = self._n("hand", side)
-        b = lambda part: self._bw(self._n(part, side)).translation      # noqa: E731
-
-        Lm = self._limits()[0]
-        fk = lambda fi: self._bw(self._n("finger", side, fi, "01")).translation      # noqa: E731
-
-        def bend():
-            W, E = b("hand"), b("lowerarm")
-            K = fk("middle")
-            return math.degrees((K - W).angle(W - E)), K - W, W - E, fk("index") - fk("pinky")
-
-        def parts_now():
-            _b_, h, f, ts = bend()
-            tot, fl, dv = CS.wrist_parts(list(f), list(h), list(ts), left=(side == "l"))
-            return {"total_deg": round(tot, 1), "flexion_deg": round(fl, 1), "radial_deg": round(dv, 1),
-                    "past_deg": round(CS.wrist_past(tot, fl, dv, Lm), 1)}
-        before = bend()[0]
-        before_parts = parts_now()
-        total, n = 0.0, 0
-        for n in range(1, rounds + 1):
-            _b0, h, f, ts = bend()
-            d, _p, _past = CS.best_wrist_turn(list(f), list(h), list(ts), list(g), Lm, -most_deg - total,
-                                              most_deg - total, left=(side == "l"))
-            if abs(d) < 0.5:
-                break
-            H = self._bw(hn).copy()
-            M = Matrix.Translation(o) @ Matrix.Rotation(math.radians(d), 4, g) @ Matrix.Translation(-o) @ H
-            self._put_hand(side, Matrix.LocRotScale(M.translation, M.to_quaternion(), self._unit()))
-            bpy.context.view_layer.update()
-            total += d
-        return {"turn_deg": round(total, 1), "wrist_before_deg": round(before, 1), "wrist_after_deg": round(bend()[0], 1),
-                "rounds": n, "parts_before": before_parts, "parts_after": parts_now()}
-
     def open_fingers(self, side, index_straight=False):
         """The fingers opened from the rig's bind pose (a relaxed hand, each finger in its own plane), then uncurled
         flat: the idle pose's fingers can sit swung out of their plane (the shared arms' left hand by about 35
@@ -1475,74 +1333,391 @@ class HoldMixin:
                 self._set_curl(side, fi, j, cc, FL)
         bpy.context.view_layer.update()
 
-    def direct_hold(self, side, marks, palm_dir, glove_cm=0.0, other=True, wrap=None, rest_on_hand=False, gun_shift=None):
-        """The direct hold: Step A, the hand placed on its mark from palm_dir (the grip style's contact face, object
-        frame) with no turn, its web under the web point, the fingers open, the index straight when it lies along
-        the guard (from the rig's bind pose: open_fingers); the palm settled and, with rest_on_hand, laid on the
-        other hand, both by a calculated shift (settle_palm). Step C, the arm (and, with gun_shift, the gun along the
-        sight line). The valid-start rule judges the arm and the hand's body: an invalid start is reported with its
-        walls and nothing more is done. Step D, the fingers closed by calculated angles (contactsolve), the index
-        and the thumb onto their lines, the fingers relaxed; the fingers are judged by every wall at the end.
-        Returns the steps' numbers, the walls before and after the fingers and the gate's purposes."""
+    # --- the direct hold (v0.11.0). The owner's words (2026-10-20): "place the hand directly on the gun at the position
+    # you got from the document/research paper, then from there you adjust the wrist, the arm, the elbow and the
+    # shoulder", and "look at the points on the hand that touch the part of the gun, like the grip the trigger ring and
+    # other touchable parts". docs/DIRECT_HOLD_PLAN.md has the equations ---------------------------------------------
+    def _pairs_world(self, pairs):
+        """Touch pairs from the gun's frame into the world as the gun sits now: each pair's "at" and "normal" are
+        in the frame of its "part" (the gun's body by default), so they ride the gun when it moves."""
+        out = []
+        for p in pairs:
+            F = self._obj_frame(p.get("part", "Root"))
+            q = dict(p)
+            if "at" in p:
+                q["at_w"] = F @ Vector(p["at"])
+                q["normal_w"] = (F.to_3x3() @ Vector(p["normal"])).normalized()
+            if "dir" in p:
+                q["dir_w"] = (F.to_3x3() @ Vector(p["dir"])).normalized()
+            out.append(q)
+        return out
+
+    def touch_report(self, side, pairs):
+        """How far each hand touch point is from its place on the gun (cm), and how far each hand line is turned
+        from its direction (degrees), as the hand and the gun are posed now."""
+        rep_ = {}
+        f0 = self._palm_facing(side)
+        for p in self._pairs_world(pairs):
+            if "at" in p:
+                T = p["at_w"] + p["normal_w"] * (p.get("off_cm", 0.0) / 100.0)
+                if not p.get("facing_only"):
+                    rep_[p["hand"]] = round((self._anchor(side, p["hand"]) - T).length * 100.0, 2)
+                if p["hand"] == "palm":
+                    rep_["palm facing (deg)"] = round(math.degrees(f0.angle(-p["normal_w"])), 1)
+            else:
+                a, b = p["line"]
+                v = self._anchor(side, b) - self._anchor(side, a)
+                rep_["%s to %s (deg)" % (a, b)] = round(math.degrees(v.angle(p["dir_w"])), 1)
+        return rep_
+
+    def touch_fit(self, side, pairs, other=False, rounds=25):
+        """Step A, solved by formula with no pose set: the hand, as one rigid body with its fingers open, moved
+        and turned so each hand touch point sits on its touch point on the gun, as near as the hand's shape lets
+        all of them at once, and no skin of the hand's body past its give (the walls, never traded):
+
+            min  sum_k w_k |p_k + t + w x (p_k - c) - T_k|^2          (the touch pairs; a palm pair also aims the
+                                                                          palm's facing into the surface)
+            with n_i . (t + w x (p_i - c)) >= -give_i + 0.03 cm - d_i  (each body skin point i, d_i its distance)
+                 -n_h . (t + w x (q_j - c)) >= depth_j - give_j + 0.03  (each gun point j inside the flesh)
+                 (and, with other, the body skin kept out of the other hand past the skin's give)
+
+        a constrained least squares (contactsolve.constrained_fit), linear in (t, w), so solved again on the moved
+        points until the move is under 0.1 mm and 0.05 degrees. The start is the closed form fit of the pairs alone
+        (Kabsch). Returns the hand's matrix in the world (not posed), each pair's distance after (cm), the walls'
+        largest unmet row (cm) and the rounds."""
+        import contactsolve as CS
+        hn = self._n("hand", side)
+        H0 = self._bw(hn).copy()
+        Hi = np.array(H0.inverted())
+        tf = lambda M, X: X @ M[:3, :3].T + M[:3, 3]       # noqa: E731
+        pw = self._pairs_world(pairs)
+        names = sorted({p["hand"] for p in pw if "at" in p} | {n for p in pw if "line" in p for n in p["line"]})
+        loc = {n: tf(Hi, np.array(list(self._anchor(side, n)))[None, :])[0] for n in names}
+        f_loc = Hi[:3, :3] @ np.array(list(self._palm_facing(side)))
+        P, N, _A, _b, _t = self._skin_arrays()
+        idx, lab = self._hand_label_arrays(side, P, N)
+        body = [(int(i), l_) for i, l_ in zip(idx, lab) if l_ in ("palm", "palm_side", "palm_back", "web")]
+        Pb = tf(Hi, P[[i for i, _l in body]])
+        gb = np.array([SKIN_GIVE[_lab_key(l_)] if _lab_key(l_) in SKIN_GIVE else SKIN_GIVE["default"] for _i, l_ in body])
+        if side not in getattr(self, "_pierce_static", {}):
+            self.contact_pairs(side, other=False)
+        th_, vi_, polys_ = self._pierce_static[side]
+        Ph = tf(Hi, P[vi_])
+        labs_all = dict(zip(idx.tolist(), lab))
+        SW = self._object_now()[2]
+        oh = None
+        if other:
+            o = "r" if side == "l" else "l"
+            oh = self._other_hand_bvh(o, P, N)
+
+        def aims(M):
+            """The aim rows (J, r) for the hand at M: each pair's point onto its place, the palm's facing."""
+            J, r = [], []
+            c = M[:3, 3]
+            for p in pw:
+                w = math.sqrt(float(p.get("weight", 1.0)))
+                if "at" in p:
+                    T = np.array(list(p["at_w"] + p["normal_w"] * (p.get("off_cm", 0.0) / 100.0)))
+                    x = tf(M, loc[p["hand"]][None, :])[0]
+                    if p.get("facing_only"):
+                        T = x                                   # the place is free; only the facing is aimed
+                    J.append(w * CS.rigid_rows(x[None, :], c))
+                    r.append(w * (T - x))
+                    if p["hand"] == "palm":
+                        f = M[:3, :3] @ f_loc
+                        n_ = np.array(list(p["normal_w"]))
+                        J.append(w * CS.rigid_rows((x + f * 0.03)[None, :], c))
+                        r.append(w * ((T - n_ * 0.03) - (x + f * 0.03)))
+                else:
+                    a = tf(M, loc[p["line"][0]][None, :])[0]
+                    b = tf(M, loc[p["line"][1]][None, :])[0]
+                    # a direction only: the line's two ends aimed along dir about their own middle
+                    m_, d_, half = (a + b) / 2.0, np.array(list(p["dir_w"])), np.linalg.norm(b - a) / 2.0
+                    for s_, x in ((-1.0, a), (1.0, b)):
+                        J.append(w * CS.rigid_rows(x[None, :], c))
+                        r.append(w * ((m_ + s_ * d_ * half) - x))
+            return np.concatenate(J), np.concatenate(r)
+
+        def walls(M):
+            """The wall rows (A, b) for the hand at M, and the deepest skin and flesh reading (cm)."""
+            c = M[:3, 3]
+            A, b, worst = [], [], 0.0
+            Xb = tf(M, Pb)
+            D, _w, Nr = self.sdf_query(Xb)
+            near = D < 1.5
+            for x, d, n_, g_ in zip(Xb[near], D[near], Nr[near], gb[near]):
+                A.append(np.r_[n_, np.cross(x - c, n_)])
+                b.append((-g_ + 0.03 - d) / 100.0)
+                worst = max(worst, -d - g_)
+            Xh = tf(M, Ph)
+            for k_, (dq, lq, t3) in self._pierced_samples(side, Xh, th_, polys_, SW, labs_all, whole=True).items():
+                if lq not in ("palm", "palm_side", "palm_back", "web"):
+                    continue                                    # a finger's flesh: Step D's
+                g_ = SKIN_GIVE.get(_lab_key(lq), SKIN_GIVE["default"])
+                if dq <= g_ - 0.05:
+                    continue
+                tri = Xh[list(polys_[t3])]
+                nh = np.cross(tri[1] - tri[0], tri[2] - tri[0])
+                if np.linalg.norm(nh) < 1e-12:
+                    continue
+                nh = -nh / np.linalg.norm(nh)
+                A.append(np.r_[nh, np.cross(SW[k_] - c, nh)])
+                b.append((dq - g_ + 0.03) / 100.0)
+                worst = max(worst, dq - g_)
+            if oh is not None:
+                hb, _ts, _ol, olo, ohi = oh
+                for x in Xb[np.all((Xb >= olo) & (Xb <= ohi), axis=1)]:
+                    v = Vector(x)
+                    l2, n2, _ti, d2 = hb.find_nearest(v, 0.03)
+                    if l2 is None:
+                        continue
+                    w_ = v - l2
+                    inside = w_.dot(n2) < 0.0
+                    dd = -d2 if inside else d2
+                    nv = np.array(list((-w_ if inside else w_).normalized() if w_.length > 1e-9 else n2))
+                    A.append(np.r_[nv, np.cross(x - c, nv)])
+                    b.append(-0.003 + 0.0003 - dd)
+                    worst = max(worst, -dd * 100.0 - 0.3)
+            return (np.array(A) if A else None), (np.array(b) if b else None), worst
+
+        # the start: the pairs alone, in closed form (weighted Kabsch on the pair points and the palm's facing)
+        M = np.array(H0)
+        src, dst, wts = [], [], []
+        for p in pw:
+            if "at" in p:
+                T = np.array(list(p["at_w"] + p["normal_w"] * (p.get("off_cm", 0.0) / 100.0)))
+                x = tf(M, loc[p["hand"]][None, :])[0]
+                if p.get("facing_only"):
+                    T = x
+                src.append(x)
+                dst.append(T)
+                wts.append(float(p.get("weight", 1.0)))
+                if p["hand"] == "palm":
+                    src.append(x + (M[:3, :3] @ f_loc) * 0.03)
+                    dst.append(T - np.array(list(p["normal_w"])) * 0.03)
+                    wts.append(float(p.get("weight", 1.0)))
+            else:
+                # a hand line: its two ends onto the line's direction about their own middle (a direction only)
+                a = tf(M, loc[p["line"][0]][None, :])[0]
+                b = tf(M, loc[p["line"][1]][None, :])[0]
+                m_, d_, half = (a + b) / 2.0, np.array(list(p["dir_w"])), np.linalg.norm(b - a) / 2.0
+                src += [a, b]
+                dst += [m_ - d_ * half, m_ + d_ * half]
+                wts += [float(p.get("weight", 1.0))] * 2
+        if len(src) >= 3:
+            S_, D_, w_ = np.array(src), np.array(dst), np.array(wts) / sum(wts)
+            cs, cd = (S_ * w_[:, None]).sum(0), (D_ * w_[:, None]).sum(0)
+            U, _s, Vt = np.linalg.svd(((S_ - cs) * w_[:, None]).T @ (D_ - cd))
+            R = Vt.T @ np.diag([1.0, 1.0, np.sign(np.linalg.det(Vt.T @ U.T))]) @ U.T
+            K_ = np.eye(4)
+            K_[:3, :3] = R
+            K_[:3, 3] = cd - R @ cs
+            M = K_ @ M
+        # the pairs' own geometry, before any wall: the distance between each two hand touch points against the
+        # distance between their two places on the gun (a hand that cannot meet both at once shows here), and the
+        # closed form fit's distances with no wall
+        geo = {}
+        pts_ = [p for p in pw if "at" in p and not p.get("facing_only")]
+        for i_ in range(len(pts_)):
+            for j_ in range(i_ + 1, len(pts_)):
+                a_, b_ = pts_[i_], pts_[j_]
+                Ta = np.array(list(a_["at_w"] + a_["normal_w"] * (a_.get("off_cm", 0.0) / 100.0)))
+                Tb = np.array(list(b_["at_w"] + b_["normal_w"] * (b_.get("off_cm", 0.0) / 100.0)))
+                pa_, pb_ = tf(M, loc[a_["hand"]][None, :])[0], tf(M, loc[b_["hand"]][None, :])[0]     # world: the bone's frame is scaled
+                geo["%s-%s" % (a_["hand"], b_["hand"])] = {"on_the_hand_cm": round(float(np.linalg.norm(pa_ - pb_)) * 100.0, 2),
+                                                           "on_the_gun_cm": round(float(np.linalg.norm(Ta - Tb)) * 100.0, 2)}
+        free = {}
+        for p in pts_:
+            T = np.array(list(p["at_w"] + p["normal_w"] * (p.get("off_cm", 0.0) / 100.0)))
+            free[p["hand"]] = round(float(np.linalg.norm(tf(M, loc[p["hand"]][None, :])[0] - T)) * 100.0, 2)
+        for p in pw:
+            if "line" in p:
+                a = tf(M, loc[p["line"][0]][None, :])[0]
+                b = tf(M, loc[p["line"][1]][None, :])[0]
+                free["%s to %s (deg)" % tuple(p["line"])] = round(math.degrees(math.acos(max(-1.0, min(1.0, float(
+                    (b - a) @ np.array(list(p["dir_w"]))) / max(1e-12, float(np.linalg.norm(b - a))))))), 1)
+        n_round, viol = 0, 0.0
+        for n_round in range(1, rounds + 1):
+            self._cnt("fit rounds")
+            J, r = aims(M)
+            A, b, _worst = walls(M)
+            x, viol, _x0 = CS.constrained_fit(J, r, A, b)
+            ang = float(np.linalg.norm(x[3:]))
+            if ang > math.radians(20.0):
+                x = x * (math.radians(20.0) / ang)
+                ang = math.radians(20.0)
+            c = M[:3, 3].copy()
+            R = np.array(Matrix.Rotation(ang, 3, Vector(list(x[3:] / ang)))) if ang > 1e-12 else np.eye(3)
+            K_ = np.eye(4)
+            K_[:3, :3] = R
+            K_[:3, 3] = c - R @ c + x[:3]
+            M = K_ @ M
+            if np.linalg.norm(x[:3]) < 1e-4 and ang < math.radians(0.05):
+                break
+        _A, _b, worst = walls(M)
+        dist = {}
+        for p in pw:
+            if "at" in p and not p.get("facing_only"):
+                T = np.array(list(p["at_w"] + p["normal_w"] * (p.get("off_cm", 0.0) / 100.0)))
+                dist[p["hand"]] = round(float(np.linalg.norm(tf(M, loc[p["hand"]][None, :])[0] - T)) * 100.0, 2)
+            elif "line" in p:
+                a = tf(M, loc[p["line"][0]][None, :])[0]
+                b = tf(M, loc[p["line"][1]][None, :])[0]
+                dist["%s to %s (deg)" % tuple(p["line"])] = round(math.degrees(math.acos(max(-1.0, min(1.0, float(
+                    (b - a) @ np.array(list(p["dir_w"]))) / max(1e-12, float(np.linalg.norm(b - a))))))), 1)
+            if p.get("hand") == "palm":
+                f = M[:3, :3] @ f_loc
+                dist["palm facing (deg)"] = round(math.degrees(math.acos(max(-1.0, min(1.0, float(
+                    -(f / np.linalg.norm(f)) @ np.array(list(p["normal_w"]))))))), 1)
+        return Matrix([list(row) for row in M]), {"pair_cm": dist, "pairs_alone_cm": free, "pair_geometry": geo,
+                                                  "walls_unmet_cm": round(viol * 100.0, 3),
+                                                  "deepest_past_give_cm": round(worst, 3), "rounds": n_round}
+
+    def _place_arm(self, side, H, elbow):
+        """The arm posed onto the hand matrix H with its elbow at `elbow` (the two-bone solve with that pole), the
+        hand turned to H, the forearm's roll spread."""
+        hn = self._n("hand", side)
+        self._two_bone(side, H.translation, pole_world=Vector(list(elbow)))
+        self._set_world(hn, Matrix.LocRotScale(self._bw(hn).translation, H.to_quaternion(), self._unit()))
+        self._roll_forearm(side)
+        bpy.context.view_layer.update()
+
+    def body_solve(self, side, H, gun_shift=None, box_cm=(5.0, 3.0, 5.0), step_cm=1.0, f_pref=20.0, verify=12):
+        """Steps B and C, solved by formula (bodysolve): the hand fixed on the gun at H (Step A); for every gun
+        place in the box (right, forward, up from where it is, the ready place: only with gun_shift, the firing
+        hand's solve), every shoulder girdle setting and every elbow swing, each arm wall is worked out with the
+        walls' own formulas; the bodies inside every wall are ranked by comfort (no wall in it). The best is posed
+        and read by the real walls; when the real walls find one the formulas cannot (a forearm link, the wrist's
+        twist), the next is posed, at most `verify` of them. Returns what was chosen and why, or the nearest walls
+        when no body keeps them all."""
+        import bodysolve as BS
+        from lab import VIEW_FWD, VIEW_RIGHT, VIEW_UP
+        Lm = self._limits()[0]
+        hn = self._n("hand", side)
+        up_, lo_ = self._n("upperarm", side), self._n("lowerarm", side)
+        l1 = (self._bw(lo_).translation - self._bw(up_).translation).length
+        l2 = (self._bw(hn).translation - self._bw(lo_).translation).length
+        # the hand's points in its own frame (the knuckles ride the hand bone)
+        Hn = self._bw(hn)
+        Hi = Hn.inverted()
+        kn = {k: Hi @ self._anchor(side, k) for k in ("knuckle", "index_knuckle", "pinky_knuckle")}
+        ax = [np.array(list(v)) for v in (VIEW_RIGHT, VIEW_FWD, VIEW_UP)]
+        steps_ = [np.arange(-b, b + 1e-9, step_cm) for b in box_cm] if gun_shift is not None else [np.zeros(1)] * 3
+        hand_at = []
+        for a_ in steps_[0]:
+            for b_ in steps_[1]:
+                for c_ in steps_[2]:
+                    v = (ax[0] * a_ + ax[1] * b_ + ax[2] * c_) / 100.0
+                    Hw = Matrix.Translation(Vector(list(v))) @ H
+                    hand_at.append((np.array([a_, b_, c_]), np.array(list(Hw.translation)),
+                                    np.array(list(Hw @ kn["knuckle"])), np.array(list(Hw @ kn["index_knuckle"])),
+                                    np.array(list(Hw @ kn["pinky_knuckle"]))))
+        # the girdle's settings: where each puts the shoulder (read off the rig once each) and its share of its range
+        self.snapshot("save", "_body0")
+        girdles = []
+        for pr in (-10.0, -5.0, 0.0, 5.0, 10.0, 15.0):
+            for el in (-6.0, 0.0, 6.0, 12.0, 18.0):
+                got = self.shoulder(side, pr, el)
+                share = max(abs(got["protraction_deg"]) / (CLAVICLE["protraction_deg"] if pr >= 0 else CLAVICLE["retraction_deg"]),
+                            abs(got["elevation_deg"]) / (CLAVICLE["elevation_deg"] if el >= 0 else CLAVICLE["depression_deg"]))
+                girdles.append(((got["protraction_deg"], got["elevation_deg"]), np.array(list(self._bw(up_).translation)), share))
+        self.snapshot("load", "_body0")
+        cands, n_all = BS.solve_body(hand_at, girdles, l1, l2, side, Lm, ax[0], ax[1], f_pref, up=ax[2])
+        out = {"bodies_worked_out": n_all, "inside_every_wall": len(cands), "gun_places": len(hand_at),
+               "girdle_settings": len(girdles)}
+        if not cands:
+            out["result"] = "no body keeps every wall"
+            out["nearest"] = BS.nearest_walls(hand_at, girdles, l1, l2, side, Lm, ax[0], ax[1], up=ax[2])
+            return out
+        tried = []
+        for c in cands[:verify]:
+            self.snapshot("load", "_body0")
+            v = Vector(list((ax[0] * c["shift_cm"][0] + ax[1] * c["shift_cm"][1] + ax[2] * c["shift_cm"][2]) / 100.0))
+            if gun_shift is not None:
+                gun_shift(v)
+            self.shoulder(side, *c["girdle"])
+            if not hasattr(self, "_clav_now"):
+                self._clav_now = {}
+            self._clav_now[side] = c["girdle"]
+            self._place_arm(side, Matrix.Translation(v) @ H, c["elbow"])
+            rep_ = self._arm_report(side, Lm)[0]
+            real = {k: v_ for k, v_ in self.wall_faults(side, angles_only=True).items() if k.startswith("arm:")}
+            row = {"shift_cm": c["shift_cm"], "girdle": c["girdle"], "phi_deg": c["phi_deg"], "cost": round(c["cost"], 3),
+                   "formula": c["values"], "posed": {k: rep_.get(k) for k in ("elbow_bend_deg", "wrist_bend_deg",
+                                                                              "wrist_flexion_deg", "wrist_radial_deg",
+                                                                              "forearm_rotation_deg", "elbow_under_shoulder_cm")},
+                   "real_walls": real}
+            tried.append(row)
+            if not real:
+                out.update({"result": "chosen", "chosen": row, "tried": len(tried)})
+                return out
+            if gun_shift is not None:
+                gun_shift(-v)
+        self.snapshot("load", "_body0")
+        out.update({"result": "every body the formulas kept broke a wall the formulas cannot read", "tried_rows": tried})
+        return out
+
+    def direct_hold(self, side, marks, pairs, glove_cm=0.0, other=True, wrap=None, gun_shift=None, f_pref=20.0):
+        """The direct hold, in the owner's order (docs/DIRECT_HOLD_PLAN.md). Step A: the fingers open (the rig's
+        bind pose), the hand placed directly at its touch points on the gun (touch_fit, by formula). The hand is then
+        fixed on the gun. Steps B and C: the wrist, the arm, the elbow and the shoulder (and, with gun_shift, the
+        gun's ready place) solved by formula (body_solve). The valid-start rule (start_check). Step D: the fingers
+        closed by calculated angles, the thumb onto its line, the fingers relaxed and closed again on the posed skin.
+        Every step that poses is checked by the walls: a step that breaks a wall is undone, and a run that cannot
+        keep them stops here and says which. "trace": each touch point's distance from its place after each step.
+        Returns the steps' numbers, the walls and the gate's purposes."""
         import time as _time
         t0 = _time.time()
         m = next(x for x in marks if x.get("role") == "hold" and x.get("hand", side) == side)
         wrap = wrap or {fi: "wrap" for fi in ("index", "middle", "ring", "pinky")}
         closing = tuple(fi for fi, how in wrap.items() if how == "wrap" and fi != "thumb")
-        out = {"method": "direct", "steps": {}}
-        # Step A
-        out["steps"]["A_seat"] = self.seed_hold(side, m, palm_dir=palm_dir, roll_deg=0.0)
+        out = {"method": "direct (owner's order)", "steps": {}, "trace": []}
+
+        def mark(step):
+            out["trace"].append({"step": step, "touch": self.touch_report(side, pairs)})
+
+        def stop(why, walls):
+            out.update({"result": why, "walls": walls, "gate": False, "solve_s": round(_time.time() - t0, 1)})
+            return out
+        # Step A: the hand directly at its touch points (by formula), then fixed on the gun
         self.open_fingers(side, index_straight=wrap.get("index") == "straight")
-        # the turn that lines the hand up with the forearm and the move that takes the palm out of the gun pull
-        # against each other a little (the settle may turn the hand), so they run in turn until both hold
-        out["steps"]["A2_align"], out["steps"]["A_settle"] = [], []
-        for _ in range(3):
-            al_ = self.align_to_forearm(side, m)
-            g_, _t_, mv_ = self.settle_palm(side)
-            out["steps"]["A2_align"].append(al_)
-            out["steps"]["A_settle"].append({"palm_gap_cm": g_, "shift_cm": mv_, "rounds": list(getattr(self, "_settle_log", []))})
-            if abs(al_["turn_deg"]) < 2.0 and mv_ < 0.2:
-                break
-        if rest_on_hand:
-            out["steps"]["A_rest_on_other"] = self.rest_on_other(side)
-            out["steps"]["A_rest_on_other"]["rounds"] = list(getattr(self, "_settle_log", []))
-        # Step C
-        out["steps"]["C_arm"] = self.arm_comfort(side, gun_shift=gun_shift)
-        # the valid-start rule
+        H, fit = self.touch_fit(side, pairs, other=other)
+        out["steps"]["A_touch_fit"] = fit
+        # Steps B and C: the body to the fixed hand (by formula), posed and read by the real walls
+        body = self.body_solve(side, H, gun_shift=gun_shift, f_pref=f_pref)
+        out["steps"]["BC_body"] = body
+        if body.get("result") != "chosen":
+            return stop("no body reaches the hand inside the walls", body.get("nearest") or body.get("tried_rows"))
+        mark("hand placed, body solved")
         ok, walls, margin = self.start_check(side, other)
         out["start"] = {"valid": ok, "walls": walls, "reach_margin_cm": margin,
                         "body_clip_by": dict(getattr(self, "_start_by", {}))}
         if not ok:
-            out["result"] = "invalid start: no hold made"
-            out["walls"] = walls
-            out["gate"] = False
-            out["solve_s"] = round(_time.time() - t0, 1)
-            return out
-        # Step D
-        W = lambda f: self._walled(side, other, f)    # noqa: E731
+            return stop("invalid start: no hold made", walls)
+        # Step D: the fingers, every step inside the walls (a step that breaks one, or goes further past one, is
+        # undone; the step's own numbers and whether it was kept are reported)
+        def W(name, f):
+            res_ = {}
+            kept, _w = self._walled(side, other, lambda: res_.__setitem__("v", f()))
+            out["steps"][name] = {"kept": kept, "result": res_.get("v")}
         out["walls_before_fingers"] = {k: round(float(v), 2) for k, v in self.wall_faults(side, other).items()}
-        # the closing is calculated (contactsolve), so it is kept as solved and judged by the walls at the end
-        out["steps"]["D_close"] = self.conform_digits(side, closing, other=other)
-        if m.get("index") == "extended" and wrap.get("index") == "straight":
-            self._fit_index(side, m, glove_cm, other)
+        W("D_close", lambda: self.conform_digits(side, closing, other=other))
         if m.get("thumb") == "inline":
             o_ = "r" if side == "l" else "l"
             self._fit_thumb(side, m, glove_cm, along=self._thumb_dir(o_) if m["purpose"] == "support" else None, other=other)
         elif m.get("thumb") in ("wrap", "opposed"):
-            W(lambda: self._set_thumb_bend(side, 6.0, 4.0, self._thumb_limits()))
-            W(lambda: self.conform_digits(side, ("thumb",), other=other))
-            self._fit_thumb(side, m, glove_cm, inline=False, other=other)
-        W(lambda: self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb"))))
-        # the drawn skin bends at the joints a little unlike the rigid segments the solver turns, so a second
-        # closing reads the posed skin again (and the gun inside its flesh) and moves each segment by what is left
-        out["steps"]["D_close_again"] = self.conform_digits(side, closing, other=other)
+            W("D_thumb_bend", lambda: self._set_thumb_bend(side, 6.0, 4.0, self._thumb_limits()))
+            W("D_thumb_close", lambda: self.conform_digits(side, ("thumb",), other=other))
+        W("D_relax", lambda: self.relax_fingers(side, tuple(fi for fi in ("index", "middle", "ring", "pinky", "thumb"))))
+        W("D_close_again", lambda: self.conform_digits(side, closing, other=other))
+        mark("fingers")
         walls = self.wall_faults(side, other)
         sc, why = self._hold_score(side, marks, glove_cm, other, None, self._tree())
         g = self.hold_gate(marks, sides=(side,), glove_cm=glove_cm, skin=False, other=other)
         out.update({"score": round(sc, 2), "gate": bool(g.get(side, {}).get("pass")) and not walls,
                     "walls": {k: round(float(v), 2) for k, v in walls.items()}, **why})
         if walls:
-            out["result"] = "no hold inside the walls"
+            out["result"] = "the fingers could not keep every wall: the hold stops here"
         out["unmet"] = [{"purpose": r["purpose"], "why": {k: v for k, v in r.items() if k not in ("purpose", "met", "error", "hard", "why")}}
                         for r in why["purposes"] if not r["met"]]
         out["solve_s"] = round(_time.time() - t0, 1)

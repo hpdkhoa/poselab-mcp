@@ -102,12 +102,6 @@ check("the turn is about y by 0.2 rad", abs(x6[4] / Lr + 0.2) < 1e-4, x6)
 x3, viol3 = CS.min_shift(rows6[:, :3], np.array([0.01, 0.01]))
 check("a shift alone cannot meet a pinch", viol3 > 0.009, (x3, viol3))
 
-# 7. The turn about an axis that lines a direction up with another: h along x, f in the y-z plane at 30 degrees
-# from y, g along z: the best turn is 90 degrees, leaving the 30 degree tilt out of the plane
-psi, left = CS.align_turn([1, 0, 0], [0, math.cos(math.radians(30)), math.sin(math.radians(30))], [0, 0, 1])
-check("align turn is 90 degrees", abs(math.degrees(psi) - 90.0) < 1e-6, math.degrees(psi))
-check("align leaves the 30 degree tilt", abs(left - 30.0) < 1e-6, left)
-
 # 8. The wrist's parts: a hand bent 30 degrees toward the palm reads flexion 30, radial 0; toward the thumb, radial 30
 fore = [0.0, 1.0, 0.0]                         # forearm along +y; palm faces -z (right hand: thumb_side x hand)
 ts = [-1.0, 0.0, 0.0]
@@ -116,13 +110,6 @@ tot, fl, dv = CS.wrist_parts(fore, [0.0, math.cos(math.radians(30)), math.sin(ma
 check("a palm-ward bend reads as flexion", abs(tot - 30) < 1e-6 and abs(fl - 30) < 1e-6 and abs(dv) < 1e-6, (tot, fl, dv))
 tot, fl, dv = CS.wrist_parts(fore, [-math.sin(math.radians(30)), math.cos(math.radians(30)), 0.0], ts)
 check("a thumb-ward bend reads as radial", abs(tot - 30) < 1e-6 and abs(dv - 30) < 1e-6 and abs(fl) < 1e-6, (tot, fl, dv))
-# 9. The best turn: a hand bent 25 degrees toward the thumb (radial 25, past 20) about a turn axis along z: turning it
-# brings it in line; the best turn ends inside every wall
-lim = {"wrist_max_deg": 30.0, "wrist_flexion_deg": 80.0, "wrist_extension_deg": 70.0, "wrist_radial_deg": 20.0, "wrist_ulnar_deg": 30.0}
-h0 = [-math.sin(math.radians(25)), math.cos(math.radians(25)), 0.0]
-a, parts_, past = CS.best_wrist_turn(fore, h0, ts, [0, 0, 1], lim, -45, 45)
-check("the best turn clears the radial wall", past == 0.0 and abs(parts_[0]) < 0.5, (a, parts_, past))
-
 # 10. An object edge inside the flesh (no skin point sees it): an inner point at the tip, 0.5 cm past what is
 # allowed, its way out +z. Closing about +y takes the tip toward -z (deeper), so the joint opens until it is out
 far = lambda X: (np.full(len(X), 5.0), np.tile([0.0, 0.0, 1.0], (len(X), 1)))   # noqa: E731  (skin far from the object)
@@ -133,6 +120,18 @@ closed, touching, rounds, log = CS.chain_close({"01": seg}, {"01": np.zeros(3)},
 moved = CS.rodrigues(tip, np.zeros(3), np.array([0.0, 1.0, 0.0]), math.radians(closed["01"]))
 d_after = -0.5 + float((moved - tip)[0] @ np.array([0.0, 0.0, 1.0])) * 100.0
 check("an edge inside the flesh opens the joint", closed["01"] < 0.0 and d_after >= -press - 0.02, (closed, d_after))
+
+# 11. The constrained fit: a point pulled to (0, 0, -1 cm) by its aim, a wall row keeping it at z >= -0.4 cm: the fit
+# stops it on the wall; the shift alone (no turn needed)
+J = CS.rigid_rows(np.array([[0.0, 0.0, 0.0]]), np.zeros(3))
+x, viol, x0 = CS.constrained_fit(J, np.array([0.0, 0.0, -0.01]), np.array([[0, 0, 1.0, 0, 0, 0]]), np.array([-0.004]))
+check("the free fit reaches its aim", np.allclose(x0[:3], [0, 0, -0.01], atol=1e-6), x0)
+check("the wall stops the fit at the wall", abs(x[2] + 0.004) < 1e-6 and viol < 1e-6, x)
+# two aims a turn meets: points (+-1, 0, 0) to (0, +-1, 0) about the origin: a 90 degree turn about z; one Newton step
+# of the linear rows gives the small-angle move, so check the turn's direction and its size order
+J = CS.rigid_rows(np.array([[0.05, 0, 0], [-0.05, 0, 0]]), np.zeros(3))
+x, viol, x0 = CS.constrained_fit(J, np.array([-0.005, 0.005, 0, 0.005, -0.005, 0]), None, None)
+check("a turn about z", x0[5] > 0.09 and np.allclose(x0[:5], 0.0, atol=1e-6), x0)
 
 if fails:
     print("CONTACT SOLVE failed: " + "; ".join(fails))

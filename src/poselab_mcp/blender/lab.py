@@ -611,12 +611,11 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         return {"wrist_off_target_cm": round(miss, 2)}
 
     def snapshot(self, action, name):
-        """save or load a named pose (the arms' bones and the rifle's parts). While _snap_gun is set (a solve that
-        moves the gun, Step C), the gun's place rides too; otherwise a load leaves the gun where it is."""
+        """save or load a named pose (the arms' bones and the rifle's parts); a load leaves the gun where it is."""
         self._need()
         if action == "save":
             self.snapshots[name] = ({pb.name: (pb.location.copy(), pb.rotation_quaternion.copy()) for pb in self.arm.pose.bones}, dict(self.travel),
-                                    dict(getattr(self, "_clav_now", {})), self.rifle_rest.copy())
+                                    dict(getattr(self, "_clav_now", {})))
             return {"saved": name}
         if name not in self.snapshots:
             raise ValueError("no snapshot %r; saved: %s" % (name, list(self.snapshots)))
@@ -627,8 +626,6 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
             pb.location, pb.rotation_quaternion = bones[pb.name]
             pb.scale = self.idle[pb.name][2]
         self.travel = dict(travel)
-        if getattr(self, "_snap_gun", False) and len(self.snapshots[name]) > 3:
-            self.rifle_rest = self.snapshots[name][3].copy()
         bpy.context.view_layer.update()
         self._place_rifle()
         return {"loaded": name}

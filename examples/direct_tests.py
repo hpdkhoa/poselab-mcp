@@ -32,6 +32,15 @@ check("bisection takes about log2(range / tol) steps", n <= 40, n)
 x, fx, n = DM.bisect(lambda v: v, 20.0, 0.0, 10.0)
 check("a target past the range returns the near end", x == 10.0 and n == 0, (x, n))
 
+# the preferred length of pull: shoulder at the origin, the pocket 4 cm in front of it, the bore straight ahead, the
+# grip 5 cm under the bore. |G - S| = D* with G = (0, 0.04 + LOP, -0.05): LOP = sqrt(D*^2 - 0.05^2) - 0.04
+S0, P0, B0, U0 = [0.0, 0.0, 0.0], [0.0, 0.04, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]
+Ds = DM.reach_for_elbow(0.30, 0.27, 60.0)
+lop, used, cut = DM.preferred_lop(S0, P0, B0, U0, 0.05, 0.30, 0.27, 60.0, lop_range=(0.0, 1.0))
+check("the preferred length of pull meets the reach", abs(lop - (math.sqrt(Ds * Ds - 0.05 ** 2) - 0.04)) < 1e-4, lop)
+lop, used, cut = DM.preferred_lop(S0, P0, B0, U0, 0.05, 0.30, 0.27, 60.0, lop_range=(0.30, 0.36))
+check("the stock's range holds the length of pull", cut and abs(used - 0.36) < 1e-9 if lop > 0.36 else not cut, (lop, used, cut))
+
 if fails:
     print("DIRECT failed: " + "; ".join(fails))
     sys.exit(1)

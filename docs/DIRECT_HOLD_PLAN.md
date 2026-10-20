@@ -1,125 +1,94 @@
-# The direct hold: plan, factors and equations
+# The direct hold: plan, factors and equations (v0.11.0, rebuilt 2026-10-20)
 
-Agreed with the owner on 2026-10-20. For a gun, the hand's place on it is known from the shooting manuals, so
-the hand is placed there directly and the body is solved backward from it. No search over hand turns or stance
-places. An object with no marks still uses the target solver.
+## The owner's words (the method; built as stated)
 
-Every value below is a number the tool prints, so each step can be checked.
+- "why not place the hand directly on the gun at the position you got from the document/research paper, then from
+  there you adjust the wrist, the arm, the elbow and the shoulder?"
+- "i think you should look at the points on the hand that touch the part of the gun, like the grip the trigger ring
+  and other touchable parts."
+- "treats all the problems as math and physics to optimize, calculate everything before start drawing"
+- "it need to move with the direction opposite the gun if clipping or into the gun if not grip and the distance
+  should be calculate, not blind moving"
+- The walls (anatomy, no clipping) are never scored, traded or skipped: checked at every step.
+- Each run takes 10 minutes at most.
+- The ready hold's place is solved, the muzzle not tipped down.
 
-## Names
+The first build (v0.10.0) did not follow the first sentence: it started the hand from an older helper (seed_hold)
+and then moved the hand on the gun (a sliding palm settle, a turn onto the forearm). Those are removed. A step that
+moves the hand on the gun after Step A is a fault.
 
-- S: the shoulder (upper arm head). E: the eye. W: the wrist (hand bone head).
-- l1: upper arm length (shoulder to elbow). l2: forearm length (elbow to wrist). Both read from the arms.
-- f: elbow flexion (0 = straight arm).
+## Step 0. The touch points (from the shooting manual and the gun's marks)
 
-## Step 0. The marks (once per gun, saved)
+FM 3-23.35's two-hand grip: the firing hand's web high on the backstrap under the grip safety, the backstrap down
+the palm, the trigger finger along the frame (ready: off the trigger), the other fingers round the front strap; the
+support palm on the other panel, its fingers over the firing fingers. In the gun body's frame, so they ride the gun:
 
-The gun facts give points: the grip, the support, the trigger, the sights. The direct hold also needs:
+| Hand | Hand point | Gun point | Weight |
+|---|---|---|---|
+| firing | web | the web point (the crook under the grip safety) | 2 |
+| firing | the web-to-wrist line | along the grip's axis, downward (the backstrap down the palm) | 2 |
+| firing | palm facing | into the firing side's panel (a direction only) | 3 |
+| firing | index middle joint | the frame's side by the trigger guard's top edge | 1 |
+| support | palm middle | the support mark on the other panel, facing into it | 3 |
+| support | the knuckles' line | along the grip's axis, the index's toward the top | 1 |
 
-| Mark | How it is found | Saved as |
-|---|---|---|
-| Grip axis | the object reader's run nearest the grip mark | `grip_axis` (point, direction) |
-| Index line | the trigger guard opening's top edge | `guard_line` (two points) |
-| Web point | the crook under the frame's overhang (`web_point`) | `web_point` |
-| Firing palm face | the grip style's firing contact face (FM 3-23.35 2-3) | `firing_face` |
-| Support palm face | the grip style's support contact face (FM 3-23.35 2-2): the gun's support side | `support_face` |
-| Long guns, later | butt plate centre, cheek rest, length of pull range, handguard area | not in any facts file yet |
+The trigger guard ring is met by the fingers' closing (Step D): the open hand's middle finger reaches it only when
+it curls. The palm's middle onto the facts' grip mark was tried first and dropped: the hand's web-to-palm distance
+is 3.2 cm, the gun's web point to that mark 6.7 cm, so no hand meets both (pair_geometry in the report). The
+web-to-wrist line stands in for the backstrap line; the wrist is not the heel of the hand, so this line is an
+approximation (open item).
 
-The facts' `normals.support` points down; the support palm faces the gun's side, so `support_face` comes from
-the grip style. The marks are saved to `hold_marks.json` with a hash of the gun's mesh; a changed gun recomputes.
+## Step A. The hand directly on the gun (by formula, no pose set)
 
-## Step A. The hand from the marks
+The fingers open (the rig's bind pose). The hand, rigid, is moved by x = (t, w) (shift, turn about c):
 
-The firing hand is turned so its palm faces into the grip from `firing_face` and its knuckles run along the grip
-axis toward the top, then moved so its web sits just under the web point (`seed_hold` with that face and no turn).
-The fingers start open from the rig's bind pose (`open_fingers`), each finger in its own plane; the index starts
-straight. The idle pose's fingers can sit swung out of their plane, so they are not the start.
+    min  sum_k w_k |p_k + t + w x (p_k - c) - T_k|^2
+    with n_i . (t + w x (p_i - c)) >= -give_i + 0.03 cm - d_i      every body skin point i (palm, palm side, web)
+         -n_h . (t + w x (q_j - c)) >= depth_j - give_j + 0.03 cm   every gun point j inside the body's flesh
+         (support hand: the body skin out of the firing hand past the skin's give)
 
-The palm is then settled by a calculated shift (`settle_palm`), not by fixed steps. With d_i the signed distance
-of palm point i to the gun (inside below 0) and n_i the gun's outward normal there, the shift x solves
+A constrained least squares: with H = J'J = L L' and x0 the free fit, y = L'(x - x0), the walls read
+(A L'^-1) y >= b - A x0, solved by Hildreth's method (contactsolve.constrained_fit). It is linear in x, so it is
+solved again on the moved points. The hand is then fixed on the gun.
 
-    min |x|^2   with   n_i . x >= -give_i + 0.05 cm - d_i   for every palm point
-                       n_k . x <=  gap - d_k                 for the nearest palm point k
+## Steps B and C. The wrist, the arm, the elbow and the shoulder (by formula)
 
-(a small quadratic program, Hildreth's method, `contactsolve.min_shift`). The support hand adds rows that keep
-every skin point out of the firing hand past the skin's give (`rest_on_other`). The step is linear, so the skin is
-read again and the shift solved again, at most 4 rounds.
+For every gun place in the box (the firing hand only: 5 cm right and left, 3 cm forward and back, 5 cm up and down,
+1 cm apart; 847 places), every girdle setting (30) and every elbow swing (91, 2 degrees apart), the elbow is on the
+circle of the two-bone arm and every arm wall is worked out with the walls' own formulas (bodysolve.arm_walls):
+elbow under the shoulder, elbow bend, wrist bend and its four ranges, forearm rotation, the shoulder's ranges. Only
+bodies inside every wall are kept; they are ranked by comfort, which holds no wall:
 
-## Step B. The gun's distance from the body
+    cost = (wrist / 10)^2 + (forearm roll / 30)^2 + (girdle share)^2 + ((elbow - f_pref) / 20)^2 + (gun moved cm / 10)^2
 
-The preferred reach from the preferred elbow flexion f_pref (law of cosines):
-
-    D*^2 = l1^2 + l2^2 + 2 l1 l2 cos(f_pref)
-
-The gun moves along the view's forward line by d. The hand rides with it (Step A at each d). |W(d) - S| grows
-with d, so bisection finds d with |W(d) - S| = D* exactly; d is kept inside [-15, 15] cm of the style's stance.
-
-f_pref is a grip style value. For the two-hand pistol: 20 degrees ("arms out, elbows a little bent", FM 3-23.35);
-an estimate until a measured value replaces it. Long guns, later: the butt on the shoulder pocket and the length of
-pull solved the same way, |G(LOP) - S| = D*, clamped to the stock's range.
-
-## Step C. The arm
-
-The hand stays where Step A put it. The elbow's swing about the shoulder-wrist line (phi) and the shoulder girdle
-(forward, up) are set by a fixed step search that reads only joint angles (microseconds each):
-
-    J = (wrist bend / 10)^2 + (forearm roll / 30)^2 + (girdle share)^2
-
-For the firing hand only, the gun's distance along the sight line is a move too, at most 3 cm either way from
-Step B. Along the sight line the aim does not change. The support hand is not on the gun yet. These moves are on
-joint angles, where no distance field gives a direction, so they stay a fixed step search (4, 2, 1 degrees).
-
-Walls (never crossed): the AAOS ranges, the wrist within 30 degrees of the forearm line, the elbow 5 to 150
-degrees, the elbow 2 cm under the shoulder, the girdle's working range.
+f_pref is Step B's reach equation D*^2 = l1^2 + l2^2 + 2 l1 l2 cos(f_pref) as a preference. The best is posed and
+read by the real walls (the forearm's links and the wrist's twist have no formula); a body the real walls refuse is
+replaced by the next, at most 12. On the M1911 the formulas and the posed rig agree within 1 degree.
 
 ## The valid-start rule
 
-After Steps A to C, before any finger work, the start is valid only when all hold (changed 2026-10-20: the fingers
-are open at the start and Step D closes them, so they are judged after Step D by every wall):
+After Steps A to C: the arm inside every wall, the hand's body (palm, palm side, palm back, web, forearm) not in the
+gun or the other hand past its give, the arm 1 cm short of full reach. The fingers are judged after Step D.
 
-1. The arm inside every AAOS wall: wrist flexion 80, extension 70, radial 20, ulnar 30, forearm roll 80 each way,
-   elbow 5 to 150, the shoulder's ranges.
-2. The working rules: wrist within 30 degrees of the forearm line, elbow 2 cm under the shoulder, girdle forward 15,
-   back 20, up 30, down 8.
-3. The hand's body does not clip: no palm, palm side, web or forearm skin past its give (palm 0.3 cm, palm side
-   and web 0.15 cm), nothing of the gun inside that flesh, at most 0.05 cm2.
-4. Reachable: |W - S| <= l1 + l2 - 1 cm.
+## Step D. The fingers (calculated moves, every step inside the walls)
 
-An invalid start is reported with each wall it breaks and by how much. It is not repaired and no hold is made.
+A point p on a segment turning by s about the hinge through c along a moves at dp/ds = a x (p - c), its distance to
+the gun changes at dd/ds = n(p) . (a x (p - c)), and the Newton step s = (target - d) / (dd/ds) closes it onto the
+surface or opens it out (contactsolve.chain_close; the gun's points inside the flesh ride as inner points). Each of
+close, thumb, relax and close again is undone if it breaks a wall. The thumb's line fit is still a fixed step search
+(open item).
 
-## Step D. The fingers
+## Step E. The inside-the-hand check, only the moved part
 
-Each wrapping finger closes until its skin touches the gun, by calculated angles (`contactsolve.chain_close`),
-not fixed steps. A point p on a segment that turns by s about the hinge through c along the axis a moves at
-dp/ds = a x (p - c), so its distance to the gun changes at
+Built; 0 differences against the full check on 368 checked calls.
 
-    dd/ds = n(p) . (a x (p - c))
+## Long guns: the preferred length of pull (formula built, no gun can use it yet)
 
-and the angle that brings it to the target distance t is the Newton step s = (t - d) / (dd/ds). The knuckle leads
-(the joints turn at rates 1, 0.5, 0.35). Each round s is the first touch over every point coming closer, cut at
-the joints' room and at 15 degrees (the step is linear, so a long one is read again). A segment that touches
-stops its own joint and those behind it. A segment pressed past 0.12 cm opens by the Newton step back to half of
-that, its joints down to a holding finger's least bend. The relax step opens a pressing joint by the same
-formula. The straight index and the thumb are turned onto their lines by the fixed step search inside the walls:
-those aims are lines, not distances, so no field gives the direction.
+    G(LOP) = pocket + bore * LOP - up * grip_drop,   |G(LOP) - S| = D*,   held to the stock's range
 
-The knuckle's side swing is read against the finger's own metacarpal bone (it was read against the middle
-finger's line, so an open pinky read 29 degrees; against its own bone it reads 5).
+directmath.preferred_lop, tested in examples/direct_tests.py. No long gun's facts have a butt plate or pocket mark
+yet, so no run uses it.
 
-## Step E. The fast inside-the-hand check (built 2026-10-20)
+## Time
 
-The test "is the gun inside the hand's flesh" keeps its last answer per hand with the skin it was read on. After
-a move only the gun's samples near skin that moved are tested again: those within a 2 cm grid cell, grown by one
-cell, of a moved vertex at its old place or its new one. A point in the flesh is within 1.5 cm of a skin vertex,
-so every sample whose answer can change is in that set. When the gun moves, all are tested. With
-POSELAB_PIERCE_CHECK=1 every call also runs the full test and counts the calls where the two differ.
-
-## Step F. The grip height (a check, all guns)
-
-Recoil turns the gun up with moment M = F_recoil * h, h the bore's height above the hand's support. A higher grip
-gives a smaller h. The report prints h.
-
-## Time budget
-
-Every run finishes in 10 minutes. Estimate for the direct flow: load 0.5 min, gun read 0.5 min, Steps A to C both
-hands under 10 s, Step D about 20 s, clips 1 min, checks and render 0.5 min.
+Hard stop at 10 minutes; the run plans its work to 9.

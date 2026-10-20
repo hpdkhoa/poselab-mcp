@@ -193,20 +193,6 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
     return closed, touching, n_round, log
 
 
-def align_turn(h, f, g):
-    """The turn psi (radians) about the unit axis g that brings the direction h closest to the direction f: h split
-    into its part along g (fixed) and across it (h_perp, which turns), h(psi) . f = h_par . f + cos(psi) h_perp . f
-    + sin(psi) (g x h_perp) . f, largest at psi = atan2((g x h_perp) . f, h_perp . f). Returns (psi, the angle
-    between h(psi) and f in degrees after)."""
-    g = np.asarray(g, dtype=float) / max(1e-12, np.linalg.norm(g))
-    h = np.asarray(h, dtype=float) / max(1e-12, np.linalg.norm(h))
-    f = np.asarray(f, dtype=float) / max(1e-12, np.linalg.norm(f))
-    hp = h - g * float(h @ g)
-    psi = math.atan2(float(np.cross(g, hp) @ f), float(hp @ f))
-    h2 = turn_vec(h, g, psi)
-    return psi, math.degrees(math.acos(max(-1.0, min(1.0, float(h2 @ f)))))
-
-
 def wrist_parts(fore, hand, thumb_side, left=False):
     """The wrist's bend as the walls read it (lab._arm_report): the total angle between the forearm (elbow to wrist)
     and the hand (wrist to the middle knuckle), and its split into flexion (+ toward the palm) and radial deviation
@@ -235,22 +221,29 @@ def wrist_past(total, flex, dev, lim):
                dev - lim["wrist_radial_deg"], -dev - lim["wrist_ulnar_deg"])
 
 
-def best_wrist_turn(fore, hand, thumb_side, g, lim, lo_deg, hi_deg, left=False, step_deg=0.25):
-    """The turn about the grip's axis g (degrees, in [lo_deg, hi_deg]) that puts the wrist inside its walls with the
-    least bend: cost = 100 * (degrees past any wrist wall) + (total / 10)^2, read from the closed form of the bend
-    for every turn (the hand's two lines turned by Rodrigues; no pose is set). The forearm is held as it is; the
-    caller places the hand and solves again, since the arm follows. Returns (turn, (total, flexion, radial) after,
-    degrees past after)."""
-    g = np.asarray(g, dtype=float) / max(1e-12, np.linalg.norm(g))
-    best = None
-    n = int(round((hi_deg - lo_deg) / step_deg))
-    for i in range(n + 1):
-        a = lo_deg + i * step_deg
-        r = math.radians(a)
-        p = wrist_parts(fore, turn_vec(np.asarray(hand, dtype=float), g, r),
-                        turn_vec(np.asarray(thumb_side, dtype=float), g, r), left)
-        past = wrist_past(*p, lim)
-        cost = 100.0 * past + (p[0] / 10.0) ** 2 + 1e-6 * a * a          # the smallest turn breaks a tie
-        if best is None or cost < best[0]:
-            best = (cost, a, p, past)
-    return best[1], best[2], best[3]
+def rigid_rows(P, c):
+    """How points P (n x 3) move for a small rigid move x = (t, w) about c: dP = t + w x (P - c), as n 3 x 6 blocks
+    [I, -[P - c]x] stacked (3n x 6)."""
+    n = len(P)
+    R = np.zeros((3 * n, 6))
+    for i, p in enumerate(np.asarray(P, dtype=float) - c):
+        R[3 * i:3 * i + 3, :3] = np.eye(3)
+        R[3 * i:3 * i + 3, 3:] = np.array([[0.0, p[2], -p[1]], [-p[2], 0.0, p[0]], [p[1], -p[0], 0.0]])
+    return R
+
+
+def constrained_fit(J, r, A, b, damp=1e-9):
+    """The move x (6: shift, turn) that best meets the aims J x = r (least squares) while keeping every wall row
+    A x >= b. Unconstrained, x0 solves (J'J) x0 = J'r; with H = J'J = L L' the aim is |L'(x - x0)|^2, so with
+    y = L'(x - x0) the walls read (A L'^-1) y >= b - A x0 and the smallest y meeting them is Hildreth's (min_shift).
+    Returns (x, the largest wall row still unmet, x0)."""
+    J = np.asarray(J, dtype=float)
+    H = J.T @ J + damp * np.eye(J.shape[1])
+    x0 = np.linalg.solve(H, J.T @ np.asarray(r, dtype=float))
+    if A is None or not len(A):
+        return x0, 0.0, x0
+    Lc = np.linalg.cholesky(H)
+    Li = np.linalg.inv(Lc.T)
+    A = np.asarray(A, dtype=float)
+    y, viol = min_shift(A @ Li, np.asarray(b, dtype=float) - A @ x0)
+    return x0 + Li @ y, viol, x0
