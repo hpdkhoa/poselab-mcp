@@ -1732,6 +1732,9 @@ class HoldMixin:
     # closed toward its targets on the posed rig. Sources in docs/DIRECT_HOLD_PLAN.md -----------------------------------
     PALM_CUP_DEG = {"ring": 7.65, "pinky": 14.67}       # Buffi, Crisco & Murray 2013, J Biomech 46(12):2104-2108:
                                                         # the 4th and 5th metacarpals' flexion ranges, CT in vivo
+    walls_stop = True                                   # a step that breaks a wall of its posed parts stops the
+                                                        # hold (False: evidence pictures only; the hold still fails)
+    THUMB_CHECK_S = 150.0                               # time for checking the thumb's kept poses in full
     PINKY_RADIAL_DEG = 14.8                             # Latz et al. 2017, Hand (N Y) 14(2):259-263, PMC6436119:
                                                         # the little finger's knuckle toward the ring finger (radial
                                                         # deviation), wrist neutral, 14.8 +- 12.8, electrogoniometer
@@ -2083,11 +2086,34 @@ class HoldMixin:
             band = (np.array(list(thumb_p["T_w"])), np.array(list(thumb_p["dir_w"])), float(thumb_p.get("band_cm", 1.5)))
             n_ix = np.array(list(line_p["normal_w"])) if line_p is not None else -np.array(list(thumb_p["normal_w"]))
             qy = lambda X: (np.asarray(self.sdf_query(X, want_normal=False)[0], dtype=float), self.sdf_query(X)[2])   # noqa: E731
-            best, counts = DS.thumb_solve(td, qy, tlim, band, n_ix, alphas=np.arange(-60.0, 60.1, 5.0),
-                                          betas=np.arange(-60.0, 60.1, 5.0))
-            out["thumb"] = {"pose": best, "poses_refused": counts}
-            if best is not None:
-                self._apply_digits(side, {"thumb": best})
+            best, counts, kept_all = DS.thumb_solve(td, qy, tlim, band, n_ix, alphas=np.arange(-60.0, 60.1, 5.0),
+                                                    betas=np.arange(-60.0, 60.1, 5.0), keep_all=True)
+            # the solve reads 20 skin points per segment on the grids, and not the gun's edges between them; each kept
+            # pose, cheapest first, is posed and read by the full check (thumb_clean); the first clean one is used
+            # (2026-10-21: the solve's best clipped 0.16 cm, and the gun stood 0.41 cm in its flesh)
+            import time as _t
+            t0_ = _t.time()
+            self.snapshot("save", "_thumb0")
+            chosen, tried, first_w = None, 0, None
+            for cand in kept_all:
+                if _t.time() - t0_ > self.THUMB_CHECK_S:
+                    break
+                self.snapshot("load", "_thumb0")
+                self._apply_digits(side, {"thumb": cand})
+                w_ = self.thumb_clean(side, other)
+                tried += 1
+                if first_w is None:
+                    first_w = {"walls": w_, "by_part": dict(self._walls_of_parts)}
+                if not w_:
+                    chosen = cand
+                    break
+            if chosen is None:
+                self.snapshot("load", "_thumb0")
+                if best is not None:
+                    self._apply_digits(side, {"thumb": best})
+            out["thumb"] = {"pose": chosen or best, "clean": chosen is not None, "poses_refused": counts,
+                            "kept_by_the_solve": len(kept_all), "checked_in_full": tried,
+                            "solve_best_full_check": first_w, "check_seconds": round(_t.time() - t0_, 1)}
         return out
 
     def pierce_detail(self, side, past_cm=0.05, top=12):
@@ -2172,6 +2198,41 @@ class HoldMixin:
 
     PINKY_ULNAR_DEG = 48.5                              # Latz et al. 2017: the little finger's knuckle away from the
                                                         # ring finger (ulnar deviation), wrist neutral, 48.5 +- 17.0
+
+    POSED_BY_STEP = {"2_placed": ("palm", "web", "index"), "3_body": ("palm", "web", "index", "forearm")}
+
+    def walls_of(self, side, other, parts, arm=False):
+        """The walls of only the parts a step has posed (the owner, 2026-10-21: each step checks the parts it has
+        posed; the open thumb is not judged before step 4d curls it): the angle walls that name one of the parts (and
+        the arm's, with arm), and the clipping summed over skin labelled with one of the parts (skin in the gun past
+        its give, and the gun in the flesh past it, by the rays). Returns {wall: how far past} and keeps each
+        clipping part's reading (self._walls_of_parts)."""
+        names = [p_ for p_ in parts if p_ in DIGITS]
+        out = {}
+        for k, v in self.wall_faults(side, other, angles_only=True).items():
+            if (arm and k.startswith("arm:")) or any(n_ in k for n_ in names):
+                out[k] = v
+        cp = self.contact_pairs(side, other=other)
+        area, deep, by = 0.0, 0.0, {}
+        for (lab_, _reg), v_ in cp["pairs"].items():
+            if lab_.startswith(tuple(parts)) and v_[1] > 0.0:
+                area += v_[1]
+                deep = max(deep, v_[2])
+                by["skin in gun: " + lab_] = round(v_[2], 3)
+        for lab_, (a_, d_) in cp.get("pierced_by", {}).items():
+            if lab_.startswith(tuple(parts)):
+                area += a_
+                deep = max(deep, d_)
+                by["gun in flesh: " + lab_] = round(d_, 3)
+        if area > CLIP_NOISE_CM2 or deep > 0.0:
+            out["clip:area_cm2"], out["clip:deepest_cm"] = round(area, 2), round(deep, 2)
+        self._walls_of_parts = by
+        return out
+
+    def thumb_clean(self, side, other):
+        """The thumb's own walls on the posed rig, the full check: its angle walls, its skin in the gun past the give
+        (every skin point, exact near the surface) and the gun in its flesh past the give (the rays)."""
+        return self.walls_of(side, other, ("thumb",))
 
     def _finger_along(self, side, fi, mark):
         """How far down the grip (cm from its top, along its axis) this finger's own bending plane meets the axis."""
@@ -2537,11 +2598,25 @@ class HoldMixin:
             self._set_world(self._n("hand", side), H)
             shot("2_placed")
             self.snapshot("load", "_step2")
+        # step 2's walls: the parts it has posed (web, palm, index), the hand at H (the arm is solved in step 3)
+        self.snapshot("save", "_step2w")
+        self._set_world(self._n("hand", side), H)
+        w2 = self.walls_of(side, other, self.POSED_BY_STEP["2_placed"])
+        out["steps"]["walls_after"] = {"2_placed": {"walls": w2, "by_part": dict(self._walls_of_parts),
+                                                    "parts": list(self.POSED_BY_STEP["2_placed"])}}
+        self.snapshot("load", "_step2w")
+        if w2 and self.walls_stop:
+            return stop("step 2 (placed) breaks a wall of the parts it posed: it stops here", w2)
         body = self.body_solve(side, H, gun_shift=gun_shift, f_pref=f_pref)
         out["steps"]["BC_body"] = body
         if body.get("result") != "chosen":
             return stop("no body reaches the hand inside the walls", body.get("nearest") or body.get("tried_rows"))
         shot("3_body")
+        w3 = self.walls_of(side, other, self.POSED_BY_STEP["3_body"], arm=True)
+        out["steps"]["walls_after"]["3_body"] = {"walls": w3, "by_part": dict(self._walls_of_parts),
+                                                 "parts": list(self.POSED_BY_STEP["3_body"]) + ["arm"]}
+        if w3 and self.walls_stop:
+            return stop("step 3 (body) breaks a wall of the parts it posed: it stops here", w3)
         out["steps"]["A_grab"] = self.close_grab(side, pairs, m, other=other, on_step=shot if on_step is not None else None)
         shot("4d_thumb_curled")
         out["steps"]["press_shape"] = self.press_flatten(side)

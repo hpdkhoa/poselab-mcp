@@ -55,14 +55,15 @@ def _about(R, c, X):
     return cc + np.einsum("kij,kmj->kmi", R, X - cc)
 
 
-def thumb_solve(d, query, lim, band, n_index, alphas=None, betas=None, t2s=None, t3s=None):
+def thumb_solve(d, query, lim, band, n_index, alphas=None, betas=None, t2s=None, t3s=None, keep_all=False):
     """The thumb's four angles by formula (the module's equations). d: the thumb as it is, in the world: "p01", "p02",
     "p03" (joint heads), "pn" (the palm's facing), "index_meta" (the index metacarpal's line), "h02", "h03" (the
     hinges, + closes), "bend02", "bend03" (the hinges' bends now, degrees), "seg" {"01", "02", "03": skin points m x 3},
     "seg_give" {same: each point's give, cm}, "pad" (pad points), "pad_n" (the pad's mean normal). query(X) -> (gap cm,
     outward normals). lim: "spread_max", "palmar_min", "b02" (least, most), "b03" (least, most). band: (a point on the
     target line, its direction, its half width cm). n_index: the surface normal at the index's line. Returns
-    (best: angles and readings, or None; counts: how many poses failed each condition)."""
+    (best: angles and readings, or None; counts: how many poses failed each condition); with keep_all, also every
+    kept pose, cheapest first."""
     alphas = np.arange(-40.0, 40.1, 5.0) if alphas is None else np.asarray(alphas, dtype=float)
     betas = np.arange(-30.0, 45.1, 5.0) if betas is None else np.asarray(betas, dtype=float)
     t2s = np.arange(lim["b02"][0] - d["bend02"], lim["b02"][1] - d["bend02"] + 0.1, 5.0) if t2s is None else np.asarray(t2s, dtype=float)
@@ -84,6 +85,7 @@ def thumb_solve(d, query, lim, band, n_index, alphas=None, betas=None, t2s=None,
     counts = {"base walls": 0, "thumb skin past its give": 0, "pad not touching": 0, "pad not facing in": 0,
               "pad off the target line": 0, "not opposite the index": 0, "kept": 0}
     best = None
+    kept_all = []
     seg = {j: np.asarray(d["seg"][j], dtype=float) for j in ("01", "02", "03")}
     give = np.concatenate([np.asarray(d["seg_give"][j], dtype=float) for j in ("01", "02", "03")])
     pad = np.asarray(d["pad"], dtype=float)
@@ -144,10 +146,16 @@ def thumb_solve(d, query, lim, band, n_index, alphas=None, betas=None, t2s=None,
             counts["kept"] += int(ok.sum())
             for k in np.nonzero(ok)[0]:
                 cost = abs(al) + abs(be) + abs(T2[k]) + abs(T3[k])
+                pose = {"alpha_deg": float(al), "beta_deg": float(be), "t2_deg": float(T2[k]), "t3_deg": float(T3[k]),
+                        "cost": float(cost), "pad_gap_cm": round(float(gmin[k]), 3),
+                        "pad_to_line_cm": round(float(np.linalg.norm(off[k] - (off[k] @ Ld) * Ld)) * 100.0, 2),
+                        "spread_deg": round(spread, 1), "palmar_deg": round(palmar, 1),
+                        "a_lift": a_lift.tolist()}
+                if keep_all:
+                    kept_all.append(pose)
                 if best is None or cost < best["cost"]:
-                    best = {"alpha_deg": float(al), "beta_deg": float(be), "t2_deg": float(T2[k]), "t3_deg": float(T3[k]),
-                            "cost": float(cost), "pad_gap_cm": round(float(gmin[k]), 3),
-                            "pad_to_line_cm": round(float(np.linalg.norm(off[k] - (off[k] @ Ld) * Ld)) * 100.0, 2),
-                            "spread_deg": round(spread, 1), "palmar_deg": round(palmar, 1),
-                            "a_lift": a_lift.tolist()}
+                    best = pose
+    if keep_all:
+        kept_all.sort(key=lambda p_: p_["cost"])
+        return best, counts, kept_all
     return best, counts
