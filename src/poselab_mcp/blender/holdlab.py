@@ -2131,7 +2131,7 @@ class HoldMixin:
         labs = dict(zip(idx.tolist(), lab))
         Ph = P[vi]
         hb = BVHTree.FromPolygons(Ph.tolist(), polys)
-        SW = self._object_now()[2]
+        SW, SL_ = self._object_now()[2:4]
         lo, hi = Ph.min(0) - 0.03, Ph.max(0) + 0.03
         cand = np.nonzero(np.all((SW >= lo) & (SW <= hi), axis=1))[0]
         ob = self.meshes[0]
@@ -2169,6 +2169,7 @@ class HoldMixin:
                 continue
             cn = N[th[ti]].mean(0)
             rows.append({"at": [round(float(x), 4) for x in SW[k]], "past_give_cm": round(past, 3), "label": l3,
+                         "gun_region": SL_[k] if SL_ is not None else None,
                          "inside_by_rays": parity(q), "face_folded": bool(float(np.dot(np.array(list(nrm)), cn)) < 0.0),
                          "face_moved_by_flatten": bool(moved[th[ti]].any()) if moved is not None else False})
         rows.sort(key=lambda r: -r["past_give_cm"])
@@ -2228,6 +2229,67 @@ class HoldMixin:
             out["clip:area_cm2"], out["clip:deepest_cm"] = round(area, 2), round(deep, 2)
         self._walls_of_parts = by
         return out
+
+    def palm_roll_scan(self, side, other, pairs, H, span_deg=40.0, step_deg=2.0):
+        """A measurement only: the hand at H turned about the A-to-B line (the turn that keeps the web on A and the
+        index pad on B), each angle's palm walls (walls_of web, palm, index) and how far the palm faces off the panel;
+        and at H itself, each palm part in the gun with the gun region it is in."""
+        pw = self._pairs_world(pairs)
+        A = np.array(list(next(p for p in pw if p.get("center"))["T_w"]))
+        line_p = next(p for p in pw if p["kind"] == "line")
+        face_p = next((p for p in pw if p.get("hand") in ("palm", "palm_skin") and "normal_w" in p), None)
+        hn = self._n("hand", side)
+        self._set_world(hn, H)
+        X = np.array(list(self._anchor(side, line_p["hand"])))
+        ax = (X - A) / np.linalg.norm(X - A)
+        cp = self.contact_pairs(side, other=other)
+        at_H = {"skin_in_gun": {"%s in %s" % k: round(v[2], 3) for k, v in cp["pairs"].items() if k[0].startswith(("palm", "web")) and v[1] > 0},
+                "gun_in_flesh": {k: v for k, v in cp.get("pierced_by", {}).items() if k.startswith(("palm", "web"))}}
+        rows = []
+        for k in range(int(-span_deg / step_deg), int(span_deg / step_deg) + 1):
+            ang = k * step_deg
+            R = Matrix.Rotation(math.radians(ang), 4, Vector(list(ax)))
+            M = Matrix.Translation(Vector(list(A))) @ R @ Matrix.Translation(Vector(list(-A))) @ H
+            self._set_world(hn, M)
+            w = self.walls_of(side, other, self.POSED_BY_STEP["2_placed"])
+            f = np.array(list(self._palm_facing(side)))
+            off = None
+            if face_p is not None:
+                off = round(math.degrees(math.acos(max(-1.0, min(1.0, float(f @ -np.array(list(face_p["normal_w"]))))))), 1)
+            rows.append({"roll_deg": ang, "facing_off_deg": off, "walls": w, "by_part": dict(self._walls_of_parts)})
+        self._set_world(hn, H)
+        pdh = self.pierce_detail(side, top=400)
+        at_H["palm_points"] = [r for r in pdh["deepest"] if r["label"].startswith(("palm", "web"))][:12]
+        regs = {}
+        for r in pdh["deepest"]:
+            if r["label"].startswith(("palm", "web")) and r["inside_by_rays"]:
+                regs[r["gun_region"]] = regs.get(r["gun_region"], 0) + 1
+        at_H["palm_points_by_gun_region"] = regs
+        # the gun part each palm point lies on: the nearest gun face's corners' heaviest vertex group
+        bvh_g = self._object_now()[0]
+        ob_g = self.rifle_mesh
+        names_g = {g_.index: g_.name for g_ in ob_g.vertex_groups}
+        Mi_g = ob_g.matrix_world.inverted()
+        dg_ = bpy.context.evaluated_depsgraph_get()
+        me_g = ob_g.evaluated_get(dg_).to_mesh()
+        parts_ = {}
+        for r in at_H["palm_points"]:
+            loc_, _n_, fi_, _d_ = bvh_g.find_nearest(Vector(r["at"]))
+            q_ = Mi_g @ loc_
+            vbest = min((me_g.vertices[v_] for v_ in me_g.polygons[fi_].vertices), key=lambda v_: (v_.co - q_).length)                 if fi_ is not None and fi_ < len(me_g.polygons) else None
+            gp_ = max(vbest.groups, key=lambda g_: g_.weight).group if vbest is not None and len(vbest.groups) else None
+            r["gun_part"] = names_g.get(gp_)
+            if fi_ is not None and fi_ < len(me_g.polygons):
+                mi_ = me_g.polygons[fi_].material_index
+                r["gun_material"] = ob_g.material_slots[mi_].name if mi_ < len(ob_g.material_slots) else None
+                r["gun_face"] = int(fi_)
+            k_ = "%s / %s" % (r["gun_part"], r.get("gun_material"))
+            parts_[k_] = parts_.get(k_, 0) + 1
+        ob_g.evaluated_get(dg_).to_mesh_clear()
+        at_H["palm_points_by_gun_part"] = parts_
+        pp_ = [r["at"] for r in pdh["deepest"] if r["label"].startswith(("palm", "web")) and r["inside_by_rays"]]
+        self._zoom_c = [sum(q[i] for q in pp_) / len(pp_) for i in range(3)] if pp_ else None
+        return {"at_H": at_H, "roll_scan": rows}
 
     def thumb_clean(self, side, other):
         """The thumb's own walls on the posed rig, the full check: its angle walls, its skin in the gun past the give
@@ -2604,6 +2666,9 @@ class HoldMixin:
         w2 = self.walls_of(side, other, self.POSED_BY_STEP["2_placed"])
         out["steps"]["walls_after"] = {"2_placed": {"walls": w2, "by_part": dict(self._walls_of_parts),
                                                     "parts": list(self.POSED_BY_STEP["2_placed"])}}
+        if getattr(self, "diag_palm_roll", False):
+            out["steps"]["palm_diag"] = self.palm_roll_scan(side, other, pairs, H)
+            shot("2_placed_palm")                          # the same pose, the close-ups on the palm's spot
         self.snapshot("load", "_step2w")
         if w2 and self.walls_stop:
             return stop("step 2 (placed) breaks a wall of the parts it posed: it stops here", w2)
