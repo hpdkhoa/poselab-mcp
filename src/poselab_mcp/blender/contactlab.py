@@ -1003,11 +1003,14 @@ class ContactMixin:
         st_ = self.steps
         st_.begin("contact: object side")
         ks = np.nonzero(near)[0]
+        Dg_raw = None
+        self._deep_at = None
         if len(ks):
             vi_n = idx[ks]
             Dn, _wp, Nn = self.sdf_query(P[vi_n])           # the grids: distance (cm), outward normal, at once
             # a gap near its press limit is measured on the mesh itself (the grids can be up to 0.112 cm off)
             giv_ = np.array([SKIN_GIVE.get(_lab_key(labs[int(i)]), SKIN_GIVE["default"]) for i in vi_n])
+            Dg_raw = np.array(Dn, dtype=float)               # the grids' own reading, kept to show what was measured
             Dn = self.exact_gaps(P[vi_n], Dn, -giv_ - SDF_TOL_CM)
         for kk, k in enumerate(ks):
             i = int(idx[k])
@@ -1024,6 +1027,8 @@ class ContactMixin:
                 pr[1] += A[i]
                 pr[2] = max(pr[2], -d_cm - give)
                 press += A[i]
+                if -d_cm - give > deep:
+                    self._deep_at = (i, labs[i], d_cm, float(Dg_raw[kk]) if Dg_raw is not None else None)
                 deep = max(deep, -d_cm - give)
             if d_cm <= band_cm and (d_cm < 0.0 or -float(np.dot(N[i], nrm)) >= cos_f):
                 pr[0] += A[i]
@@ -1290,12 +1295,29 @@ class ContactMixin:
         res.append(self.purpose_comfort(side))
         return res
 
+    RAYS6 = ((1.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0))
+
     @staticmethod
     def inside_flesh(q, skin_bvh, reach_m=0.03):
-        """A point inside a closed skin (its BVH): (how deep, cm; the nearest triangle) or None when outside. Inside
-        is the nearest face's back side (a skin's faces point out)."""
+        """A point inside the skin (its BVH): (how deep, cm: the distance to the nearest face; the nearest triangle) or
+        None when outside. Inside is decided by ray parity (2026-10-21, the owner's fix): six rays, each counting the
+        skin it crosses, odd = inside, the majority of the six. The nearest face's back side, used before, reads a
+        point outside a bent or flattened fold as inside (45 gun points 2.9 cm "inside" the pinky after the flatten,
+        every one outside by the rays)."""
         loc, nrm, ti, d = skin_bvh.find_nearest(q, reach_m)
-        if loc is None or (q - loc).dot(nrm) >= 0.0:
+        if loc is None:
+            return None
+        votes = 0
+        for r_ in ContactMixin.RAYS6:
+            dv, o_, n_ = Vector(r_), q, 0
+            for _ in range(64):
+                h_ = skin_bvh.ray_cast(o_, dv, 0.3)
+                if h_[0] is None:
+                    break
+                n_ += 1
+                o_ = h_[0] + dv * 1e-6
+            votes += n_ % 2
+        if votes < 4:
             return None
         return d * 100.0, ti
 
