@@ -1,0 +1,37 @@
+{
+ "what": "How far each kind of hand skin may sink into a held object before it counts as a press past its give (cm). Measured values come from the sources below; the rest are still guesses and are marked so.",
+ "values_cm": {
+  "palm": 0.27,
+  "pad": 0.16,
+  "thumb_pad": 0.16,
+  "palm_side": 0.15,
+  "web": 0.15,
+  "default": 0.05
+ },
+ "status": {
+  "palm": "sourced",
+  "pad": "sourced",
+  "thumb_pad": "sourced (the finger pad's value)",
+  "palm_side": "guess: no source found",
+  "web": "guess: no source found",
+  "default": "guess: no source found"
+ },
+ "sources": {
+  "palm": {
+   "value_cm": 0.27,
+   "range_cm": [0.19, 0.34],
+   "citation": "Spartacus V, Shojaeizadeh M, Raffault V, Shoults J, Van Wieren K, Sparrey CJ. In vivo soft tissue compressive properties of the human hand. PLOS ONE 16(12): e0261008 (2021). doi:10.1371/journal.pone.0261008",
+   "data": "Supplementary S4 Table: the depth pressed in at 31% of the soft tissue's thickness over the trapezium, 15 adults, wrist at 0 degrees, 0.2 Hz: mean 2.72 mm, SD 0.45, range 1.92 to 3.35 (women 2.40, men 3.01); the force there 1.02 N on a 3 mm flat indenter, about 144 kPa. Supplementary S3 Table: stiffness 0.26 N/mm (small deformation) and 0.54 N/mm (large).",
+   "reading": "The column headed '31 % of thickness' is read as the depth pressed in (mm): the forces and the stiffness agree only with that reading. That reading is ours, not the paper's statement.",
+   "applied_as": "The palm's sink at grip pressure: published palm pressures in a grip are about 100 to 250 kPa, and 144 kPa is inside that range.",
+   "limits": "Measured over the thumb's base (the trapezium), not over the index and middle metacarpals; a 3 mm indenter sinks further than a broad grip surface at the same pressure, so the value is likely a little high."
+  },
+  "pad": {
+   "value_cm": 0.16,
+   "citation": "Dzidek BM, Adams MJ, Andrews JW, Zhang Z, Johnson SA. Contact mechanics of the human finger pad under compressive loads. J. R. Soc. Interface 14: 20160935 (2017). doi:10.1098/rsif.2016.0935",
+   "data": "An index finger pad pressed on flat glass: 'The maximum displacement was ~ 1.6 mm', at a normal force of 2 N.",
+   "support": "Serina ER, Mote CD, Rempel D. Force response of the fingertip pulp to repeated compression: effects of loading rate, loading angle and anthropometry. J Biomech 30: 1035-1040 (1997): the pulp is compliant below 1 N and stiffens fast above it.",
+   "limits": "One subject (female, 27, left index finger), up to 2 N."
+  }
+ }
+}

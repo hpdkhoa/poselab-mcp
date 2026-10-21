@@ -3751,10 +3751,12 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
         return {"clip": out, "changed_frames": len(changed), "before": brief(before), "after": brief(after),
                 "all_passed_after": after["all_passed"], "out_of_reach": reach, "after_detail": after["checks"]}
 
-    def save_clip(self, clip, formats=("pose.json",), root_name=None):
+    def save_clip(self, clip, formats=("pose.json",), root_name=None, morphs=None):
         """Writes a clip to the output folder's clips/: pose.json (bone data) and fbx (an armature animation for a
         game engine). root_name renames the armature object while it exports (Unreal reads the top node as the
-        skeleton's root bone: give the root bone's name)."""
+        skeleton's root bone: give the root bone's name). morphs: {shape key: [value per frame]}: the skin mesh is
+        exported with the armature and those shape keys keyed per frame (morph target curves in Unreal; the palm's
+        press, press_flatten)."""
         self._need()
         frames, fps = self._frames(clip)
         folder = self._own(os.path.join(self.out_dir, "clips"))
@@ -3781,6 +3783,19 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
                 o.select_set(False)
             self.arm.select_set(True)
             bpy.context.view_layer.objects.active = self.arm
+            skin_ = self.meshes[0]
+            kact = None
+            keys_ = (skin_.data.shape_keys.key_blocks if skin_.data.shape_keys else {})
+            morphs = {k: v for k, v in (morphs or {}).items() if k in keys_}
+            if morphs:
+                kact = bpy.data.actions.new(clip + "_morphs")
+                skin_.data.shape_keys.animation_data_create()
+                skin_.data.shape_keys.animation_data.action = kact
+                for k, vals in morphs.items():
+                    for i, v in enumerate(vals):
+                        keys_[k].value = float(v)
+                        keys_[k].keyframe_insert("value", frame=i)
+                skin_.select_set(True)
             old_name = self.arm.name
             renamed = None
             if root_name:
@@ -3792,7 +3807,8 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
             self.sc.render.fps, self.sc.render.fps_base = int(round(fps)), 1.0
             self.sc.frame_start, self.sc.frame_end = 0, len(frames) - 1
             try:
-                bpy.ops.export_scene.fbx(filepath=path, use_selection=True, object_types={'ARMATURE'}, add_leaf_bones=False,
+                bpy.ops.export_scene.fbx(filepath=path, use_selection=True,
+                                         object_types={'ARMATURE', 'MESH'} if morphs else {'ARMATURE'}, add_leaf_bones=False,
                                          bake_anim=True, bake_anim_use_all_actions=False, bake_anim_use_nla_strips=False,
                                          bake_anim_force_startend_keying=True, bake_anim_simplify_factor=0.0)
             finally:
@@ -3801,6 +3817,9 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
                     renamed.name = root_name
                 self.arm.animation_data.action = None
                 bpy.data.actions.remove(act)
+                if kact is not None:
+                    skin_.data.shape_keys.animation_data.action = None
+                    bpy.data.actions.remove(kact)
                 self.sc.render.fps = 30
                 self._apply(keep)
             written.append(path)

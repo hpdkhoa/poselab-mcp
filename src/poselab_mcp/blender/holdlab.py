@@ -1511,6 +1511,29 @@ class HoldMixin:
         self._measured = data
         return entry
 
+    def exact_signed(self, X):
+        """The exact signed distance (cm, inside below 0) from points X to the object's mesh: the distance to the
+        nearest face, and inside or out by ray parity in six directions (the majority; a closed surface's crossings
+        alternate). No grid: for checking the grids and for a gap that decides a wall."""
+        bvh = self._object_now()[0]
+        dirs = [Vector(v) for v in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0.577, 0.577, 0.577), (-0.577, 0.577, -0.577))]
+        out = np.empty(len(X))
+        for i, x in enumerate(X):
+            p = Vector(list(x))
+            loc, _n, _ix, dist = bvh.find_nearest(p)
+            votes = 0
+            for dv in dirs:
+                o, hits = p.copy(), 0
+                for _ in range(64):
+                    h = bvh.ray_cast(o, dv, 1.0)
+                    if h[0] is None:
+                        break
+                    hits += 1
+                    o = h[0] + dv * 1e-6
+                votes += hits % 2
+            out[i] = (-dist if votes * 2 > len(dirs) else dist) * 100.0
+        return out
+
     def exact_gaps(self, X, D, limit, band=0.06):
         """The gaps D (cm, from the distance grids) made exact where they decide a wall: each point whose grid gap
         is within band of its limit (the grids' own error is 0.03 cm, sdflab.SDF_TOL_CM) is measured again on the
@@ -1521,11 +1544,7 @@ class HoldMixin:
         near = np.nonzero(np.abs(D - lim) <= band)[0]
         if not len(near):
             return D
-        bvh = self._object_now()[0]
-        for i in near:
-            loc, _n, _ix, dist = bvh.find_nearest(Vector(list(X[i])))
-            if loc is not None:
-                D[i] = (dist * 100.0) * (-1.0 if D[i] < 0.0 else 1.0)
+        D[near] = self.exact_signed(np.asarray(X)[near])
         return D
 
     def measured_point(self, side, name):
@@ -1547,6 +1566,117 @@ class HoldMixin:
         if m is None:
             return None
         return ((m.get("sides") or {}).get(side) or {}).get("tip_len_m", {}).get(fi)
+
+    def press_flatten(self, side, name=None):
+        """The hand's skin flattened where it presses into the object, as a real hand's soft tissue compresses toward
+        its bones under the grip (the owner, 2026-10-21): every skin point of this hand inside the object by no more
+        than its give (the sourced skin give) moves toward its own bone (the nearest point of its heaviest bone's
+        line) by exactly the distance that brings it onto the object's surface:
+
+            p' = p + u t,   u toward the bone,   d(p) + t (n . u) = 0  ->  t = -d / (n . u)
+
+        (n the object's outward normal at p; where n . u < 0.3 the move is along n, t = -d). A point deeper than its
+        give is not moved: it is a wall, refused elsewhere. The moves are made a shape key on the skin mesh (a morph
+        target in a game engine), in the mesh's rest frame: s = (sum_i w_i B_i)^-1 M^-1 dp (the skinning's own
+        linear blend, M the mesh's world turn). Returns how many points moved, by how much, and how many are past
+        their give (left alone)."""
+        name = name or "press_%s" % side
+        ob = self.meshes[0]
+        P, N = self._skin_arrays()[:2]
+        idx, lab = self._hand_label_arrays(side, P, N)
+        if not len(idx):
+            return {"moved": 0}
+        X = P[idx]
+        Dg, _w, Nr = self.sdf_query(X)
+        cand_ = np.nonzero(Dg < 0.5)[0]                    # every point the grid puts near or inside: measured exactly
+        D = np.array(Dg, dtype=float)
+        if len(cand_):
+            D[cand_] = self.exact_signed(X[cand_])
+        grid_check = {"points_checked": int(len(cand_)),
+                      "sign_disagrees": int(np.sum(np.sign(Dg[cand_]) != np.sign(D[cand_]))) if len(cand_) else 0,
+                      "max_abs_difference_cm": round(float(np.max(np.abs(Dg[cand_] - D[cand_]))), 3) if len(cand_) else 0.0}
+        give = np.array([SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"]) for l_ in lab])
+        inside = D < 0.0
+        within = inside & (-D <= give)
+        past = inside & ~within
+        bone_names, _T, _sv, _k, _s = self._skin_static()
+        names = {g.index: g.name for g in ob.vertex_groups}
+        MW = np.array(ob.matrix_world)[:3, :3]
+        MWi = np.linalg.inv(MW)
+        AW = np.array(self.arm.matrix_world)
+        AWi = np.linalg.inv(AW)
+        MWf = np.array(ob.matrix_world)
+        MWfi = np.linalg.inv(MWf)
+        if ob.data.shape_keys is None:
+            ob.shape_key_add(name="Basis", from_mix=False)
+        kb = ob.data.shape_keys.key_blocks
+        key = kb.get(name) or ob.shape_key_add(name=name, from_mix=False)
+        basis = kb[0]
+        co0 = np.empty(len(basis.data) * 3)
+        basis.data.foreach_get("co", co0)
+        co = co0.copy().reshape(-1, 3)
+        moved, depth, moved_v, info = 0, [], [], []
+        for k in np.nonzero(within)[0]:
+            vi = int(idx[k])
+            p = X[k]
+            bn = bone_names[vi]
+            if not bn or bn not in self.arm.pose.bones:
+                continue
+            pb = self.arm.pose.bones[bn]
+            h = np.array(list(self.arm.matrix_world @ pb.head))
+            tl = np.array(list(self.arm.matrix_world @ pb.tail))
+            seg = tl - h
+            s_ = float(np.clip(((p - h) @ seg) / max(1e-12, seg @ seg), 0.0, 1.0))
+            u = (h + s_ * seg) - p
+            u = u / max(1e-12, np.linalg.norm(u))
+            n = Nr[k] / max(1e-12, np.linalg.norm(Nr[k]))
+            nu = float(n @ u)
+            d_m = float(D[k]) / 100.0
+            dp = u * (-d_m / nu) if nu >= 0.3 else n * (-d_m)
+            # the skinning's linear blend at this vertex, in the mesh's own frame
+            B4 = np.zeros((4, 4))
+            wsum = 0.0
+            for g in ob.data.vertices[vi].groups:
+                gn = names.get(g.group)
+                if gn is None or gn not in self.arm.pose.bones or g.weight <= 0.0:
+                    continue
+                pbg = self.arm.pose.bones[gn]
+                if not pbg.bone.use_deform:
+                    continue                                # the armature modifier skips a bone that does not deform
+                Bi = MWfi @ AW @ np.array(pbg.matrix) @ np.linalg.inv(np.array(pbg.bone.matrix_local)) @ AWi @ MWf
+                B4 += g.weight * Bi
+                wsum += g.weight
+            if wsum <= 0.0:
+                continue
+            B4 /= wsum
+            B = B4[:3, :3]
+            # the skinning's own check: the rest point through this blend must land where the posed skin is
+            pred = MWf @ (B4 @ np.r_[co0.reshape(-1, 3)[vi], 1.0])
+            skin_err = float(np.linalg.norm(pred[:3] - p)) * 100.0
+            s = np.linalg.solve(B, MWi @ dp)
+            co[vi] = co[vi] + s
+            moved += 1
+            moved_v.append(vi)
+            info.append({"part": lab[k], "gap_before_cm": round(float(D[k]), 3), "n_dot_u": round(nu, 3),
+                         "move_cm": round(float(np.linalg.norm(dp)) * 100.0, 3), "bone": bn,
+                         "weights": len(ob.data.vertices[vi].groups), "skinning_check_cm": round(skin_err, 4)})
+            depth.append(-float(D[k]))
+        key.data.foreach_set("co", co.ravel())
+        key.value = 1.0
+        ob.data.update()
+        bpy.context.view_layer.update()
+        self._skin_cache = None                              # the skin's shape changed; the pose did not
+        # the check: each moved point's gap on the posed, pressed skin (0 = on the surface)
+        after = None
+        if moved_v:
+            P2 = self._skin_arrays()[0]
+            D2 = self.exact_signed(P2[moved_v])
+            after = {"max_abs_gap_cm": round(float(np.max(np.abs(D2))), 4), "mean_gap_cm": round(float(np.mean(D2)), 4),
+                     "worst": [dict(info[i], gap_after_cm=round(float(D2[i]), 3)) for i in np.argsort(-np.abs(D2))[:4]]}
+        return {"shape_key": name, "moved": moved, "on_surface_after": after, "grid_vs_exact_before": grid_check, "depth_cm": {"max": round(max(depth), 3) if depth else 0.0,
+                "mean": round(float(np.mean(depth)), 3) if depth else 0.0},
+                "past_give_left": int(past.sum()), "by_part": {l_: int(sum(1 for k in np.nonzero(within)[0] if lab[k] == l_))
+                                                              for l_ in sorted(set(lab[k] for k in np.nonzero(within)[0]))}}
 
     def _finger_chains(self, side, fingers, sample=24):
         """Each finger's joints as the closing solver reads them (contactlab.conform_digits), in the world as posed
@@ -1945,6 +2075,9 @@ class HoldMixin:
             fit["result"] = "no roll keeps every condition"
             if nearest is not None and not cand:
                 fit["nearest"] = self._roll_readout(side, nearest, Pb, gb, body, tf, H0)
+                if not hasattr(self, "_nearest_M"):
+                    self._nearest_M = {}
+                self._nearest_M[side] = Matrix([list(r_) for r_ in nearest[3]])
             fit["digits"] = None
         else:
             fang, deg, M, fres, th_best = chosen
@@ -2134,7 +2267,8 @@ class HoldMixin:
             out["body skin points"] = len(fr[0])
         return out
 
-    def direct_hold(self, side, marks, pairs, glove_cm=0.0, other=True, wrap=None, gun_shift=None, f_pref=20.0):
+    def direct_hold(self, side, marks, pairs, glove_cm=0.0, other=True, wrap=None, gun_shift=None, f_pref=20.0,
+                    diagnose_nearest=False):
         """The direct hold, in the owner's order (docs/DIRECT_HOLD_PLAN.md, v0.12). Step A (touch_fit, by formula, no
         pose set): the hand placed exactly at its touch points, then the roll about the center-to-line axis that
         keeps the palm facing in, no skin past its give, the index on its line, each wrapping finger closed onto the
@@ -2162,6 +2296,20 @@ class HoldMixin:
         out["steps"]["A_touch_fit"] = fit
         out["steps"]["A_place"] = self.hand_place(side, H, m)
         if fit.get("result") != "placed":
+            if diagnose_nearest and getattr(self, "_nearest_M", {}).get(side) is not None:
+                # a diagnostic, not a hold: the hand posed at the nearest roll (the gun not moved), the body solved to
+                # it, the palm's press measured there; the shape key is removed after, so no export carries it
+                Hn_ = self._nearest_M[side]
+                b_ = self.body_solve(side, Hn_, gun_shift=None, f_pref=f_pref)
+                dg = {"label": "a diagnostic at the nearest roll: not a hold", "body": b_.get("result")}
+                if b_.get("result") == "chosen":
+                    dg["press"] = self.press_flatten(side, name="press_%s_diag" % side)
+                    ob_ = self.meshes[0]
+                    k_ = ob_.data.shape_keys.key_blocks.get("press_%s_diag" % side)
+                    if k_ is not None:
+                        ob_.shape_key_remove(k_)
+                        self._skin_cache = None
+                out["diagnosis_nearest"] = dg
             return stop("no roll keeps every condition: no hold made", fit.get("roll"))
         # Steps B and C: the body to the fixed hand (by formula), posed and read by the real arm walls
         body = self.body_solve(side, H, gun_shift=gun_shift, f_pref=f_pref)
@@ -2170,6 +2318,7 @@ class HoldMixin:
             return stop("no body reaches the hand inside the walls", body.get("nearest") or body.get("tried_rows"))
         # the digits as Step A worked them out, posed; then every wall read on the posed rig
         self._apply_digits(side, fit["digits"])
+        out["steps"]["press_shape"] = self.press_flatten(side)
         mark("hold posed")
         ok, swalls, margin = self.start_check(side, other)
         walls = self.wall_faults(side, other)

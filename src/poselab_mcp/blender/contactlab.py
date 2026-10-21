@@ -53,7 +53,16 @@ CONTACT_PURPOSES = {
 # soft tissue gives under a grip: a press counts only past the tissue's give (cm). The palm's pad of fat and muscle
 # flattens a few mm, a finger pad less, the bony back and sides little (rigid meshes do not squash: this is where a
 # real grip's contact area comes from)
-SKIN_GIVE = {"palm": 0.3, "palm_side": 0.15, "web": 0.15, "pad": 0.15, "thumb_pad": 0.15, "default": 0.05}
+def _load_skin_give():
+    """The skin's give per kind (cm) from poselab_mcp/data/sourced/skin_give.json, with its sources (the owner's
+    rule: numbers from measurements or named sources). The palm (Spartacus et al. 2021) and the pads (Dzidek et al.
+    2017) are sourced; the file marks the rest as guesses."""
+    import json as _json
+    p_ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sourced", "skin_give.json")
+    return dict(_json.load(open(p_, encoding="utf-8"))["values_cm"])
+
+
+SKIN_GIVE = _load_skin_give()
 # a holding hand's digits, as a real one holds (tighter than a free hand's ranges): no joint bent backward against the
 # grip, no finger twisted out of its plane past what a grasp shows. (least curl, most twist out of plane) degrees
 HOLD_DIGIT_LIMITS = {"01": (-5.0, 20.0), "02": (0.0, 8.0), "03": (-5.0, 10.0),
