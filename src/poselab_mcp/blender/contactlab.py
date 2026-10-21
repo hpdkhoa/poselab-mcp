@@ -1006,6 +1006,9 @@ class ContactMixin:
         if len(ks):
             vi_n = idx[ks]
             Dn, _wp, Nn = self.sdf_query(P[vi_n])           # the grids: distance (cm), outward normal, at once
+            # a gap near its press limit is measured on the mesh itself (the grids can be up to 0.112 cm off)
+            giv_ = np.array([SKIN_GIVE.get(_lab_key(labs[int(i)]), SKIN_GIVE["default"]) for i in vi_n])
+            Dn = self.exact_gaps(P[vi_n], Dn, -giv_ - SDF_TOL_CM)
         for kk, k in enumerate(ks):
             i = int(idx[k])
             d_cm = float(Dn[kk])

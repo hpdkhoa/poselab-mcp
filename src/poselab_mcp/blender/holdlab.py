@@ -1512,33 +1512,24 @@ class HoldMixin:
         return entry
 
     def exact_signed(self, X):
-        """The exact signed distance (cm, inside below 0) from points X to the object's mesh: the distance to the
-        nearest face, and inside or out by ray parity in six directions (the majority; a closed surface's crossings
-        alternate). No grid: for checking the grids and for a gap that decides a wall."""
-        bvh = self._object_now()[0]
-        dirs = [Vector(v) for v in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0.577, 0.577, 0.577), (-0.577, 0.577, -0.577))]
-        out = np.empty(len(X))
-        for i, x in enumerate(X):
-            p = Vector(list(x))
-            loc, _n, _ix, dist = bvh.find_nearest(p)
-            votes = 0
-            for dv in dirs:
-                o, hits = p.copy(), 0
-                for _ in range(64):
-                    h = bvh.ray_cast(o, dv, 1.0)
-                    if h[0] is None:
-                        break
-                    hits += 1
-                    o = h[0] + dv * 1e-6
-                votes += hits % 2
-            out[i] = (-dist if votes * 2 > len(dirs) else dist) * 100.0
-        return out
+        """The exact signed distance (cm, inside below 0) from points X to the object's mesh as posed: shell by shell
+        (a game gun is many closed shells, some inside others), each shell's nearest face's distance, inside it by
+        ray parity in six directions (the majority); the union's is the least (sdflab.shell_signed). No grid: for a
+        gap that decides a wall, and for checking the grids."""
+        from sdflab import shell_signed, shells
+        key = self._gun_key()
+        c = getattr(self, "_shell_bvhs", None)
+        if c is None or c[0] != key:
+            vs, ps = self._gun_verts()
+            c = (key, [BVHTree.FromPolygons(vs, [ps[i] for i in sh]) for sh in shells(ps)])
+            self._shell_bvhs = c
+        return np.array([shell_signed(c[1], x) * 100.0 for x in X])
 
-    def exact_gaps(self, X, D, limit, band=0.06):
+    def exact_gaps(self, X, D, limit, band=0.15):
         """The gaps D (cm, from the distance grids) made exact where they decide a wall: each point whose grid gap
-        is within band of its limit (the grids' own error is 0.03 cm, sdflab.SDF_TOL_CM) is measured again on the
-        object's mesh: the distance to its nearest face, signed by the grid (inside below 0, clear that close to a
-        wall). Returns the gaps."""
+        is within band of its limit is measured again on the object's mesh (exact_signed). The band is above the
+        grids' largest measured error, 0.112 cm on the M1911 (examples/sdf_sign_check.py, grid v3, 6000 points), so
+        a point outside the band is on the right side already. Returns the gaps."""
         D = np.array(D, dtype=float)
         lim = np.broadcast_to(np.asarray(limit, dtype=float), D.shape)
         near = np.nonzero(np.abs(D - lim) <= band)[0]

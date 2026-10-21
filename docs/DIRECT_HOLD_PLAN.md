@@ -155,3 +155,20 @@ web and pads 0.15, else 0.05 cm), the glove's thickness (0.15 cm, "a guess"), th
 marked "working value" in ranges.py, a holding finger's limits, the purpose and comfort numbers marked "estimate",
 the ready place in the view and the preferred elbow flexion (20). Solver settings (step sizes, tolerances) are
 choices, listed in the audit, not body facts.
+
+## The distance grids, checked against the mesh (grid v3, 2026-10-21)
+
+examples/sdf_sign_check.py reads 6000 points within 1 cm of the M1911's surface by the grids and by the exact check
+(each closed shell on its own, inside by a six-direction ray-parity majority, the union the least distance). The
+M1911 is 21 closed shells, some inside others (0 open edges); counting crossings over all of them at once read a point
+inside two shells as outside.
+
+| Grid | Wrong side | Largest difference |
+|---|---|---|
+| v1: either of two ray directions, all shells at once | 15% (hand points near the grip) | 2.26 cm |
+| v2: six votes, all shells at once | 2.6% | 1.01 cm |
+| v3: six votes, shell by shell, the union the least | 0.55% (28 of 5095) | 0.112 cm |
+
+v3 does not pass (the goal is 0 wrong sides): its remaining errors are within 0.112 cm of the surface. So every gap
+that decides a wall and reads within 0.15 cm of its limit is measured on the mesh itself (holdlab.exact_gaps,
+contactlab.contact_pairs).
