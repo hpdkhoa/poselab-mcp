@@ -143,7 +143,9 @@ LAB_STEPS = [
     # starts
     "seed_hold", "arm_excess", "shoulder",
     # the target solver and its parts
-    "direct_hold", "touch_fit", "body_solve", "_place_arm", "_finger_chains", "_thumb_world", "_apply_digits", "hand_place", "start_check", "reach_now", "open_fingers", "_pierced_samples",
+    "direct_hold", "natural_open", "place_on_touch", "close_grab", "_grip_wrap_radius", "body_solve", "_place_arm",
+    "_thumb_world", "_apply_digits", "hand_place", "start_check", "reach_now", "measure_hand", "press_flatten",
+    "exact_signed", "_pierced_samples",
     "target_hold", "_place_targets", "_fit_hand", "_body_eases", "settle_palm", "conform_digits", "_fit_pads",
     "_fit_index", "_fit_thumb", "relax_fingers", "_polish", "_descend", "_walled", "repair_frame",
     # judging
