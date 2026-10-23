@@ -172,3 +172,18 @@ inside two shells as outside.
 v3 does not pass (the goal is 0 wrong sides): its remaining errors are within 0.112 cm of the surface. So every gap
 that decides a wall and reads within 0.15 cm of its limit is measured on the mesh itself (holdlab.exact_gaps,
 contactlab.contact_pairs).
+
+## v0.14 plan: the owner's grip order (2026-10-23, not built yet)
+
+Source: the owner's chart "Pistol grip: backstrap placement, right handed shooter" (Sharp Shooting) and two side
+photos (a Beretta 92 and an M1911, the index straight along the frame, the wrist up, the forearm behind the gun).
+
+| The owner's words | The design | Target kind (source) |
+|---|---|---|
+| "1. With right hand (dominate hand). grip the back strap- straight back, deep into the webbing between the thumb & index finger. no gap." | The open hand placed in one calculation: the web fold on A, pressed to touching within the skin's give (no gap); the knuckle line (index knuckle to little knuckle) parallel to the backstrap line (the grip run read along the well; the owner's answer "Knuckle line along backstrap", photo 3); turned about that line so the palm faces the left panel (the purpose rule). Walls of the web and the palm read. | A: a point (the crook's middle line). Backstrap: a line. Panel: a surface. (chart, top view) |
+| "2. Close the fingers and keep the forearm align with the gun" + answer "Stays straight on line B" + "first move the wirst up" (answer: "Same: done in step 2") | The palm cups; middle, ring, little wrap by the grip's size; the thumb curls to the left side (close_grab). The index: middle and end joints straight; its base knuckle turned so the pad line lies along line B, close, not pressing. The arm solved so the forearm lies in the gun's middle vertical plane (top view: the chart's dashed line), its tilt to the bore the least the wrist walls allow (wrist up). Walls of every part read. | Line B: a line (owner's red line). The gun's middle plane: a surface (chart). |
+| "3. Grip the gun as high as possible under the beaver tail" + answer "Slide up to the highest no-clip point" | The closed hand (and the arm with it) slid up along the backstrap line to the highest place where no part clips past its give; A becomes that place. The arm re-solved to keep the forearm aligned. Walls read. | Beavertail underside: a surface (chart, photo 3). |
+
+Answered 2026-10-23: the index base knuckle may turn inside step 2 ("Allow, inside step 2 closing"; its range a
+wall); straight back = the knuckle line along the backstrap ("Knuckle line along backstrap"; my first reading, the
+hand's long line, was wrong by photo 3).

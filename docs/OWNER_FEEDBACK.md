@@ -1,0 +1,82 @@
+# Owner feedback log (hold and skin work)
+
+Every piece of the owner's feedback, good and bad, in the owner's words, with what it means. Written when it is
+given. Read this after any context summary, before building anything.
+
+## 2026-10-22
+
+| Owner's words | Good / bad | What it means |
+|---|---|---|
+| "don't focus on the turn now, go back to the gun model" | direction | Gun model before hold polish. |
+| "animation of mag drop and insert is not good, no slide direction" / "mag slide clipping with the grip, I want the smooth animation" | bad | Magazine moves along the well's line; no clipping; smooth. Fixed (0 frames clipping, 30 fps). |
+| "the animation missed the mag drop and insert ... make the bullet in side port render when chamber loaded" | bad | Showcase must show the magazine and the chambered round. Fixed. |
+| "I choose Option A" (skin as real tissue) | decision | Tissue give from sourced depths, contact areas only. |
+| "1 use b, 2 use Dzidek, 3 do the fingers and leave the rest" | decision | Broad/probe ratio 0.376; below 1 N Dzidek's curve; fingers only. |
+| "when not firing use 5N, fight the recoil can go to 40N, ... clipping too much then change to 20N" | decision | Grip force levels. |
+| "why use bent elbow (90°)? shooting need a straight arm???" | bad | Use straight-arm data for shooting (Zhang 2021). |
+| "upport hand links up fully" / "Glove just enhance the grip surface hold" | decision | Both arms add push-back; glove changes friction only. |
+| "one question that my previous hand place is good, why suddenly the hand goes straight inside the gun?" | bad | I did not check the hand step after the gun rebuild. |
+| "use 1" (grip line from the magazine well) | decision | Grip axis from the facts' well line. |
+| "B line not in the middle of trigger ring, why you not catch this issue?" | bad | I checked the hand's gap, not the target itself. |
+| "keep the rule from point touch in global memory ... implement it into the code with argument is the touch points" | rule | Touch points checked against their definitions first (global CLAUDE.md, check_touch_points). |
+| "Line B's direction: parallel to the bore" | decision | Line B along the bore at the ring's middle height, on the frame's right face. |
+| "I expected the index finger must be placed in the red line" (picture) | requirement | The index lies across the trigger ring's middle, along the bore. |
+| "not swing only index, move the hand up when keep the web at the current correct point" | bad | Do not move one finger alone to meet a target. |
+| "once again not a new step, the B line must be calculated to place the hand directly ... the most optimized and this can be rerun without break or need to tune again" | bad + rule | No extra steps; one exact calculation; no tuning. |
+| "hey B line is fixed? I still not see index finger in B line" / "B line in wrong side, index finger is on the right side of the gun" | bad | Look at the picture before saying it is fixed; index on the gun's right side. |
+| "the index can be straight in B line position without the need of touch B point, just keep it close" | decision | Straight index along line B, close, not pressing. |
+| "use a" (web in the crook on the firing side) | decision | Web may sit right of the middle, in the crook. |
+| "use 1" (index knuckle curl) / "use b" (palm wall read after the cup) | decision | Tried; both could not meet the condition as built. |
+| "the palm must always face in the direction of the object need to hold, this is the purpose rule why you still let the palm roaming outside?" | bad | Never drop the purpose rule (palm faces the held surface) when another condition changes. |
+| "index finger print must point to the gun direction from the right side ... thumb index point the same in the gun direction from the left side" | rule | Index pad faces the gun from the right; thumb pad faces the gun from the left. |
+| "make the correction short you talked too much" | bad | Short answers. |
+| "if my decision conflict with the rules, tell me before execute" | rule | Check each decision against the rules first; say the conflict before building. |
+| "note what I feedback good and bad down so no summarize lost the context again" | rule | This log. |
+| "do it and show to me" (web on A, palm facing the panel, index pad facing the gun, straight index close to line B) | decision | Built in place_on_touch. Result: palm 2.6 deg, index pad -1.00, index 15 deg off line B and 0.3 / 0.8 / 1.4 cm inside the frame. |
+
+## Earlier (from memory files, before 2026-10-22)
+
+- Walls (anatomy, no clipping) are never scored or traded; stop and ask when one breaks.
+- Show evidence as pictures; before/after with the same views.
+- Build the owner's stated method; never swap it for a helper; never add my own steps without asking.
+- Answer questions; do not start jobs from a question.
+- One heavy job at a time.
+| "first I want to see the index finger stays straight out, which mean the joints on the finger is straight out" / "render the index finger only so I can check it" | request | Index-only pictures (views_index_only) with each joint's bend. Step 2: knuckle 1, middle 1, end 0 deg: straight. |
+| "no I want to see the finger with two view from up to down and from left to right" / "only the index finger, no gun in this" | request | views_index_only now renders only no_gun_top_down and no_gun_left_to_right, scale 0.12, centred on the index. |
+| "this is what you called straight? make it a flat straight finger" (top-down picture, bends circled at the knuckle and middle joint) | bad | Curl alone is not "straight": the side lean and the skin's own shape count. The index must look flat and straight from every view. |
+| "these are the straight index fingers" (4 photos: pointing index, front and side views) | requirement | Target shape: the three segments on one straight line from the knuckle to the tip, seen from the front and the side; no side lean, no sag, no S curve in the skin. |
+| "also look at Hand_Kinematic_Model_Construction_Based_on_Trackin.pdf ... the details maybe can help you in this render" | source | Dong & Payandeh 2025 (Appl. Sci. 15, 8921), Fig. 5a: a straight index has MCP {5}, PIP {6}, DIP {7}, tip {8} on one line (X5, X6, X7 parallel; all joint angles 0); MCP 2 DOF (beta5 flex, gamma5 side), PIP and DIP one hinge each about parallel Y axes. |
+| "use a, then rerun and show me the result" (pose the index bones so the skin centreline is straight; model unchanged) | decision | Straightness is read on the skin, not the bones. The index joints are solved so the skin centre lies on one line. Result: walls broken (middle joint 13 deg backward, limit 5), undone; skin 0.56 cm off its line, bow inside segment 1. Asked the owner. |
+| "use 1, then rerun and show me the result" (fix the mesh: straighten the index skin in the ToangTown hand model) | decision | Permission to change the hand model's index skin (backup first). Built: Tools/blender/straighten_index.py on Saved/PoseLab/ar_slim/Arms.fbx (source kept as Arms.pre_index_straight.fbx; right index only; 1194 points, max 0.40 cm). Result: worst off-line 0.56 to 0.31 cm (knuckle end); 1.8 cm to tip within 0.11 cm. The option a joint solve call removed. |
+| "the crease and the base is in the finger? then where the image full hand hold gun? I need 3 views with gun: top down, left view, right view" | request | After a finger check, show the full hand on the gun: with-gun top down, left to right, right to left. The mesh fix left a crease at the index base (my edit: base moved by weight share). |
+
+## 2026-10-23
+
+| Owner's words | Good / bad | What it means |
+|---|---|---|
+| "first move the wirst up, like these image with the right hand hold the gun." (3 photos: Beretta side view, Sharp Shooting backstrap chart, M1911 side view) | request | Raise the wrist so the hand and forearm sit as in the photos. |
+| "I want the step of hand place to be like the order inside my second image: 1. With right hand (dominate hand). grip the back strap- straight back, deep into the webbing between the thumb & index finger. no gap. 2. Close the fingers and keep the forearm align with the gun 3. Grip the gun as high as possible under the beaver tail" | decision (new step order) | The hold's steps follow this order. Plan and conflicts checked before building. |
+| Answers: index "Stays straight on line B"; height "Slide up to the highest no-clip point"; wrist up "Same: done in step 2" | decision | Step 2 closes middle, ring, pinky, thumb; index straight on line B. Step 3 slides the closed hand up the backstrap to the highest no-clip point (A becomes it). Step 2 lines the forearm up with the gun, wrist wall 30 deg kept. |
+| Answers: index knuckle "Allow, inside step 2 closing"; straight back "Yes, hand line along backstrap" | decision | The index base knuckle may turn to lay the straight index on line B (its range a wall). Straight back: my reading (hand line along the backstrap) was wrong by photo 3 (knuckles stacked along the front strap); flagged to the owner before building. |
+| Corrected answer: straight back "Knuckle line along backstrap" | decision | Step 1: web V on A (gun's middle line), knuckle line (index to little knuckle) parallel to the backstrap line, palm faces the left panel. |
+| (my error, found 2026-10-23) step 1 read the palm's wall | bad (mine) | Broke the owner's choice (b) of 10-22 (palm wall read after the cup). Fixed: step 1 reads the web only. |
+| (run result, 2026-10-23) v0.14 order | result | Step 1 as built: web on A 0.00 cm, knuckle line 0.0 deg, palm 0.6 deg. Step 2 stopped: palm through the grip 355 cm2, 1.16 cm deep (a flat palm with the web on the backstrap lies through the grip's middle); little finger past the grip's end. Asked the owner. |
+| "step 1 need to bring the gun higher place so the arm will have a high place to start, and I think we start with the aim position first, then the idle position is just the aim position with a pull so can work on it later." | decision | Hold built at the aim position first (gun high, bore level); idle = aim with a pull, later. |
+| "B line is missed in step A so bring the gun up, the wrist go up, then the index finger can goes up to B line. Make one experiment: keep the hand, the wrist and the finger, move the hand up so index finger is point straight to B line direction with the B line and the straight direction to the ground make a 90 degree angle, then bring the gun up so B line match the index finger line." | bad + experiment | Index missed B. Experiment: hand, wrist, fingers kept; the arm raised so the index line is level (90 deg to the plumb line); the gun brought up so line B lies on the index line. |
+| "step 2 is making thing worse by put the hand down and out of point A and line B, I said do not bring the hand out of point A and line B, why you missed it all the time? Hard rule no skip." | bad + rule (wall) | Web on A and index on line B are a hard rule, checked at every step; no step may move the hand off them. I moved the index off B in step 1 of v0.14. |
+| (experiment result, 2026-10-23) | result | Arm raised 8.8 deg: index level (90.0 deg). Gun up 17.7 cm, turned 8.9 deg: line B on the index (0.01 deg, pads within 0.17 cm). Web 1.43 cm below A (0.00 along B, 0.23 cm into the face). Palm 6.2 deg. Open fingers through the grip: 623 cm2, 1.2 cm deep (not closed yet). |
+| "no more bend, I see except the clipping and finger not closed then finger position is good, hand position is a hold." | good + decision | No knuckle bend for B. The experiment's hand and index position is good; the hold starts from it. Clipping and finger closing remain. |
+| "this clipping is still web sit below A? show me where is A point and where is the point on hand web you're matching" | question | Drawn: A cyan, web fold white. Correction (my error): the web is 1.44 cm ABOVE A, not below (my "up the gun" axis pointed down). The circled clip is the palm (grip back through it, 1.2 cm), not the web (web clips nowhere). |
+| "now create a fakepose-mcp, this one will do the hand hold like the current game market is doing, and my flow will have the toggle to switch between poselab and fakepose, default until poselab is ready will be fakepose. Tell me can you do it and the result must be automatic done without clipping and for first person view with every actions I needed, also interact or attach on the gun part to complete the animation like my previous AR-15 work" | question + request | Answer first (can it be done, how, conflicts); build after the owner's yes. |
+| "use b) Zero clipping seen from the first-person camera, start on M1911A1 as my lab model outpu" | decision | fakepose-mcp: the market's hold (presets on sockets, fingers curl to contact, two-bone IK, parts attached); its clipping rule is zero clipping seen from the first-person camera (hidden contact measured and listed); M1911A1 first. Gun Kit toggle pose_engine, default fakepose. |
+| (fakepose status, 2026-10-23) | result | Built: fakepose-mcp package (K:/Projects/gitHub/fakepose-mcp, plan docs/PLAN.md), Gun Kit pose_engine toggle (default fakepose), aim place, captured firing grip, curl to contact, eye clip check. Phase 1: firing hand 0 eye clip pixels, wrist radial 23 (limit 20). Phase 2a support hand: 46 eye clip pixels, arm 3.2 cm short, wrist ulnar 60 (limit 30). Eye render blocked by a large near object not in the arms skin (to find). Not done: other holds, clips. |
+| "just the way the market does it" (do the anatomy walls apply to fakepose?) | decision | fakepose follows market practice: no anatomy walls; the one rule is zero clipping seen from the first-person camera. Anatomy numbers are reported, not enforced. Pose Lab keeps its walls. |
+| (fakepose result, 2026-10-23) | result | All 11 M1911A1 clips written by fakepose in 289 s; eye clip 0 pixels on every checked frame (every 6th) and on 33 pictured frames. But the first-person view is poor: the arms and sleeves fill the lower view and the gun is small, because this rig's shoulders sit 11 cm above and 19 cm behind the game's eye (Shared.json Base Z -162.6). Asked the owner. |
+| "use 1, for fakepose-mcp only, you do with your best recommended to the finish, I only want the result best at the end. This is the URL you need to push fakepose-mcp: https://github.com/hpdkhoa/fakepose-mcp. Do to the best result and push regularly, then show me the end result" | decision | The eye measured from the rig's head, inside fakepose only (the game's Shared.json untouched). Finish fakepose to the best result on my own judgement; push fakepose-mcp regularly; show the end result. |
+| (fakepose end result, 2026-10-23) | result | Pushed hpdkhoa/fakepose-mcp. M1911A1: 11 clips in 248 s, eye clip 0 on all checked (every 6th) and 33 pictured frames; body at rest, eye from head bone (UE 5.6 template offset, 9.3 cm from Gun Kit's), aim 50.6 cm, support grip mirrored. Open: rifle presets, lowered idle, index on rack/mag grab, weaponlab side uncommitted. |
+
+## 2026-10-24
+
+| Owner's words | Good / bad | What it means |
+|---|---|---|
+| "finish what left for M1911 then push everything up to date, then start make the model for AR-15" | request | M1911 open items (idle pull, index on rack and mag grab, press check); commit and push fakepose, weaponlab, poselab (never the game repo); then the AR-15 model. |

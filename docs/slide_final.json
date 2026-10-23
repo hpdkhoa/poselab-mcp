@@ -1,0 +1,322 @@
+{
+ "final": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    20.573,
+    "slide takes the round"
+   ],
+   [
+    47.885,
+    "round leaves the lips"
+   ],
+   [
+    54.181,
+    "slide picks up the barrel"
+   ],
+   [
+    60.511,
+    "front"
+   ],
+   [
+    62.616,
+    "front"
+   ],
+   [
+    62.901,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.773,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 60.511,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   60.511,
+   62.616,
+   62.901
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.7,
+   427
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   61.93,
+   -72
+  ],
+  "frame_back_max_cm": 0.602,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 307,
+   "10": 296,
+   "15": -40,
+   "20": -4,
+   "25": 30,
+   "30": -3,
+   "40": 0,
+   "50": 5,
+   "60": 8
+  },
+  "cycle_settled_ms": 60.1,
+  "peak_slide_speed_ms": 7.76
+ },
+ "final_one_hand": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.508,
+    "back"
+   ],
+   [
+    22.612,
+    "slide takes the round"
+   ],
+   [
+    54.608,
+    "round leaves the lips"
+   ],
+   [
+    62.597,
+    "slide picks up the barrel"
+   ],
+   [
+    69.607,
+    "front"
+   ],
+   [
+    72.116,
+    "front"
+   ],
+   [
+    72.395,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.772,
+  "slide_hits_back_at_ms": 7.508,
+  "slide_closes_at_ms": 69.607,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   4.69,
+   202
+  ],
+  "closing_hits_ms": [
+   69.607,
+   72.116,
+   72.395
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   9.02,
+   576
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   73.28,
+   -80
+  ],
+  "frame_back_max_cm": 1.202,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 115,
+   "4": 188,
+   "6": 186,
+   "8": 394,
+   "10": 501,
+   "15": 136,
+   "20": -84,
+   "25": 13,
+   "30": 58,
+   "40": -13,
+   "50": -1,
+   "60": 20
+  },
+  "cycle_settled_ms": 69.1,
+  "peak_slide_speed_ms": 7.76
+ },
+ "drag_15N": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    20.313,
+    "slide takes the round"
+   ],
+   [
+    43.946,
+    "round leaves the lips"
+   ],
+   [
+    48.926,
+    "slide picks up the barrel"
+   ],
+   [
+    54.24,
+    "front"
+   ],
+   [
+    56.492,
+    "front"
+   ],
+   [
+    56.87,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.773,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 54.24,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   54.24,
+   56.492,
+   56.87
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.7,
+   427
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   55.67,
+   -83
+  ],
+  "frame_back_max_cm": 0.607,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 308,
+   "10": 298,
+   "15": -40,
+   "20": -2,
+   "25": 30,
+   "30": -1,
+   "40": 1,
+   "50": 16,
+   "60": -36
+  },
+  "cycle_settled_ms": 53.8,
+  "peak_slide_speed_ms": 7.76
+ },
+ "drag_20N": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    20.753,
+    "slide takes the round"
+   ],
+   [
+    52.533,
+    "round leaves the lips"
+   ],
+   [
+    60.838,
+    "slide picks up the barrel"
+   ],
+   [
+    68.215,
+    "front"
+   ],
+   [
+    70.232,
+    "front"
+   ],
+   [
+    70.48,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.773,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 68.215,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   68.215,
+   70.232,
+   70.48
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.7,
+   426
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   69.63,
+   -63
+  ],
+  "frame_back_max_cm": 0.6,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 307,
+   "10": 296,
+   "15": -40,
+   "20": -5,
+   "25": 29,
+   "30": -4,
+   "40": 0,
+   "50": -6,
+   "60": 14
+  },
+  "cycle_settled_ms": 67.7,
+  "peak_slide_speed_ms": 7.76
+ }
+}

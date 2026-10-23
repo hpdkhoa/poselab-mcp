@@ -55,7 +55,7 @@ def min_shift(Nr, need, sweeps=300, tol=1e-6):
 
 
 def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm=0.05, target_cm=0.0,
-                press_cm=0.12, step_cap_deg=15.0, most=24, inner=None):
+                press_cm=0.12, step_cap_deg=15.0, most=24, inner=None, give=None):
     """A finger's joints closed onto the object by calculated steps. The knuckle leads: every free joint turns at its
     rate (a joint's angle = rate * s), s solved each round as the first touch: for each skin point coming closer
     (dd/ds < 0), s_i = (d_i - target) / (-dd/ds), s = min s_i, cut at the joints' room and at step_cap_deg (the
@@ -75,6 +75,9 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
     by v takes its skin past the object point by -n_skin . v. They ride their segment like its skin, and their
     distance is carried forward linearly from where they started (d = d0 + n . (p - p0)): the flesh has no field
     to read again.
+    give: {joint: (cm per point of pts[joint])}: real tissue (the owner's Option A, 2026-10-22): each skin point may sink
+    into the object by its own give, so its distance is read as d + give (0 = sunk exactly its give); target, touch and
+    press then count from there (press_cm becomes the ruler's tolerance past the give).
     Returns ({joint: degrees closed, below 0 opened}, touching segments, rounds, the steps' log)."""
     js = [j for j in pts if j in hinges]
     order = list(pts)
@@ -119,6 +122,8 @@ def chain_close(pts, heads, hinges, room_close, room_open, rate, query, touch_cm
         d, n = query(X)
         d = np.asarray(d, dtype=float)
         n = np.asarray(n, dtype=float)
+        if give is not None:
+            d = d + np.concatenate([np.asarray(give[k], dtype=float) if k in give else np.zeros(len(pts[k])) for k in segs])
         iseg = [k for k in segs if k in ipts]
         if iseg:
             Xi = np.concatenate([ipts[k] for k in iseg])

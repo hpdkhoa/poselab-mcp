@@ -1,7 +1,7 @@
 # The hold tool: goals and decisions
 
 This file holds the owner's goals for the hand-hold tool and every decision taken on the way, with its date and its
-reason. Read it before changing the hold code, and check each change against it. Last updated 2026-10-19.
+reason. Read it before changing the hold code, and check each change against it. Last updated 2026-10-22.
 
 ## The goal
 
@@ -76,6 +76,17 @@ reason. Read it before changing the hold code, and check each change against it.
 | 2026-10-19 | A power wrap seats the handle across the distal palm (the palm's half by the knuckles), not the palm's middle | Seated at the middle only the fingertips reached (pads 3.4 of 4 cm2); a real power grip lies by the knuckle crease |
 | 2026-10-19 | **The walls** (owner): a real body's limits and physics are walls, never scored, never weighed, never traded. `wall_faults` reads every wall a hand breaks (the arm's rules, the fingers' and thumb's ranges, a holding digit's limits, clipping both ways and hand into hand). Every step of every fit, the polish and the per-frame repair goes through it: a step that breaks a wall, or goes further past one, is undone; a step that leaves the walls less broken is kept first. A round must end inside its start's walls or it is undone. Holds are compared in a fixed order (walls, then the gate, then the score). A hold past a wall is reported "no hold inside the walls" and never counts as found; Gun Kit checks every hold whatever found it, and a clip with any frame past a wall is not written, only reported. The old random search and the random per-frame repair are gone (they priced the rules) | The target solver priced a broken thumb rule at 50 against clipping at 830 and swung the thumb base to 158 degrees (limit 80); it let the hand leave the gun to escape a clip. The owner: "the rule and the body anatomy is set to keep a real human body not the thing you can score and break, clipping is against physics" |
 | 2026-10-19 | When a result breaks a wall: stop and tell the owner; no long runs tuning through it; no default changed to a solver that has not beaten the old one on the real case without the owner's yes | Four 20 to 30 minute gun runs were tuned through broken rules before asking |
+| 2026-10-22 | **The skin as real tissue (Option A)**: a finger segment's pad gives by a sourced depth at the hand's grip force (finger_give.json: Wu 2014 pressure per segment, Perez-Gonzalez 2013 probe travel, broad contact by Dzidek 2017's ratio 0.376, below 1 N Dzidek's area exponent 0.37); the thumb, palm, web and finger sides and backs keep skin_give.json | The owner: "I choose Option A"; "1 use b, 2 use Dzidek, 3 do the fingers and leave the rest" |
+| 2026-10-22 | Grip force: 5 N at rest, up to 40 N firing, 20 N if 40 N clips (contactlab.set_grip; Gun Kit grip_rest_N, grip_fire_N, grip_fire_fallback_N) | The owner: "when not firing use 5N, fight the recoil can go to 40N, but when test if clipping too much then change to 20N" |
+| 2026-10-22 | The fingers close until each skin point has sunk its own give (chain_close give=; conform_digits tissue=True for the four fingers); past the give by more than the ruler's tolerance (SDF_TOL_CM) is pressed. The old fixed press of 0.12 cm and target 0 stay for the thumb | Option A: "the hand is allowed into the gun by the measured give, then the skin is reshaped" |
+| 2026-10-22 | Gun Kit: a fire grip per passed home hold (the wrapping fingers closed at 40 N, else 20 N, every wall read; its press morph press_<side>_fire); fire clips (the style's trigger clips) use it on home frames; both hands' press morphs keyed; the morph FBX written after all presses exist | The owner's grip rule; the support hand's press was never keyed |
+| 2026-10-22 | A gun's grip read along its magazine well's line from the facts (`run_along`), not searched | The owner: "use 1". On the rebuilt M1911 a 0.64 cm step at the grip's back broke the searched run; a run tilted 8 degrees sideways won |
+| 2026-10-22 | The web point is the crook on the grip's middle line (reach read in a 0.3 cm strip there) | The owner's rule names it an exact point; the farthest sample across a 2.4 cm band landed 0.79 cm left on the rounded tang |
+| 2026-10-22 | Line B: straight side rays from the firing side against the frame's own polygons (no trigger), at the ring's top edge, moved down the face until the line's middle is at the ring's centre height | The owner: "B line not in the middle of trigger ring". It was 0.62 cm high, its ends inside the gun (the palm's 37 degree face direction slipped into the opening; the trigger was hit) |
+| 2026-10-22 | **Touch points first** (`check_touch_points`, first in `direct_hold`): each touch point carries its definition; a miss stops the hold before any hand is placed | The owner: "keep the rule from point touch in global memory ... and implement it into the code with argument is the touch points" |
+| 2026-10-22 | Line B runs parallel to the bore, on the frame's right face, its middle at the trigger ring's middle height (Gun Kit line_b_dir "bore", the default) | The owner: "Line B's direction: parallel to the bore". Along the ring's sloped top edge (25 degrees on the rebuilt guard) no hand reaches it: 5 cm off |
+| 2026-10-22 | Step 2 one by one (direct_hold only="web_index"): 2a the web on A (a move), 2b the index pad line along line B, the roll set so the pad faces the frame (the index on the gun's right side) | The owner: "render web and index finger right first, follow the rule one by one"; "index finger is on the right side of the gun" |
+| 2026-10-22 | Step 2 is one calculation in place_on_touch (no extra steps): the web fold on A; the straight index pad line turned parallel to line B (tip forward) about A; then turned about line B's direction through A as near line B as the hand allows (outside, not pressing). The square pad-facing, the web slide along the crook and the index curl were tried and removed | The owner: "not a new step, the B line must be calculated to place the hand directly in the A point and index finger along the B line"; "the index can be straight in B line position without the need of touch B point, just keep it close is enough for index finger no need to press index finger". The rigid open hand has the web 1.75 cm from its index pad line; the crook is 1.16 cm from line B |
 | 2026-10-19 | All decisions and goals kept in this file, to read and revalidate later | The owner asked |
 | 2026-10-19 | If the search is slow, make it faster so more retries fit | The owner asked |
 
@@ -131,3 +142,24 @@ reason. Read it before changing the hold code, and check each change against it.
   purposes ask for can be set from a hold the owner accepts, not guessed.
 - Not yet: the other clips, the working holds
   (magazine, slide) on purposes, the skin check baseline, the game check loop.
+
+## State (2026-10-22)
+
+- The M1911A1 was rebuilt from its drawings (Blueprint Lab). On the rebuilt gun the firing hand's hold stops at step 2
+  (placed): 606 cm2 of skin inside the gun, 1.28 cm at most; the wrist 17 degrees bent. This was so before the tissue
+  change (the 09:26 run) and is so after it. No clips are made until it passes.
+- After the touch-point fixes (2026-10-22): all touch points pass their definitions; web 0.10 cm, index 0.10 cm from
+  line B, wrist 14; step 2 still breaks the palm's wall (the open flat palm 1.28 cm in the 3.25 cm wide grip, 570 cm2).
+  Waiting on the owner: (a) turn about A-B, (b) palm wall read after the palm cups, (c) palm out to touch.
+- The tissue give is built and tested on known answers (contact_solve_tests 12-13, clip, sdf, direct); it acts at
+  step 4 (the fingers' closing) and in the walls, press shape and clips.
+
+## 2026-10-23: web on A and index on line B are a hard rule
+
+The owner: "I said do not bring the hand out of point A and line B, why you missed it all the time? Hard rule no
+skip." Every step of the hold keeps the web fold on A and the straight index on line B; a step that moves either
+off is a broken wall: undone, stopped, reported. Never traded for another goal (the palm, the forearm, the height).
+The owner also set: "we start with the aim position first, then the idle position is just the aim position with a
+pull"; and the experiment "keep the hand, the wrist and the finger, move the hand up so index finger is point
+straight to B line direction with the B line and the straight direction to the ground make a 90 degree angle, then
+bring the gun up so B line match the index finger line."

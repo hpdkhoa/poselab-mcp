@@ -63,6 +63,46 @@ def _load_skin_give():
 
 
 SKIN_GIVE = _load_skin_give()
+
+
+def _load_finger_give():
+    """Each finger segment's pad give (cm) at the grip forces in poselab_mcp/data/sourced/finger_give.json (built by
+    build_finger_give.py from Wu 2014, Perez-Gonzalez 2013 and Dzidek 2017; the owner's decisions of 2026-10-22)."""
+    import json as _json
+    p_ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "sourced", "finger_give.json")
+    try:
+        d_ = _json.load(open(p_, encoding="utf-8"))
+        return {"grip_N": [float(x) for x in d_["grip_N"]], "give_cm": d_["give_cm"]}
+    except OSError:
+        return {"grip_N": [5.0], "give_cm": {}}
+
+
+FINGER_GIVE = _load_finger_give()
+# the hand's whole grip force (N): 5 at rest; firing to fight the recoil up to 40; 20 if 40 clips too much (owner
+# 2026-10-22: "when not firing use 5N, fight the recoil can go to 40N, but when test if clipping too much then change
+# to 20N")
+GRIP_N = 5.0
+
+
+def set_grip(newtons):
+    """Sets the grip force (N) the finger pads' give is read at."""
+    global GRIP_N
+    GRIP_N = float(newtons)
+
+
+def skin_give(label):
+    """How far a hand label's skin may sink into the object before it counts as a press (cm). A finger segment's pad
+    reads finger_give.json at GRIP_N (straight line between its grip levels, held at the ends); every other label
+    (thumb, palm, web, finger sides and backs) keeps skin_give.json."""
+    row = FINGER_GIVE["give_cm"].get(label)
+    if row is None:
+        return SKIN_GIVE.get(_lab_key(label), SKIN_GIVE["default"])
+    g = FINGER_GIVE["grip_N"]
+    x = min(max(GRIP_N, g[0]), g[-1])
+    for i in range(len(g) - 1):
+        if g[i] <= x <= g[i + 1]:
+            return row[i] + (row[i + 1] - row[i]) * (x - g[i]) / (g[i + 1] - g[i])
+    return row[-1]
 # a holding hand's digits, as a real one holds (tighter than a free hand's ranges): no joint bent backward against the
 # grip, no finger twisted out of its plane past what a grasp shows. (least curl, most twist out of plane) degrees
 HOLD_DIGIT_LIMITS = {"01": (-5.0, 20.0), "02": (0.0, 8.0), "03": (-5.0, 10.0),
@@ -329,7 +369,7 @@ class ContactMixin:
                 sel = np.array([int(i) for i in idx[::sample]])
                 labs_ = [lab[j] for j in range(0, len(lab), sample)]
                 Da, _w2, Na = self.sdf_query(P[sel])
-                gv = np.array([SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"]) for l_ in labs_])
+                gv = np.array([skin_give(l_) for l_ in labs_])
                 m_ = Da < 1.0
                 rows.append(Na[m_])
                 at.append(P[sel][m_])
@@ -361,7 +401,7 @@ class ContactMixin:
                 Ph_ = P[vi_]
                 labs_all = dict(zip(idx.tolist(), lab))
                 for k_, (dq, lq, t3) in self._pierced_samples(side, Ph_, th_, polys_, SW_, labs_all).items():
-                    gq = SKIN_GIVE.get(_lab_key(lq), SKIN_GIVE["default"])
+                    gq = skin_give(lq)
                     if dq <= gq - 0.05:
                         continue
                     tri = Ph_[list(polys_[t3])]
@@ -489,7 +529,7 @@ class ContactMixin:
         return h + Y * c + np.cross(a, Y) * s_ + np.outer(Y @ a, a) * (1.0 - c)
 
     def conform_digits(self, side, digits=("index", "middle", "ring", "pinky"), step_deg=3.0, touch_cm=0.08,
-                       other=False, max_steps=60, sample=24, press_cm=0.12):
+                       other=False, max_steps=60, sample=24, press_cm=0.12, tissue=True):
         """The digits closed onto the object the way a hand closes on a handle: every joint of a finger closes
         together (the end joints a little slower); when a segment's skin touches the object (or, with other, the
         other hand) the joints behind it stop and the ones past it keep closing, until each segment rests on the
@@ -498,8 +538,12 @@ class ContactMixin:
         each joint's lever, not a fixed step: the joints close until the first point would reach the surface, and a
         pressed segment opens by the angle that brings it back to half the press. The skin is read once and turned
         with the joints in numpy (a segment's skin rides its joint's hinge rigidly), so a closing costs no scene
-        update per step; the bones are set once at the end. step_deg and max_steps are no longer used. Returns per
-        digit the degrees each joint closed (below 0 opened), which segments touch, and the rounds taken."""
+        update per step; the bones are set once at the end. step_deg and max_steps are no longer used. With tissue (the
+        owner's Option A, 2026-10-22) a finger (not the thumb) closes until each skin point has sunk its own give at
+        the grip force (skin_give at GRIP_N: the pads from finger_give.json, the sides and backs their own), and a
+        point past its give by more than the ruler's tolerance (SDF_TOL_CM) is pressed; without it the old rule
+        (touch the surface, press past press_cm). Returns per digit the degrees each joint closed (below 0 opened),
+        which segments touch, and the rounds taken."""
         bvh, surf = self._object_now()[:2]
         P, N, _A, _b, _t = self._skin_arrays()
         _bone, _T, sidev, kind, segi = self._skin_static()
@@ -522,6 +566,8 @@ class ContactMixin:
         if side not in getattr(self, "_pierce_static", {}):
             self.contact_pairs(side, other=False)
         hk_ = getattr(self, "_pierce_static", {}).get(side)
+        ix_all, lb_all = self._hand_label_arrays(side, P, N)
+        lab_of = dict(zip(ix_all.tolist(), lb_all))
         if hk_ is not None:
             th_, vi_, polys_ = hk_
             SW_ = self._object_now()[2]
@@ -531,7 +577,7 @@ class ContactMixin:
                 head = lq.split("_")[0]
                 if head[:-1] not in DIGITS or not head[-1:].isdigit():
                     continue
-                gq = SKIN_GIVE.get(_lab_key(lq), SKIN_GIVE["default"])
+                gq = skin_give(lq)
                 if dq <= gq - 0.05:
                     continue
                 tri = Ph_[list(polys_[t3])]
@@ -540,7 +586,7 @@ class ContactMixin:
                     continue
                 e_ = inner_by.setdefault((head[:-1], "0" + head[-1]), ([], [], []))
                 e_[0].append(SW_[k_])
-                e_[1].append(gq + 0.02 - dq - press_cm)
+                e_[1].append(gq + 0.02 - dq)                 # the press used is taken off per finger below
                 e_[2].append(-nh / np.linalg.norm(nh))
         out = {}
         for fi in digits:
@@ -578,6 +624,8 @@ class ContactMixin:
                 vi = np.nonzero((sidev == sc_) & (kind == 3) & (segi == k0 + jj))[0]
                 segv[j] = vi[:: max(1, len(vi) // sample)]
             pts = {j: P[segv[j]].copy() for j in ("01", "02", "03")}
+            tis_ = tissue and fi != "thumb"
+            gv_ = {j: np.array([skin_give(lab_of.get(int(v_), "")) for v_ in segv[j]]) for j in ("01", "02", "03")} if tis_ else None
             hd = {j: heads[j].copy() for j in ("01", "02", "03")}
             room = {}
             for j in hinge:
@@ -626,8 +674,9 @@ class ContactMixin:
             closed, touching, n_round, slog = CS.chain_close(
                 {j: pts[j] for j in ("01", "02", "03")}, hd, hinge,
                 {j: room[j] for j in js_}, room_open, {j: rate[j] for j in js_}, query,
-                touch_cm=touch_cm, target_cm=0.0, press_cm=press_cm,
-                inner={j: inner_by[(fi, j)] for j in ("01", "02", "03") if (fi, j) in inner_by})
+                touch_cm=touch_cm, target_cm=0.0, press_cm=SDF_TOL_CM if tis_ else press_cm,
+                inner={j: (inner_by[(fi, j)][0], [x_ - (SDF_TOL_CM if tis_ else press_cm) for x_ in inner_by[(fi, j)][1]], inner_by[(fi, j)][2])
+                       for j in ("01", "02", "03") if (fi, j) in inner_by}, give=gv_)
             for _ in range(n_round):
                 self._cnt("closing rounds")
             # the bones turned once, by the angles found
@@ -645,6 +694,8 @@ class ContactMixin:
                     cur = self._finger_report(side, FL)[0]["%s_%s" % (fi, j)][0]
                     self._set_curl(side, fi, j, cur + d_ang, FL)
             out[fi] = {"closed_deg": {j: round(v, 1) for j, v in closed.items()}, "touching": sorted(touching),
+                       "tissue_give_cm": ({j: [round(float(gv_[j].min()), 3), round(float(gv_[j].max()), 3)] for j in gv_ if len(gv_[j])}
+                                          if gv_ else None), "grip_N": GRIP_N,
                        "rounds": n_round, "inner_points": sum(len(inner_by[(fi, j)][0]) for j in ("01", "02", "03") if (fi, j) in inner_by)}
         bpy.context.view_layer.update()
         return out
@@ -1009,7 +1060,7 @@ class ContactMixin:
             vi_n = idx[ks]
             Dn, _wp, Nn = self.sdf_query(P[vi_n])           # the grids: distance (cm), outward normal, at once
             # a gap near its press limit is measured on the mesh itself (the grids can be up to 0.112 cm off)
-            giv_ = np.array([SKIN_GIVE.get(_lab_key(labs[int(i)]), SKIN_GIVE["default"]) for i in vi_n])
+            giv_ = np.array([skin_give(labs[int(i)]) for i in vi_n])
             Dg_raw = np.array(Dn, dtype=float)               # the grids' own reading, kept to show what was measured
             Dn = self.exact_gaps(P[vi_n], Dn, -giv_ - SDF_TOL_CM)
         for kk, k in enumerate(ks):
@@ -1022,7 +1073,7 @@ class ContactMixin:
             _c, si, _dd = kd.find(loc)
             reg = SL[si] if si is not None else "other"
             pr = pairs.setdefault((labs[i], reg), [0.0, 0.0, 0.0])
-            give = SKIN_GIVE.get(_lab_key(labs[i]), SKIN_GIVE["default"])
+            give = skin_give(labs[i])
             if d_cm < -give - SDF_TOL_CM:                   # past the give by more than the grid can tell
                 pr[1] += A[i]
                 pr[2] = max(pr[2], -d_cm - give)
@@ -1097,13 +1148,13 @@ class ContactMixin:
                     self._cnt("pierce check: different")
                     self._cnt("pierce check: samples different", len(set(full) ^ set(res)))
                     a_s_ = SAMPLE_CM * SAMPLE_CM
-                    give_ = lambda l_: SKIN_GIVE.get(_lab_key(l_), SKIN_GIVE["default"])   # noqa: E731
+                    give_ = lambda l_: skin_give(l_)   # noqa: E731
                     af = sum(a_s_ for v in full.values() if v[0] > give_(v[1]) + 0.02)
                     ar = sum(a_s_ for v in res.values() if v[0] > give_(v[1]) + 0.02)
                     self._cnt("pierce check: clip area off (0.01 cm2)", int(round(abs(af - ar) * 100)))
             a_s = SAMPLE_CM * SAMPLE_CM
             for k, (d_cm, lab3, _t3) in res.items():
-                give = SKIN_GIVE.get(_lab_key(lab3), SKIN_GIVE["default"])
+                give = skin_give(lab3)
                 if d_cm > give + 0.02:
                     pierced += a_s
                     pb_ = pierced_by.setdefault(lab3, [0.0, 0.0])

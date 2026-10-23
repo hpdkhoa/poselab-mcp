@@ -1,0 +1,868 @@
+{
+ "base_feed_lock": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    9.197,
+    "slide takes the round"
+   ],
+   [
+    22.628,
+    "round leaves the lips"
+   ],
+   [
+    24.832,
+    "slide picks up the barrel"
+   ],
+   [
+    27.723,
+    "front"
+   ],
+   [
+    35.279,
+    "front"
+   ],
+   [
+    44.236,
+    "front"
+   ],
+   [
+    47.174,
+    "front"
+   ],
+   [
+    48.768,
+    "front"
+   ],
+   [
+    49.726,
+    "front"
+   ],
+   [
+    50.282,
+    "front"
+   ],
+   [
+    50.612,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.785,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 27.723,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   27.723,
+   35.279,
+   44.236,
+   47.174
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.75,
+   577
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   29.22,
+   -199
+  ],
+  "frame_back_max_cm": 0.746,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 398,
+   "10": 407,
+   "15": -89,
+   "20": -27,
+   "25": 60,
+   "30": -148,
+   "40": 21,
+   "50": -15,
+   "60": 3
+  }
+ },
+ "no_feed_no_lock (last model)": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    22.948,
+    "front"
+   ],
+   [
+    46.057,
+    "front"
+   ],
+   [
+    53.06,
+    "front"
+   ],
+   [
+    58.075,
+    "front"
+   ],
+   [
+    60.659,
+    "front"
+   ],
+   [
+    62.091,
+    "front"
+   ],
+   [
+    62.923,
+    "front"
+   ],
+   [
+    63.407,
+    "front"
+   ],
+   [
+    63.672,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.785,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 22.948,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   22.948,
+   46.057,
+   53.06,
+   58.075
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.75,
+   577
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   24.44,
+   -266
+  ],
+  "frame_back_max_cm": 0.751,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 398,
+   "10": 410,
+   "15": -69,
+   "20": -12,
+   "25": -217,
+   "30": 53,
+   "40": -3,
+   "50": -28,
+   "60": 2
+  }
+ },
+ "strip_half_17N": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    9.197,
+    "slide takes the round"
+   ],
+   [
+    21.382,
+    "round leaves the lips"
+   ],
+   [
+    23.204,
+    "slide picks up the barrel"
+   ],
+   [
+    25.602,
+    "front"
+   ],
+   [
+    35.215,
+    "front"
+   ],
+   [
+    41.37,
+    "front"
+   ],
+   [
+    44.089,
+    "front"
+   ],
+   [
+    45.682,
+    "front"
+   ],
+   [
+    46.661,
+    "front"
+   ],
+   [
+    47.224,
+    "front"
+   ],
+   [
+    47.555,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.785,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 25.602,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   25.602,
+   35.215,
+   41.37,
+   44.089
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.75,
+   577
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   27.1,
+   -223
+  ],
+  "frame_back_max_cm": 0.748,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 398,
+   "10": 409,
+   "15": -79,
+   "20": -19,
+   "25": 61,
+   "30": -69,
+   "40": 1,
+   "50": 1,
+   "60": -2
+  }
+ },
+ "strip_x1.5_51N": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    9.197,
+    "slide takes the round"
+   ],
+   [
+    24.65,
+    "round leaves the lips"
+   ],
+   [
+    27.705,
+    "slide picks up the barrel"
+   ],
+   [
+    31.342,
+    "front"
+   ],
+   [
+    38.017,
+    "front"
+   ],
+   [
+    46.475,
+    "front"
+   ],
+   [
+    49.127,
+    "front"
+   ],
+   [
+    50.522,
+    "front"
+   ],
+   [
+    51.336,
+    "front"
+   ],
+   [
+    51.815,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.785,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 31.342,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   31.342,
+   38.017,
+   46.475,
+   49.127
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.75,
+   577
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   32.81,
+   -175
+  ],
+  "frame_back_max_cm": 0.744,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 398,
+   "10": 406,
+   "15": -100,
+   "20": -35,
+   "25": 44,
+   "30": 22,
+   "40": 3,
+   "50": -14,
+   "60": 4
+  }
+ },
+ "zeta_0.02": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    8.7,
+    "slide takes the round"
+   ],
+   [
+    18.636,
+    "round leaves the lips"
+   ],
+   [
+    20.322,
+    "slide picks up the barrel"
+   ],
+   [
+    22.372,
+    "front"
+   ],
+   [
+    47.467,
+    "front"
+   ],
+   [
+    55.13,
+    "front"
+   ],
+   [
+    61.964,
+    "front"
+   ],
+   [
+    65.789,
+    "front"
+   ],
+   [
+    68.498,
+    "front"
+   ],
+   [
+    70.558,
+    "front"
+   ],
+   [
+    72.183,
+    "front"
+   ],
+   [
+    73.456,
+    "front"
+   ],
+   [
+    74.389,
+    "front"
+   ],
+   [
+    75.092,
+    "front"
+   ],
+   [
+    75.616,
+    "front"
+   ],
+   [
+    76.01,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.789,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 22.372,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   22.372,
+   47.467,
+   55.13,
+   61.964
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.76,
+   648
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   23.85,
+   -289
+  ],
+  "frame_back_max_cm": 0.82,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 442,
+   "10": 457,
+   "15": -102,
+   "20": -29,
+   "25": -177,
+   "30": 87,
+   "40": -1,
+   "50": -65,
+   "60": 13
+  }
+ },
+ "zeta_0.5": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    19.116,
+    "slide takes the round"
+   ],
+   [
+    35.467,
+    "round leaves the lips"
+   ],
+   [
+    38.397,
+    "slide picks up the barrel"
+   ],
+   [
+    41.77,
+    "front"
+   ],
+   [
+    44.447,
+    "front"
+   ],
+   [
+    44.989,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.773,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 41.77,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   41.77,
+   44.447,
+   44.989
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.71,
+   430
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   43.22,
+   -123
+  ],
+  "frame_back_max_cm": 0.661,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 309,
+   "10": 303,
+   "15": -39,
+   "20": 2,
+   "25": 36,
+   "30": 6,
+   "40": 25,
+   "50": 2,
+   "60": -8
+  }
+ },
+ "lock_only": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    21.372,
+    "slide picks up the barrel"
+   ],
+   [
+    23.36,
+    "front"
+   ],
+   [
+    39.583,
+    "front"
+   ],
+   [
+    43.042,
+    "front"
+   ],
+   [
+    45.296,
+    "front"
+   ],
+   [
+    46.861,
+    "front"
+   ],
+   [
+    47.878,
+    "front"
+   ],
+   [
+    48.45,
+    "front"
+   ],
+   [
+    48.771,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.785,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 23.36,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   23.36,
+   39.583,
+   43.042,
+   45.296
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.75,
+   577
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   24.84,
+   -255
+  ],
+  "frame_back_max_cm": 0.751,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 398,
+   "10": 410,
+   "15": -69,
+   "20": -12,
+   "25": -249,
+   "30": 44,
+   "40": -37,
+   "50": 11,
+   "60": -4
+  }
+ },
+ "feed_only": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.275,
+    "back"
+   ],
+   [
+    9.197,
+    "slide takes the round"
+   ],
+   [
+    22.628,
+    "round leaves the lips"
+   ],
+   [
+    27.131,
+    "front"
+   ],
+   [
+    39.962,
+    "front"
+   ],
+   [
+    44.036,
+    "front"
+   ],
+   [
+    46.323,
+    "front"
+   ],
+   [
+    47.826,
+    "front"
+   ],
+   [
+    48.797,
+    "front"
+   ],
+   [
+    49.381,
+    "front"
+   ],
+   [
+    49.733,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.785,
+  "slide_hits_back_at_ms": 7.275,
+  "slide_closes_at_ms": 27.131,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   2.81,
+   153
+  ],
+  "closing_hits_ms": [
+   27.131,
+   39.962,
+   44.036,
+   46.323
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   8.75,
+   577
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   28.65,
+   -203
+  ],
+  "frame_back_max_cm": 0.746,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 101,
+   "4": 126,
+   "6": 84,
+   "8": 398,
+   "10": 407,
+   "15": -89,
+   "20": -27,
+   "25": 60,
+   "30": -147,
+   "40": 29,
+   "50": -2,
+   "60": -2
+  }
+ },
+ "one_hand": {
+  "hits_ms": [
+   [
+    0.0,
+    "front"
+   ],
+   [
+    1.348,
+    "barrel stops on frame"
+   ],
+   [
+    7.508,
+    "back"
+   ],
+   [
+    9.405,
+    "slide takes the round"
+   ],
+   [
+    24.999,
+    "round leaves the lips"
+   ],
+   [
+    27.358,
+    "slide picks up the barrel"
+   ],
+   [
+    30.369,
+    "front"
+   ],
+   [
+    41.91,
+    "front"
+   ],
+   [
+    49.705,
+    "front"
+   ],
+   [
+    53.452,
+    "front"
+   ],
+   [
+    55.567,
+    "front"
+   ],
+   [
+    56.831,
+    "front"
+   ],
+   [
+    57.562,
+    "front"
+   ],
+   [
+    57.993,
+    "front"
+   ]
+  ],
+  "slide_full_travel_cm": 4.783,
+  "slide_hits_back_at_ms": 7.508,
+  "slide_closes_at_ms": 30.369,
+  "each_hand_peak_while_slide_runs_back_ms_N": [
+   4.69,
+   202
+  ],
+  "closing_hits_ms": [
+   30.369,
+   41.91,
+   49.705,
+   53.452
+  ],
+  "each_hand_peak_slide_hits_back_ms_N": [
+   9.07,
+   747
+  ],
+  "each_hand_peak_slide_closes_ms_N": [
+   33.7,
+   -145
+  ],
+  "frame_back_max_cm": 1.378,
+  "frame_forward_max_cm": -0.0,
+  "force_each_hand_at_ms": {
+   "0.5": 3,
+   "1": 7,
+   "2": 115,
+   "4": 188,
+   "6": 186,
+   "8": 484,
+   "10": 658,
+   "15": 150,
+   "20": -172,
+   "25": -6,
+   "30": 122,
+   "40": 53,
+   "50": -10,
+   "60": -6
+  }
+ }
+}

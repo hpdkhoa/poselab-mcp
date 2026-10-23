@@ -128,6 +128,24 @@ check("the point on the line at the hand's distance", ok and np.allclose(X, [0.0
 X, ok, short = CS.point_on_line_at([0, 0, 0], 0.05, [0, 0.06, 0], [1, 0, 0], [0, 0.06, 0])
 check("a line out of reach reports how far short", (not ok) and abs(short - 0.01) < 1e-9 and np.allclose(X, [0, 0.06, 0]), (X, short))
 
+# 12. Real tissue (owner's Option A, 2026-10-22): the same floor, each skin point may sink its give (0.15 cm). The
+# tip closes until it is 0.15 cm into the floor: sin(s) = (h + 0.0015) / l
+g_ = 0.15
+closed, touching, rounds, log = CS.chain_close({"01": seg}, {"01": np.zeros(3)}, {"01": np.array([0.0, 1.0, 0.0])},
+                                               {"01": 90.0}, {"01": 0.0}, {"01": 1.0}, floor, touch_cm=0.01,
+                                               press_cm=0.03, give={"01": np.full(len(seg), g_)})
+want = math.degrees(math.asin((h + g_ / 100.0) / l))
+tipz = CS.rodrigues(seg[-1:], np.zeros(3), np.array([0.0, 1.0, 0.0]), math.radians(closed["01"]))[0][2]
+check("tissue: the tip sinks exactly its give", abs(closed["01"] - want) < 0.2 and abs((tipz + h) * 100.0 + g_) < 0.01,
+      (closed, want, (tipz + h) * 100.0))
+# 13. A point already past its give by more than the tolerance is pressed and opened back toward give + tol / 2
+deep = lambda X: ((X[:, 2] + 0.0) * 100.0 + (X[:, 0] / l) * -0.5, np.tile([0.0, 0.0, 1.0], (len(X), 1)))  # noqa: E731
+closed, touching, rounds, log = CS.chain_close({"01": seg}, {"01": np.zeros(3)}, {"01": np.array([0.0, 1.0, 0.0])},
+                                               {"01": 90.0}, {"01": 20.0}, {"01": 1.0}, deep, press_cm=0.03,
+                                               give={"01": np.full(len(seg), g_)})
+tip_d = -0.5 + float((CS.rodrigues(seg[-1:], np.zeros(3), np.array([0.0, 1.0, 0.0]), math.radians(closed["01"]))[0] - seg[-1])[2]) * 100.0
+check("tissue: past its give opens back to the give", closed["01"] < 0.0 and abs(tip_d + g_ + 0.015) < 0.02, (closed, tip_d))
+
 if fails:
     print("CONTACT SOLVE failed: " + "; ".join(fails))
     sys.exit(1)

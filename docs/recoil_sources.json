@@ -1,0 +1,499 @@
+{
+ "what": "Recoil numbers for the hold and skin work (research, 2026-10-22). Nothing built from these yet.",
+ "owner_asked": "find me the force of recoil based on bullet, then tell me the equation to calculate the recoil force back to hand and shoulder, then calculate the recoil force feedback direct to main hand and support hand for pistol (two hands at one place) and for long gun (2 hands at 2 places)",
+ "equations": {
+  "impulse": "I = m_b*v + m_c*f*v  (SAAMI Gun Recoil - Technical, Rev. 7/9/2018; gas weight = powder charge; f = 1.50 pistols, 1.75 high powered rifles)",
+  "free_recoil_velocity": "V = I / M_gun",
+  "free_recoil_energy": "E = 0.5 * M_gun * V^2",
+  "force_to_body": "F_avg = I / dt (dt = time the hand or shoulder takes to stop the gun); half-sine pulse peak = (pi/2) * F_avg",
+  "muzzle_rise": "tau = F * h (h = bore axis height above the contact that takes the push); angular impulse = I * h",
+  "friction_hold": "a hand that holds only by squeeze can take at most mu * (sum of its normal forces); mu = 0.30 skin on handle (Wu et al. 2014, 2017)"
+ },
+ "inputs": {
+  "M1911A1": {
+   "bullet": "230 gr (Wikipedia .45 ACP; FM 23-35 ball)",
+   "velocity": "802 ft/s at 0 yd (FM 23-35, 1940, p.9)",
+   "charge": "5 gr SR 7970 (TM 43-0001-27, Army Ammunition Data Sheets, Cartridge Cal .45 Ball M1911, p.8-13)",
+   "gun": "2.437 lb with empty magazine + 0.325 lb of 7 rounds (FM 23-35 p.8: loaded magazine 0.481, empty 0.156)",
+   "h_bore_above_web_cm": "2.34, measured on the M1911A1 hold (gunkit hands/hold_marks.json web_point)"
+  },
+  "AK-47": {
+   "bullet": "7.97 g (Yugoimport M43 ball spec sheet)",
+   "velocity": "715 m/s (same sheet, 600 mm proof barrel; Wikipedia AK-47 also 715)",
+   "charge": "1.50-1.70 g, 1.6 used (same sheet)",
+   "gun": "3.47 kg without magazine + 0.916 kg loaded 30-round AK-47 slab magazine (Wikipedia AK-47)",
+   "f": "1.75 (SAAMI 'high powered rifles'; the 7.62x39 is intermediate: an open point)"
+  }
+ },
+ "durations_sourced": {
+  "shotgun_shoulder_event_ms": "about 10 (Hall, Measuring felt recoil of sporting arms, Int J Impact Eng 2008)",
+  "small_calibre_rifle": "builds 10-15 ms, lasts 30-40 ms (Koptyug and Ainegren 2015, diva-portal)",
+  "pistol": "none found"
+ },
+ "results": {
+  "M1911A1": {
+   "I": 3.762,
+   "V": 3.003,
+   "E": 5.65,
+   "M": 1.253,
+   "F_avg": {
+    "10": 376.0,
+    "20": 188.0,
+    "40": 94.0
+   },
+   "F_peak_halfsine": {
+    "10": 591.0,
+    "20": 295.0,
+    "40": 148.0
+   },
+   "angular_impulse_about_web_Nms": 0.088,
+   "torque_avg_Nm": {
+    "10": 8.8,
+    "20": 4.4,
+    "40": 2.2
+   }
+  },
+  "AK-47": {
+   "I": 7.701,
+   "V": 1.756,
+   "E": 6.76,
+   "M": 4.386,
+   "F_avg": {
+    "10": 770.0,
+    "20": 385.0,
+    "40": 193.0
+   },
+   "F_peak_halfsine": {
+    "10": 1210.0,
+    "20": 605.0,
+    "40": 302.0
+   }
+  },
+  "friction_cap_N": {
+   "5N": 3.0,
+   "20N": 12.0,
+   "40N": 24.0
+  }
+ },
+ "trigger_pull_N": {
+  "FM 23-35 new pistols 5.5-6.5 lb": [
+   24.5,
+   28.9
+  ]
+ },
+ "long_gun": {
+  "status": "on hold (owner 2026-10-22: 'long gun need to note down and skip for now')",
+  "kept": "AK-47 numbers above; still to measure h (bore above shoulder contact) and L (shoulder to support hand) on the game AK"
+ },
+ "cartridges_TM_43-0001-27": {
+  ".45 ACP M1911 ball": {
+   "bullet_gr": 230,
+   "bullet_source": "FM 23-35 / standard ball",
+   "powder": "SR 7970, 5 gr",
+   "velocity": "885 +-25 fps at 25.5 ft (test); M1911A1 pistol 802 fps (FM 23-35)",
+   "I_Ns": {
+    "pistol_802": 3.76,
+    "test_885": 4.15
+   }
+  },
+  "9mm NATO M882": {
+   "bullet_gr": 112,
+   "powder": "HPC 26, 6 gr",
+   "velocity": "1263 +-5 fps at 15 ft (test)",
+   "I_Ns": 3.02
+  },
+  "5.56 M193": {
+   "bullet_gr": 56,
+   "powder": "WC 844 28.5 gr or CMR 170 26.5 gr",
+   "velocity": "3250 fps at 15 ft",
+   "I_Ns": 6.8
+  },
+  "5.56 NATO M855": {
+   "bullet_gr": 62,
+   "powder": "WC 844, 26.1 gr",
+   "velocity": "3025 fps at 78 ft",
+   "I_Ns": 6.43
+  },
+  "7.62x39 M43": {
+   "bullet_g": 7.97,
+   "powder": "1.5-1.7 g (Yugoimport sheet, not TM)",
+   "velocity": "715 m/s",
+   "I_Ns": 7.7
+  },
+  "7.62 NATO M118LR (M24)": {
+   "bullet_gr": 175,
+   "powder": "WC 750, 44 gr",
+   "velocity": "2640 fps",
+   "I_Ns": 13.14
+  }
+ },
+ "pistol_dt": {
+  "status": "not found in open sources",
+  "leads": [
+   "Courtney et al., Quantifying Handgun Recoil with High Speed Video, Ballistics 32 (DPI) - restricted",
+   "Shooting Times slide-cycle test: rearward slide phase about 12-13 ms with light loads at 1000 fps video (slide, not hand)"
+  ]
+ },
+ "arm_chain": {
+  "hand_arm_impedance_along_forearm": {
+   "source": "ISO 10068 values as reproduced in ISO 13753:1998 Annex A, Table A.1 (iTeh preview)",
+   "conditions": "male hand-arm, along the forearm (zh), ISO posture, 25-50 N grip",
+   "Z_Ns_per_m_by_Hz": {
+    "10": 156,
+    "12.5": 170,
+    "16": 185,
+    "20": 198,
+    "25": 210,
+    "31.5": 225,
+    "40": 228,
+    "50": 210,
+    "63": 181,
+    "80": 161,
+    "100": 165,
+    "125": 180,
+    "160": 190,
+    "200": 205,
+    "250": 221,
+    "315": 236,
+    "400": 251,
+    "500": 270
+   },
+   "reading": "in the recoil band (about 25-500 Hz) the hand-arm acts mostly as a damper of 160-270 N*s/m (phase -6 to +23 deg)"
+  },
+  "pistol_one_hand": [
+   {
+    "Z_Ns_per_m": 156,
+    "tau_ms": 8.0,
+    "stop95_ms": 24.1,
+    "peak_N": 468,
+    "travel_cm": 2.41
+   },
+   {
+    "Z_Ns_per_m": 200,
+    "tau_ms": 6.3,
+    "stop95_ms": 18.8,
+    "peak_N": 601,
+    "travel_cm": 1.88
+   },
+   {
+    "Z_Ns_per_m": 228,
+    "tau_ms": 5.5,
+    "stop95_ms": 16.5,
+    "peak_N": 685,
+    "travel_cm": 1.65
+   },
+   {
+    "Z_Ns_per_m": 270,
+    "tau_ms": 4.6,
+    "stop95_ms": 13.9,
+    "peak_N": 811,
+    "travel_cm": 1.39
+   }
+  ],
+  "pistol_two_hands_fully_coupled": [
+   {
+    "Z_total": 312,
+    "tau_ms": 4.0,
+    "peak_total_N": 937,
+    "each_hand_N": 468,
+    "travel_cm": 1.21
+   },
+   {
+    "Z_total": 400,
+    "tau_ms": 3.1,
+    "peak_total_N": 1201,
+    "each_hand_N": 601,
+    "travel_cm": 0.94
+   },
+   {
+    "Z_total": 540,
+    "tau_ms": 2.3,
+    "peak_total_N": 1622,
+    "each_hand_N": 811,
+    "travel_cm": 0.7
+   }
+  ],
+  "wrist_stiffness": {
+   "passive_Nm_per_rad": {
+    "to_flexion": 0.554,
+    "to_extension": 1.021
+   },
+   "source": "The passive stiffness of the wrist and forearm (10 subjects; ResearchGate abstract)",
+   "grip_effect": "+36% wrist stiffness from no grip to 10% grip (PubMed 25373932)"
+  },
+  "arm_endpoint_stiffness_slow": {
+   "N_per_m": [
+    45,
+    168
+   ],
+   "grasp_N": [
+    5,
+    20
+   ],
+   "source": "Endpoint stiffness magnitude increases linearly with a stronger power grasp, Sci Rep 2020, PMC6962455",
+   "note": "slow, planar; for the later arm swing, not the 10 ms pulse"
+  },
+  "segment_mass_percent_body": {
+   "upper_arm": 3.25,
+   "forearm": 1.87,
+   "hand": 0.65,
+   "source": "Plagenhoef, Evans and Abdelnour 1983 (male), as tabled by exrx / Frontiers supplement; de Leva 1996 not confirmed"
+  },
+  "straight_arm": {
+   "Zhang 2021 Shock and Vibration doi:10.1155/2021/9967278 (open access; fetch blocked 403)": "7 men, 10-1000 Hz; below 40 Hz the 180 deg elbow gives higher impedance, 40-100 Hz the 90 deg elbow higher, above 100 Hz posture has no clear effect; more grip or push raises impedance (30-200 Hz) and the peak frequency",
+   "Aldien et al. 2005 Industrial Health 43:495-508 (free, xh axis = palm direction, not the recoil direction)": "90 vs 180 deg elbow: posture nearly negligible on impedance magnitude; with the arm straight, more grip or push raises absorbed energy a lot; peaks near 25 and 150 Hz",
+   "Adewusi et al. (cited)": "absorbed power 1.63 W straight arm vs 0.67 W bent, same hand forces",
+   "Adewusi, Rakheja, Marcotte 2012 Int J Ind Ergon 42:249-260 (paywalled)": "bent-arm and straight-arm models with fitted masses, springs, dampers: the numbers we need",
+   "reading": "in the recoil band (about 25-150 Hz) a straight arm changes the impedance little; it matters below 40 Hz (the slower push after the pulse and the muzzle return)"
+  },
+  "zhang2021_fig8": {
+   "source": "Zhang W et al. Shock and Vibration 2021, 9967278 (owner's PDF), Figure 8, read off the plot; 7 Chinese men (avg 59 kg), zh axis, 30 N grip, 30 N push, 5 m/s2",
+   "freq_Hz": [
+    10,
+    12.5,
+    16,
+    20,
+    25,
+    31.5,
+    40,
+    50,
+    63,
+    80,
+    100,
+    125,
+    160,
+    200,
+    250,
+    315,
+    400,
+    500
+   ],
+   "Z_180deg": [
+    300,
+    370,
+    450,
+    525,
+    510,
+    480,
+    410,
+    310,
+    250,
+    200,
+    155,
+    150,
+    115,
+    95,
+    115,
+    130,
+    88,
+    140
+   ],
+   "Z_90deg": [
+    105,
+    140,
+    178,
+    165,
+    165,
+    250,
+    400,
+    420,
+    320,
+    220,
+    160,
+    120,
+    100,
+    87,
+    105,
+    125,
+    108,
+    160
+   ],
+   "read_error": "about +-15 N*s/m (plot reading)",
+   "pistol_estimate": {
+    "180deg_1arm": {
+     "Z_each": 356,
+     "pulse_Hz": 45,
+     "tau_ms": 3.52,
+     "stop_ms": 10.6,
+     "peak_total_N": 1068,
+     "peak_each_N": 1068,
+     "travel_cm": 1.06,
+     "torque_peak_Nm": 25.0
+    },
+    "180deg_2arm": {
+     "Z_each": 249,
+     "pulse_Hz": 63,
+     "tau_ms": 2.52,
+     "stop_ms": 7.5,
+     "peak_total_N": 1496,
+     "peak_each_N": 748,
+     "travel_cm": 0.76,
+     "torque_peak_Nm": 35.0
+    },
+    "90deg_1arm": {
+     "Z_each": 406,
+     "pulse_Hz": 52,
+     "tau_ms": 3.08,
+     "stop_ms": 9.3,
+     "peak_total_N": 1220,
+     "peak_each_N": 1220,
+     "travel_cm": 0.93,
+     "torque_peak_Nm": 28.6
+    },
+    "90deg_2arm": {
+     "Z_each": 276,
+     "pulse_Hz": 70,
+     "tau_ms": 2.27,
+     "stop_ms": 6.8,
+     "peak_total_N": 1656,
+     "peak_each_N": 828,
+     "travel_cm": 0.68,
+     "torque_peak_Nm": 38.7
+    }
+   },
+   "method": "one-frequency estimate: the pulse's frequency f = (arms*Z)/(2*pi*M) and Z read at f, solved together; a time model fitted to the curve is the next step"
+  },
+  "adewusi_2010_abstract": "owner's PDFs achv-27944-adewusi and Biodynamic_Model...: the same 2-page ACHV 2010 abstract; bent arm only; no parameter values"
+ },
+ "owner_decisions": [
+  {
+   "date": "2026-10-22",
+   "said": "upport hand links up fully. Glove just enhance the grip surface hold to the paln and slip resistance.",
+   "meaning": "pistol: both arms push back on the gun together (impedances add); the glove changes grip friction (slip), not the give depth",
+   "open": "owner asked why ISO's 90 deg elbow: shooting uses straight arms; find straight-arm impedance"
+  }
+ ],
+ "time_model": {
+  "date": "2026-10-22",
+  "owner_said": "yes build the time model and show numbers",
+  "model": "3-mass chain fitted to Zhang 2021 Fig. 8 straight arm (|Z| only, 10-500 Hz); gun 1.253 kg on the contact mass; shot = half-sine 3.762 N*s over 1.045 ms (barrel 5 1/32 in, 802 ft/s, even speed-up); two hands = every arm value doubled",
+  "fit_rms_log_error": 0.085,
+  "params": {
+   "m1_kg": 0.0531,
+   "m2_kg": 0.0964,
+   "m3_kg": 2.4358,
+   "k1_N_per_m": 77933.958,
+   "k2_N_per_m": 1000000.0,
+   "k3_N_per_m": 2890.2541,
+   "c1_Ns_per_m": 133.421,
+   "c2_Ns_per_m": 1.0,
+   "c3_Ns_per_m": 294.91
+  },
+  "anatomical_masses_tried": "masses fixed to Plagenhoef 1983 at 59 kg: fit off by up to 2.7x (rms log 1.0); rejected: the handle meets about 0.05 kg of flesh, not the whole hand",
+  "two_hands": {
+   "peak_each_hand_N": 459,
+   "peak_total_N": 918,
+   "peak_at_ms": 2.06,
+   "gun_back_max_cm": 0.64,
+   "gun_stops_ms": 5.2,
+   "push_95pct_ms": 4.86,
+   "rebound_each_hand_N": -120,
+   "rebound_at_ms": 11.5,
+   "settles_back_cm": 0.5
+  },
+  "one_hand": {
+   "peak_N": 598,
+   "peak_at_ms": 3.88,
+   "gun_back_max_cm": 1.13,
+   "gun_stops_ms": 7.85,
+   "push_95pct_ms": 7.32
+  },
+  "barrel_time_check": "0.5 / 1.05 / 2.0 ms: two-hand peak per hand 639 / 459 / 436 N; travel and stop time unchanged",
+  "not_modelled": "the slide: the gun is taken as one rigid body; the real M1911 frame gets the push through the recoil spring and the slide's hit at full travel",
+  "files": [
+   "docs/recoil_time_model.py",
+   "docs/recoil_time_model2.py",
+   "docs/recoil_time_model.png"
+  ]
+ },
+ "slide_model": {
+  "date": "2026-10-22",
+  "owner_said": "yes add the slide and show numbers",
+  "inputs": {
+   "slide_kg": "0.380 = 485 g slide+barrel+spring (1911Forum weighing of a Colt Series 70; weak) - barrel 98 g - spring 6.8 g; matches '13 oz bare slide' (370 g, same forum); our model's volume x 7.85 g/cm3 gives 420 g (run as a check)",
+   "barrel_kg": "0.098 (model volume 12.45 cm3 x 7.85)",
+   "frame_kg": "0.775 = 1.253 - 0.380 - 0.098",
+   "recoil_spring": "5013200: 8.00 lb at 3.72 in, 13.55 lb at 1.81 in, 2.88 lb/in, wire .043, OD .430, 30 coils (Ordnance drawing, complete set p.15)",
+   "mainspring": "5013208: 22.0 lb at 1.312 in, 29.5 lb at 1.062 in (same set p.30); cocking work 0.727 J spread over the slide's travel",
+   "barrel_stop": "1/4 in (rangehot.com write-up; weak); 0.10 in run as a check",
+   "travel": "4.755 cm (our model) vs 1.91 in = 4.85 cm from the spring drawing's two lengths",
+   "steel_stops": "K_c 1e7-1e9 N/m, damping ratio 0.02-0.5: no source, run as checks"
+  },
+  "results_two_hands": {
+   "barrel_stops_ms": 1.35,
+   "slide_hits_back_ms": 7.28,
+   "while_slide_runs_back_each_hand_N": 153,
+   "slide_hits_back_each_hand_N": 577,
+   "slide_hits_back_peak_ms": 8.75,
+   "slide_closes_ms": 22.9,
+   "closing_each_hand_N": -266,
+   "frame_back_max_cm": 0.75
+  },
+  "checks": {
+   "K_c": "572-577 N, closes 22.9-23.1 ms",
+   "zeta 0.02/0.5": "648/430 N back hit; closes 19.6/35.0 ms; -418/-180 N",
+   "barrel stop 0.10 in": "499 N, back hit 7.96 ms",
+   "slide 420 g": "567 N, back hit 7.85 ms",
+   "one hand": "747 N, 1.28 cm frame travel"
+  },
+  "not_modelled": "cartridge feeding and barrel re-locking on the way forward, friction, the hammer's real stroke; the slide bounces at battery in the model (elastic stops): the closing phase is the weakest part"
+ },
+ "closing_model": {
+  "date": "2026-10-22",
+  "owner_said": "add the cartridge feeding and barrel lock to the closing",
+  "inputs": {
+   "round": "21.45 g (331 gr, TM 43-0001-27), met at 4.02 cm behind battery (magazine top rear 4.09 cm on our model, wall .026 in)",
+   "stripping": "34 N = 2 faces x 0.35 (brass on steel, engineering tables) x 11 lb (Wolff extra-power 7-round .45 rating; method unknown) - weak; checked at 17 and 51 N",
+   "lips_end": "1.23 cm (our model's lips mark)",
+   "magazine_spring_drawing": "6008607: shape only (wire .047, 12.5 coils, assembled 4.3 in); load lines blank",
+   "barrel_lock": "slide picks up the stopped barrel at 1/4 in (dead hit) and carries it into battery; link lift and friction not modelled"
+  },
+  "results_two_hands": {
+   "takes_round_ms": 9.2,
+   "round_leaves_lips_ms": 22.6,
+   "picks_up_barrel_ms": 24.8,
+   "closes_ms": 27.7,
+   "closing_each_hand_N": -199,
+   "back_hit_each_hand_N": 577
+  },
+  "checks": {
+   "strip 17 / 51 N": "closes 25.6 / 31.3 ms; -223 / -175 N",
+   "back-stop bounce zeta 0.02 / 0.5": "closes 22.4 / 41.8 ms; -289 / -123 N",
+   "one hand": "closes 30.4 ms; -145 N; back hit 747 N"
+  },
+  "open": "the slide's bounce off the back stop sets the closing time most (22-42 ms); measured full cycle 50-59 ms is a 9 mm (Shooting Times); no M1911 cycle-time source yet"
+ },
+ "final_model": {
+  "date": "2026-10-22",
+  "owner_said": "search M1911 cycle time source first then rebuild the model then build the skin til done",
+  "cycle_source": "1911Forum 'slide speed analysis' (thread 477846; read from search snippets, page behind a paid bot gateway): optical encoder on a Springfield 1911, 230 gr PMC Bronze FMJ, 2.5 shots, informal: peak slide speed about 25 ft/s, about 10 ms from slide start to frame hit, cycle about 60 ms. Other forum posts: 60-90 ms.",
+  "matched": {
+   "peak_slide_speed": "model 7.76 m/s = 25.5 ft/s (no fitting: from the shot's push and the masses)",
+   "slide_start_to_back_hit": "model 7.3 ms",
+   "cycle": "fitted: 60.1 ms"
+  },
+  "fitted": {
+   "return_drag_N": 18.0,
+   "what": "one lumped drag on the slide's way forward (rails, riding over the cocked hammer and disconnector, extractor over the rim, round up the ramp): no source for each, so fitted to the 60 ms cycle",
+   "back_stop_zeta": 0.5,
+   "sensitivity": "15 N -> 54 ms, 20 N -> 68 ms; any bounce setting zeta 0.5-4 settles the same"
+  },
+  "results_two_hands": {
+   "back_hit_each_hand_N": 427,
+   "back_hit_at_ms": 8.7,
+   "while_running_back_each_hand_N": 153,
+   "takes_round_ms": 20.6,
+   "round_leaves_lips_ms": 47.9,
+   "picks_up_barrel_ms": 54.2,
+   "closes_ms": 60.5,
+   "closing_each_hand_N": -72,
+   "frame_back_max_cm": 0.6
+  },
+  "one_hand": {
+   "back_hit_N": 576,
+   "closes_ms": 69.6,
+   "closing_N": -80,
+   "frame_back_max_cm": 1.2
+  }
+ }
+}
