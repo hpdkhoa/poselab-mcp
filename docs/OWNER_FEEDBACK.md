@@ -195,3 +195,29 @@ K:/Projects/Claude/cc/report/tune/. Open: the full-clip runs to confirm rule 11 
 Rule 11 PASS on the AR15 and the M16A2 (five holds each), 0 clipping frames (1,178 and 997). Open and reported: cover
 and hand-on-screen (both), port 53 % under the carry handle and a left elbow at 2.2 degrees in one clip (M16A2).
 The video's first cut delivered (out/showcase/labs_evolution.mp4, 720p copy sent).
+
+### 2026-10-27, the owner (after the video's first cut)
+"first the M24 support hand is clipping through the gun in the clip at reload and chamber check, then the AR-15
+should be replace of M16A2 or AR is not there only M16A2 existed? also the wrist is hyperextened and the angle while
+holding M24 is clipped, I suggest move the shoulder bakc so the arm is extend then the wrist can be flatten. Report
+to me first in this question not implement and fix first." Then: "do it".
+What it means: (1) the M24 clips in the video predate the joint limits and the gate: rerun the M24 on the current
+engine, report numbers and pictures; (2) AR15 (Model Lab test gun) and M16A2 (Blueprint Lab) are two guns, nothing
+replaced; (3) the owner's idea: when the arm is short and the wrist bends, move the shoulder back so the arm
+extends and the wrist flattens; build it with a limit (the owner has not set the limit yet; I propose one and say so).
+
+### 2026-10-27, the owner
+"oh after done M24 round, check for me if the current arm model has the real human perimeter, I feel that the gun
+with correct length still not fit the arm is because the arm not correct variable from real arm with the hand
+scale or normal human arm"
+What it means: after the M24, measure the arms rig (upper arm, forearm, hand length and breadth, finger lengths,
+the arm's girth) and compare with a named human source (ANSUR II means), because a gun built to its true length may
+not fit an arm that is not at human scale. Status: queued behind the M24 runs.
+
+### 2026-10-27, result: the M24, the shoulder move, the arm check
+The M24 on the current engine: 0 seen clipping on 1,045 frames, but the grip (pinky 1.32 off, wrist 35) and the
+support (thumb 1.46 inside) fail the gate. The shoulder-back move (built, limit 4 cm mine) opens the elbow 16
+degrees over 8 cm and leaves the wrist at 35 on the M24 grip: the hand's facing on the raked grip sets that wrist.
+The arm: the upper arm bone is 5 cm (15 %) short of a man's (ANSUR II); the rest is at human size; the forearm 2.6 cm
+slim. Open for the owner: lengthen the rig's upper arm (a model change); author the M24's grip and support; set the
+shoulder limit.
