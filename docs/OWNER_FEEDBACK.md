@@ -221,3 +221,12 @@ degrees over 8 cm and leaves the wrist at 35 on the M24 grip: the hand's facing 
 The arm: the upper arm bone is 5 cm (15 %) short of a man's (ANSUR II); the rest is at human size; the forearm 2.6 cm
 slim. Open for the owner: lengthen the rig's upper arm (a model change); author the M24's grip and support; set the
 shoulder limit.
+
+### 2026-10-27, the owner (after the report on the M24, the shoulder move and the arm check)
+"tell me what is shoulder back limit? then the point you mentioned about M24 is the previous image? upper arm will
+need to lengthen, but after you clear my question then I'll signal the start" and then "keep your 4cm limit for
+shoulder and start the work".
+What it means: the shoulder-back limit stays at 4 cm (the owner's decision now, not my placeholder). The work
+starts: lengthen the rig's upper arm to a man's (5 cm, ANSUR II), in the fakepose/Gun Kit arms only, rerun the
+AR15 as the regression check; then the M24 round (a support-hand picture first, then the grip and the support
+authored through the gate).

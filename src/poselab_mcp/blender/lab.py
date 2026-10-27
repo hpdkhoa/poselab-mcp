@@ -229,7 +229,8 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
     def _edit_skeleton(self, edits):
         """A rig's bone edits on the skeleton that drives its mesh (the arms copy's skin got the same): the four
         fingers' joints moved out from their knuckles along each finger by edits["finger"], then every finger and
-        thumb bone ridden out along the palm (wrist joint to middle knuckle) by edits["palm"]."""
+        thumb bone ridden out along the palm (wrist joint to middle knuckle) by edits["palm"], then each upper arm
+        lengthened by edits["upperarm"] (the elbow and all below it carried out along the upper arm's line)."""
         a = self.arm
         Bb = lambda n: a.matrix_world @ a.data.bones[n].head_local      # noqa: E731
         fingers = ("index", "middle", "ring", "pinky")
@@ -276,6 +277,33 @@ class Lab(HoldMixin, ContactMixin, SdfMixin):
                     eb.head = Mi @ (h + st(h))
                     eb.tail = Mi @ (t + st(t))
                 eb.roll = roll
+            bpy.ops.object.mode_set(mode="OBJECT")
+        uk = float(edits.get("upperarm", 1.0))
+        if abs(uk - 1.0) > 1e-6:
+            # each upper arm bone lengthened by edits["upperarm"] (Tools/blender/long_arms.py): the elbow and its
+            # whole subtree carried out along the upper arm's line, the upper arm's twist bones along that line
+            fr = {}
+            for sd in ("l", "r"):
+                if "upperarm_" + sd in a.data.bones and "lowerarm_" + sd in a.data.bones:
+                    S0, E0 = Bb("upperarm_" + sd), Bb("lowerarm_" + sd)
+                    fr[sd] = (S0, (E0 - S0).normalized(), (E0 - S0).length)
+            bpy.ops.object.mode_set(mode="EDIT")
+            Mi, Mw = a.matrix_world.inverted(), a.matrix_world
+            for sd, (S0, d, ln) in fr.items():
+                up = a.data.edit_bones["upperarm_" + sd]
+                lower = set(b.name for b in a.data.edit_bones["lowerarm_" + sd].children_recursive) | {"lowerarm_" + sd}
+                full = d * (ln * (uk - 1.0))
+                along = lambda q_: d * (min(max((q_ - S0).dot(d), 0.0), ln) * (uk - 1.0))     # noqa: E731
+                for eb in list(up.children_recursive) + [up]:
+                    roll = eb.roll
+                    h, t = Mw @ eb.head, Mw @ eb.tail
+                    if eb.name == up.name:
+                        eb.tail = Mi @ (h + (t - h) * uk)
+                    elif eb.name in lower:
+                        eb.head, eb.tail = Mi @ (h + full), Mi @ (t + full)
+                    else:
+                        eb.head, eb.tail = Mi @ (h + along(h)), Mi @ (t + along(t))
+                    eb.roll = roll
             bpy.ops.object.mode_set(mode="OBJECT")
         bpy.context.view_layer.objects.active = prev
         bpy.context.view_layer.update()
