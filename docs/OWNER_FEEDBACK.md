@@ -230,3 +230,13 @@ What it means: the shoulder-back limit stays at 4 cm (the owner's decision now, 
 starts: lengthen the rig's upper arm to a man's (5 cm, ANSUR II), in the fakepose/Gun Kit arms only, rerun the
 AR15 as the regression check; then the M24 round (a support-hand picture first, then the grip and the support
 authored through the gate).
+
+### 2026-10-27, result: the upper arm lengthened
+Each upper arm bone 27.8 to 32.8 cm (ANSUR II men, 50th; Tools/blender/long_arms.py on the Gun Kit arms copy
+Saved/PoseLab/ar_slim, the old file kept as Arms.pre_long_upperarm.fbx; the skeleton edit in bone_edits.json
+"upperarm" 1.1811, applied by Pose Lab's loader). The skin follows the bones (the elbow skin's centre against the
+joint moved 0.15 cm). AR15 regression (POSE_RULES run 19): rule 11 PASS on all five holds, 0 clipping frames of
+1,178, rules 4 and 7 still open as before; the support hand slides back 11 cm instead of 17 (the owner's reading:
+the arm reaches 6 cm further). The grip wrist went 9 to 20.6 degrees (inside the 30 wall): the elbow sits further
+under with the longer bone and the forearm's line meets the authored hand facing at a bigger angle. The shoulder
+back limit stays 4 cm (the owner). Next: the M24 round.
