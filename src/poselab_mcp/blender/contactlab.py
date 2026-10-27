@@ -921,6 +921,9 @@ class ContactMixin:
             return c[1]
         vs, ps = self._gun_verts()
         bvh = BVHTree.FromPolygons(vs, ps)
+        if getattr(self, "_samples", None) is None:
+            # a fresh rig's hand measure (measure_hand on arms not yet cached) reaches here before any region call
+            self.object_regions()
         SW, SL = self._samples_world()
         kd = KDTree(len(SW))
         for i, p_ in enumerate(SW):
