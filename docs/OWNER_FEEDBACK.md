@@ -240,3 +240,11 @@ joint moved 0.15 cm). AR15 regression (POSE_RULES run 19): rule 11 PASS on all f
 the arm reaches 6 cm further). The grip wrist went 9 to 20.6 degrees (inside the 30 wall): the elbow sits further
 under with the longer bone and the forearm's line meets the authored hand facing at a bigger angle. The shoulder
 back limit stays 4 cm (the owner). Next: the M24 round.
+
+### 2026-10-27, result: the M24 round on the long arm
+The support authored and PASS (3 cm left: the forend is 5.4 cm wide and flat under; the thumb had folded under it).
+The grip meets the wrist wall: 48 degrees as the preset sits, 64.6 with the fingers square across the stock's
+wrist, 36 with the shoulder 14.8 cm back, 28 only with the hand raised and its fingers along the stock's side (not
+a grip). The cause is measured: the hand is 30 cm from the shoulder and only 7.8 cm under the eye, so the forearm
+comes in 70 degrees off the shoulder-hand line; a wrapped hand within 30 needs about 45 cm. Stopped per the wall
+rule; the owner's choices in the report of 2026-10-27.
