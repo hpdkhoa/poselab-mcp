@@ -421,3 +421,12 @@ middle plane, touch -0.09 PASS, seen on the left view. All five digits touch. FA
 index 50 deg off line B's direction (its slant to the trigger); the web reads 2.0 cm off A, which is the planned slide
 onto the face (the gate's A check still measures the middle line: mine to adjust). Pictures
 report/tune/M24_plan6_grip_left.png, _right.png.
+
+2026-10-28, the owner: "make the thumb line farther in the left side ... straight the thumb and let the root of the
+thumb touch the current thumb touch point, then the tip wrap along the gun ... when you push the thumb then the wrist
+will lower a bit, try and show me".
+Result (plan7, plan8): the thumb's root joint (where it leaves the hand; my first try used the bone inside the palm
+and moved the hand 7.9 cm) set on the left face just under the top edge behind A, the straight thumb laid along the
+left face forward. The hand moved 4.65 cm over the top; wrist 63.7 at the aim (from 72.5), 54.6 pulled. All fingers
+touch (index -0.38, middle 0.12, ring 0.10, pinky 0.09); thumb 0.76 cm inside the face (FAIL); the web now 3.6 cm from
+A (over the top). Pictures report/tune/M24_plan8_grip_left.png, _right.png. Usage limit reached here.
