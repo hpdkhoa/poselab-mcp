@@ -319,3 +319,30 @@ pinky 2.12 off FAIL; 2 cm up: wrist 28.5 PASS, pinky 0.79 off FAIL. Lower (the g
 aim, new option aim_drop_cm, mine, told): 2 cm: wrist 35.7 FAIL, pinky 1.36 off; 4 cm: wrist 29.7 PASS, pinky 1.36
 off; 6.5 cm: wrist 28.9 PASS, pinky 1.69 off. Every pulled gate: wrist 17 to 25 PASS, the same pinky gap. None passes
 the gate; the pinky under the stock's short wrist is the one fault left. The owner decides.
+
+2026-10-28, the owner: "I see that index finger is not on the B line like I asked in poselab, you can check on that and
+retry with thumb grab stay on, index finger stay on middle of trigger ring, then move the gun to shoulder and eye view
+is the same with human eye line. Then bring me another round of result".
+What it means: bad: the M24 grip's index lay along the top of the stock, nowhere near line B (the owner's Pose Lab
+rule: the straight index on line B, parallel to the bore, on the frame's firing-side face, its middle at the trigger
+ring's middle height; a hard rule since 2026-10-23). The round to build, in the owner's order: (1) the thumb closed on
+the gun (its rule kept); (2) the straight index on line B with its middle at the ring's middle (line B measured on the
+M24's mesh first, checked against its definition, pictured: touch points first); (3) the gun to the shoulder with the
+sight line on the eye line (the aim place, 0 cm under the eye); (4) both gates, marked pictures. The hand's roll about
+line B is the one freedom left: set so the palm faces the stock's side and sits outside the mesh (mine, told). The hand
+is never turned on its palm for this hold (a turn moves the index off B). Thresholds for the index gate item (mine,
+told): line within 5 deg of B, pads within 0.5 cm across the face, none past the face by 0.1, the middle within 1 cm of
+the ring's middle along the bore.
+Result (2026-10-28): built and run once (fakepose measure_line_b / place_index_on_b / index_b_reading, the gate's
+index-on-B item; Gun Kit touch-point check and markers; the M24 overlay r:grip "place": "index_on_line_b"). Line B on
+the M24 passes its definition (the ring's opening 3.8 cm long, 1.8 cm high; the guard's face 0.50 cm from the middle
+plane; line B's middle 0.000 cm off the ring's centre height). The index lies on it (0.3 deg, pads within 0.09 cm
+across, 0.16 out to 0.04 in; its middle 0.04 cm from the ring's middle). Wrist 4.6, elbow 125 (aim) and 1.3 / 110
+(pulled): PASS. But the owner's idea meets a real problem on this gun: the stock's wrist behind the guard stands 1.8 cm
+proud of the guard's face (the stock's right face 2.1 to 2.3 cm from the middle plane at y -20 to -21 against the
+guard's 0.45; measured by rays on the rig mesh), so the hand behind the straight index sits inside the stock: the web
+1.8 cm in, the thumb's base 2.8 cm in, the thumb's tip 1.47 cm inside; no roll about line B within 60 degrees brings
+the palm out (least depth 2.37 cm inside at every roll). Ring 1.05 and pinky 2.33 cm off (under the stock, nothing
+to hold). Gate FAIL both places. Pictures: report/tune/M24_lineb_touch.png, M24_lineb_round.png, M24_lineb_compare.png.
+Stopped; the choices are the owner's (line B on the stock's face; the index slanted from the stock's face to the
+guard; the index inside the ring on the trigger; or the model's guard/stock step checked against the source).

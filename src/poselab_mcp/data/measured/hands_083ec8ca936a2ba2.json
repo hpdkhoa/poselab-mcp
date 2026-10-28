@@ -1,0 +1,104 @@
+{
+ "measured_from": {
+  "arms": {
+   "file": "Arms.fbx",
+   "sha1": "c52e0d3cd561c551"
+  },
+  "idle": {
+   "file": "Arms_Idle.fbx",
+   "sha1": "721694a15c3974f2"
+  },
+  "bone_edits": {
+   "file": "bone_edits.json",
+   "sha1": "092640441b269a81"
+  }
+ },
+ "sides": {
+  "l": {
+   "points": {
+    "web_fold": {
+     "bone": "hand_l",
+     "local": [
+      8.0972977,
+      1.1578975,
+      -4.1170759
+     ]
+    },
+    "index_pip_pad": {
+     "bone": "index_02_l",
+     "local": [
+      1.0243034,
+      0.8816184,
+      -0.5461788
+     ]
+    },
+    "palm_skin": {
+     "bone": "hand_l",
+     "local": [
+      5.4388924,
+      1.8365023,
+      -0.7827063
+     ]
+    }
+   },
+   "tip_len_m": {
+    "thumb": 0.036666,
+    "index": 0.027097,
+    "middle": 0.02773,
+    "ring": 0.027422,
+    "pinky": 0.022596
+   },
+   "method": {
+    "web_fold": "skin exit of the ray thumb base joint -> middle of thumb knuckle and index knuckle",
+    "index_pip_pad": "skin exit of the ray index middle joint -> palm facing",
+    "palm_skin": "skin exit of the ray wrist/middle-knuckle midpoint -> palm facing",
+    "tip_len_m": "farthest end-segment skin along the end segment's line, from its joint",
+    "pose": "fingers open (bind pose, uncurled flat)"
+   }
+  },
+  "r": {
+   "points": {
+    "web_fold": {
+     "bone": "hand_r",
+     "local": [
+      -8.1064873,
+      -0.9816923,
+      4.2554021
+     ]
+    },
+    "index_pip_pad": {
+     "bone": "index_02_r",
+     "local": [
+      -0.9920216,
+      -1.0112243,
+      0.2103887
+     ]
+    },
+    "palm_skin": {
+     "bone": "hand_r",
+     "local": [
+      -5.3786998,
+      -1.5801902,
+      0.1107739
+     ]
+    }
+   },
+   "tip_len_m": {
+    "thumb": 0.036627,
+    "index": 0.027127,
+    "middle": 0.027682,
+    "ring": 0.027461,
+    "pinky": 0.022746
+   },
+   "method": {
+    "web_fold": "skin exit of the ray thumb base joint -> middle of thumb knuckle and index knuckle",
+    "index_pip_pad": "skin exit of the ray index middle joint -> palm facing",
+    "palm_skin": "skin exit of the ray wrist/middle-knuckle midpoint -> palm facing",
+    "tip_len_m": "farthest end-segment skin along the end segment's line, from its joint",
+    "pose": "fingers open (bind pose, uncurled flat)"
+   }
+  }
+ },
+ "date": "2026-10-27",
+ "rig_key": "083ec8ca936a2ba2"
+}
