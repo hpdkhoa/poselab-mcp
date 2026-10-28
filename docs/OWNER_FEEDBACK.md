@@ -464,3 +464,14 @@ left of the body's middle; wrist 79.4 at the aim, 85.2 pulled; elbow 152.9 pulle
 report/tune/M24_plan12_round.png (right, both gates), M24_plan12_arm_left.png (left, full). The shoulder's height
 against the butt is the owner's number to set (the stock's butt sits at the sight line's height; a shooter's shoulder
 is a few cm under it, not 19).
+
+2026-10-28, the owner: "wait the right shoulder comes down then why the elbow come directly inside the gun? it must
+point outside like the left arm, do it again with the fix".
+Result (plan13): a wall added to the elbow picker, ELBOW_OUT_CM 3 (the elbow on its arm's own side of the gun's
+middle plane). With the shoulder 19 cm under the eye the picker then put the elbow ahead of the hand under the
+receiver (7.6 cm above the shoulder): wrist 159.6, pulled 172.8, elbow 152.9 pulled. Geometry, measured: the hand
+hangs down the vertical grip with the knuckles pointing down, so a wrist under 30 needs the forearm to come down to
+the wrist from above and behind; the elbow then sits above the shoulder (the raised firing elbow of the classic
+stance), which breaks the elbow-under-the-shoulder wall. From a shoulder 19 cm under the grip the forearm can only
+come up, and the wrist folds 150 to 170. Stopped; the owner picks which gives: the elbow-under wall for the firing
+arm on a rifle, the shoulder's height (a number under the eye), or the hand's angle on the grip.
