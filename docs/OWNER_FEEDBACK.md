@@ -475,3 +475,19 @@ the wrist from above and behind; the elbow then sits above the shoulder (the rai
 stance), which breaks the elbow-under-the-shoulder wall. From a shoulder 19 cm under the grip the forearm can only
 come up, and the wrist folds 150 to 170. Stopped; the owner picks which gives: the elbow-under wall for the firing
 arm on a rifle, the shoulder's height (a number under the eye), or the hand's angle on the grip.
+
+2026-10-29, the owner: "can use the shoulder joint" (the butt locks against the shoulder joint plus an offset);
+"tell me what is cheek-weld rule"; which option moves what; "Add the rule of least verbose into global memory".
+Rule added to the global CLAUDE.md and memory (feedback-least-verbose).
+
+2026-10-29, the owner: the gun stays inside the body: "why you not extend the gun out so the butt lock on the chest?"
+then "option 2 first" (the eye relief kept, the body moved; the butt locks on the shoulder joint).
+Verified first: the butt 22.8 cm behind the right shoulder joint (rear sight 6.35 ahead of the eye, the butt 29.4
+behind the rear sight, the rig's shoulder joint only 4.5 cm behind the eye). Built: fakepose body_blade (the torso
+turned about its vertical axis through spine_01, the head turned back, step 5 deg, until the butt's face is target cm
+ahead of the shoulder joint; the eye is the game camera and does not move), Gun Kit option butt_lock_cm.
+Result (plan15): at the 70 deg cap the butt is still 8.0 cm behind the shoulder joint (from 22.8); the right shoulder
+moved 11.4 cm back and crossed to the gun's line; wrist 116 at the aim, 84 pulled; the elbow hangs under and behind the
+gun. The blade cannot give 28 cm: the shoulder is 18 cm from the body's axis, so 90 deg gives 18 cm at most. The
+rest (10 cm or more) must come from the eye standing further ahead of the shoulder than this rig's 4.5 cm (a real
+body's 12 to 15), or from a shorter stock. Reported; waiting.
