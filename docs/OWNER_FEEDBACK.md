@@ -441,3 +441,13 @@ plan10: all five digits touch (thumb -0.03, index -0.25 with the knuckle at 57.5
 0.07); the palm outside; wrist 60.3 at the aim, 47.3 pulled (wall 30). The thumb's tip ends 1.4 cm right of the
 middle plane, on the top of the wrist, not down the left face: the 4.5 cm slide carried the thumb's root off the left
 face. The web is 4.2 cm from A. Pictures report/tune/M24_plan10_grip_left.png, _right.png.
+
+2026-10-28, the owner: "the thumb missed left side again, why you leave the hand out of the A point?" then "explain the
+if ... cannot place the thumb over left side? I see the gap so you still can do it".
+What it means: bad: my thumb-root step and my palm-out slide moved the whole hand off A (a wall). The thumb reaches the
+left by its own base swing and joints; the hand is never moved for it.
+Result (plan11): the web 1.13 cm from A (the half-width slide 1.07 only, A 1 cm right of centre); the thumb laid over
+the top toward the left and down (thumb_over_down 0.7), its root 1.4 cm left of the middle plane, the tip 3.5 cm left
+and 2.5 cm under A, touch -0.36 PASS, seen on the left view; index -0.25, middle 0.11, ring 0.10, pinky 0.10 PASS.
+FAIL left: wrist 68.7 at the aim, 54.7 pulled (wall 30); the index 49 deg off line B's direction. Pictures
+report/tune/M24_plan11_grip_left.png, _right.png. Waiting: the wrist (the elbow lower) and the index slant rule.
