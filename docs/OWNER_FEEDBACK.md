@@ -411,3 +411,13 @@ behind the action; my first try at 5.0 cm hit the receiver top, corrected). All 
 left face, index -0.25 (50 deg down to the ring), middle 0.07, ring 0.11, pinky -0.07. The web sits at A's height and
 place, 2.0 cm right of it (the planned slide). FAIL left: wrist 72.5 at the aim, 57.4 pulled (wall 30); index 50 deg
 off line B's direction (the slant to the trigger). Pictures report/tune/M24_plan2_grip_left.png, _right.png.
+
+2026-10-28, the owner: "still no thumb on left side, but the hand gesture is good, wrap the thumb over the left side
+of the gun and show my result".
+Result (runs plan3 to plan6): a straight reach at the left face went through the stock; a swing across lay on the top
+pointing forward; a bend with the pad facing forward curled the thumb up. plan6: the thumb laid across the top, its pad
+rolled to face the top, the joints bent until the tip met the left face below the top edge: tip 3.6 cm left of the
+middle plane, touch -0.09 PASS, seen on the left view. All five digits touch. FAIL left: wrist 72.5 (wall 30); the
+index 50 deg off line B's direction (its slant to the trigger); the web reads 2.0 cm off A, which is the planned slide
+onto the face (the gate's A check still measures the middle line: mine to adjust). Pictures
+report/tune/M24_plan6_grip_left.png, _right.png.
