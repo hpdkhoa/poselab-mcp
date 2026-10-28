@@ -365,3 +365,23 @@ stock: the web on the wrist's top and an index parallel to the bore at the ring'
 pictures report/tune/M24_weba_touch.png, M24_weba_round.png, M24_weba_compare.png. Choices for the owner: the index
 slanted down from the web to the ring (about 27 degrees to the bore, measured 4.0 over 8.1 cm); or A lower on the
 wrist's back/right; or the owner names A on the picture.
+
+2026-10-28, the owner: "wait hand is side way the palm is turned 90 degree flat to the ground which is wrong, rerun
+again the palm need to hold the grip or the place hand need to stay".
+What it means: bad: my roll search about the bore (to bring the index near B) turned the palm 92 degrees, flat to the
+ground. Removed: the palm keeps its facing into the grip's side (the preset's palm_into), the web on A, the index
+parallel to the bore; what is then inside or off is reported by the gate, not rolled away.
+
+2026-10-28, the owner: "and why I see the hand is flat or slim? it is very strange, the previous palm is good, I only
+asked to chance the finger place with the thumb on the other side of the gun, work again because you changed too many
+things".
+What it means: bad: I rebuilt the whole hand placement (web on A, roll about the bore, the open flat hand from the
+extended-index natural open) where the ask was the fingers only. Rule: change only what the owner named. Built: the
+previous hold restored (the M24 overlay as committed, up 1.5), two finger rules on it: index "along_bore" (straightened,
+its knuckle turned within range to lie parallel to the bore, the hand not moved) and thumb "over_to left" (the base
+swung over the grip toward the gun's left until the tip passes the middle plane or the skin meets the gun).
+Result (2026-10-28, run "fingers"): the hand as it sat is high on the stock's top: the index parallel (2.7 deg at
+placement, 13.7 at the gate) lies 4.3 to 5.7 cm above line B and 6.7 cm to its right; the thumb meets the stock after
+3 degrees of swing, its tip 3.3 cm short of the middle plane (it stays on the right). Gate FAIL: index 13.7 deg off B,
+pinky 1.65 off; wrist 29.7, elbow 128 PASS. Finding: with the hand where it sat, the fingers alone cannot reach B or
+cross the thumb; the palm would have to come down about 5 cm and in about 6 cm with its facing kept. Asked the owner.
