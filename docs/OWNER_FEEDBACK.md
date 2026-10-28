@@ -451,3 +451,16 @@ the top toward the left and down (thumb_over_down 0.7), its root 1.4 cm left of 
 and 2.5 cm under A, touch -0.36 PASS, seen on the left view; index -0.25, middle 0.11, ring 0.10, pinky 0.10 PASS.
 FAIL left: wrist 68.7 at the aim, 54.7 pulled (wall 30); the index 49 deg off line B's direction. Pictures
 report/tune/M24_plan11_grip_left.png, _right.png. Waiting: the wrist (the elbow lower) and the index slant rule.
+
+2026-10-28, the owner: "hand look good, now I want to see the shoulder full view" then "two shoulder is on different
+level? left shoulder is on eye level but right is too higher up, lower right shoulder and show me the left side of the
+gun with the arm".
+What it means: the first-person template body (kept for rifles since 2026-10-25) holds the right shoulder 10.8 cm over
+the eye and the left 11.8 under: wrong. The right shoulder comes down to the left's level; a full left view is added.
+Result (plan12): job option body "anatomical" (the rig's rest body): both shoulders level at 19.0 cm under the eye,
+symmetric 19 cm either side. The hand's hold is unchanged (five digits touch). But the arm from a shoulder 19 cm
+under and 18 cm right of the eye reaches the grip badly: the IK's elbow sits 2.3 cm under the shoulder, crossed 11 cm
+left of the body's middle; wrist 79.4 at the aim, 85.2 pulled; elbow 152.9 pulled (max 150). Pictures
+report/tune/M24_plan12_round.png (right, both gates), M24_plan12_arm_left.png (left, full). The shoulder's height
+against the butt is the owner's number to set (the stock's butt sits at the sight line's height; a shooter's shoulder
+is a few cm under it, not 19).
