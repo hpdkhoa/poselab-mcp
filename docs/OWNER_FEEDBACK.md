@@ -401,3 +401,13 @@ the bore through the web onto the right face): the roll ran to 90 degrees and th
 1.56 inside; ring 2.34 and pinky 3.93 off; wrist 40.2: FAIL. Pictures report/tune/M24_arrow2_grip_left.png,
 M24_arrow2_grip_right.png, M24_arrow_round.png. Reported to the owner; the hand's size against this wrist is the
 open question (the palm cannot lie on the right face with the web on top and the fingers round the grip).
+
+2026-10-28, the owner: "hey palm goes side way again and thumb not goes to left side? give me the plan with least
+verbose as possible before you work again" then (A moved forward on the left view) "move A to this point and do as
+you planned". Plan agreed: web on A; palm on the right face by a slide of the wrist's half width (no roll); thumb swung
+across the top to the left and closed; index aimed at the ring's middle; fingers to contact, pinky may be loose.
+Result (run plan2): A measured at the owner's mark (6.3 cm behind the ring, 4.5 above its centre, the wrist top right
+behind the action; my first try at 5.0 cm hit the receiver top, corrected). All five digits touch: thumb -0.26 on the
+left face, index -0.25 (50 deg down to the ring), middle 0.07, ring 0.11, pinky -0.07. The web sits at A's height and
+place, 2.0 cm right of it (the planned slide). FAIL left: wrist 72.5 at the aim, 57.4 pulled (wall 30); index 50 deg
+off line B's direction (the slant to the trigger). Pictures report/tune/M24_plan2_grip_left.png, _right.png.
