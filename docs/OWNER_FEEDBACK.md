@@ -346,3 +346,22 @@ the palm out (least depth 2.37 cm inside at every roll). Ring 1.05 and pinky 2.3
 to hold). Gate FAIL both places. Pictures: report/tune/M24_lineb_touch.png, M24_lineb_round.png, M24_lineb_compare.png.
 Stopped; the choices are the owner's (line B on the stock's face; the index slanted from the stock's face to the
 guard; the index inside the ring on the trigger; or the model's guard/stock step checked against the source).
+
+2026-10-28, the owner: "thumb is missed, the web need to goes in the back of the grip and thumb is on another side
+(left side) of index finger".
+What it means: bad: this round's hand hung under the stock with the thumb crossing inside it. The hold is the pistol
+grip's rule on the M24's stock wrist: the web fold on the back of the grip (point A, measured on the mesh: my reading
+is the deepest point of the grip's back curve on the middle line, told), the straight index parallel to the bore on the
+gun's right side as near line B as the hand allows (the owner, 2026-10-22: "just keep it close"), the thumb closed on
+the left side. A and B stay at every step (the hard rule of 2026-10-23).
+Result (2026-10-28): built (fakepose measure_point_a, place_web_a_index_b, the gate's web-to-A item; Gun Kit checks A
+too; the touch view lit). Two readings of "the back of the grip" measured: the backward-facing surface behind the ring
+is the trigger guard's rear bow (1.5 cm behind the ring: rejected, not the grip); the wrist's top saddle behind the tang
+is 8.1 cm behind the ring's middle and 4.0 cm above it: taken as A (told). With the web on it (0.10 cm off A) the
+straight index parallel to the bore lies 5.4 cm above line B at placement, and no roll within 90 degrees puts the palm
+outside the wrist (least 1.5 cm inside). Gate FAIL: index 39.3 deg off B at the gate (it is bent after placement by a
+later step: open), thumb 2.5 and index 1.6 inside, pinky 4.15 off. The owner's two sentences cannot both hold on this
+stock: the web on the wrist's top and an index parallel to the bore at the ring's height are 4 cm apart. Stopped;
+pictures report/tune/M24_weba_touch.png, M24_weba_round.png, M24_weba_compare.png. Choices for the owner: the index
+slanted down from the web to the ring (about 27 degrees to the bore, measured 4.0 over 8.1 cm); or A lower on the
+wrist's back/right; or the owner names A on the picture.
