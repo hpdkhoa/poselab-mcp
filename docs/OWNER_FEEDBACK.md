@@ -491,3 +491,10 @@ moved 11.4 cm back and crossed to the gun's line; wrist 116 at the aim, 84 pulle
 gun. The blade cannot give 28 cm: the shoulder is 18 cm from the body's axis, so 90 deg gives 18 cm at most. The
 rest (10 cm or more) must come from the eye standing further ahead of the shoulder than this rig's 4.5 cm (a real
 body's 12 to 15), or from a shorter stock. Reported; waiting.
+
+2026-10-29, the owner: "butt stock still clipping with shoulder" then "push the gun forward".
+Result (plan16): fakepose gun_to_shoulder (the gun moved along the view until the butt's face is target cm ahead of
+the shoulder joint), Gun Kit option gun_to_shoulder. With the blade kept (70 deg), the gun moved 12.98 cm forward:
+butt 5.0 cm ahead of the joint; eye relief now 19.33 cm (from 6.35). Wrist 94.0 at the aim, 74.2 pulled; elbow 121.5,
+2.2 cm under the shoulder; the hand's five digits unchanged. Pictures report/tune/M24_plan16_arm_left.png,
+M24_plan16_round.png.
