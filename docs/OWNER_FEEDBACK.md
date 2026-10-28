@@ -385,3 +385,19 @@ placement, 13.7 at the gate) lies 4.3 to 5.7 cm above line B and 6.7 cm to its r
 3 degrees of swing, its tip 3.3 cm short of the middle plane (it stays on the right). Gate FAIL: index 13.7 deg off B,
 pinky 1.65 off; wrist 29.7, elbow 128 PASS. Finding: with the hand where it sat, the fingers alone cannot reach B or
 cross the thumb; the palm would have to come down about 5 cm and in about 6 cm with its facing kept. Asked the owner.
+
+2026-10-28, the owner (on the left close view, a drawing): "I marked the A point so try to let the web rest on there and
+the thumb follow the direction arrow, try it and show me two side of the picture (left and right)". Earlier in the
+same thread: "it is a vertical grip so pinky can let loose a bit in this kind of grip but index must in the middle of B
+line so index finger can pull the trigger".
+What it means: A = the dip on top of the wrist behind the action (the owner's mark; the saddle reading); the web fold
+rests on it; the thumb lies down the left face of the grip pointing forward and down (the arrow); the index aims at the
+middle of line B (the trigger); the pinky may be loose. The palm keeps its facing into the grip's right side (no roll).
+Result (2026-10-28, runs arrow and arrow2): A measured as the saddle on top of the wrist (8.1 cm behind the ring, 4.0
+above its centre) matches the owner's mark on the left view. Run arrow (web on A, palm facing left, no roll): the palm
+hung through the stock's middle, every digit inside, wrist 57: FAIL. Run arrow2 (one step added: the palm rolled about
+the bore through the web onto the right face): the roll ran to 90 degrees and the palm still read 1.7 cm inside; web
+0.10 cm from A; index aimed at the ring, tip touching (-0.19), its line 42 deg down to the ring; middle touching; thumb
+1.56 inside; ring 2.34 and pinky 3.93 off; wrist 40.2: FAIL. Pictures report/tune/M24_arrow2_grip_left.png,
+M24_arrow2_grip_right.png, M24_arrow_round.png. Reported to the owner; the hand's size against this wrist is the
+open question (the palm cannot lie on the right face with the web on top and the fingers round the grip).
