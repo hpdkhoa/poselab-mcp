@@ -308,3 +308,14 @@ leaves it; the grasp's gate kept as gate_at_solve) and the pulled gate before th
 hands re-placed as frame 0; measured, not mended; arm_pulled.png). Rule 11 counts both. M24 grip: final gate FAIL
 (pinky 1.36 off, wrist 40.5; the ring now closed to -0.28), pulled gate FAIL (pinky 1.36 off; wrist 29.1 PASS,
 elbow 111 PASS). Support passes both. Picture `report/tune/M24_gate_final_vs_pulled.png`.
+
+2026-10-28, the owner: "try stock hold and lower then show me the evidences".
+What it means: the two M24 grip options I named are built and run (the stock hold; the grip lowered toward the eye),
+each through both gates, and shown with marked pictures (same camera, the gate's numbers on them) beside the current
+hold. No exception stated. The owner decides on the pictures.
+Result (2026-10-28): five runs, each through both gates, pictures `report/tune/M24_options_compare.png` and
+`M24_option_<tag>.png`. Stock hold (the hand up the grip, fingers along the stock's side): 1 cm up: wrist 28.4 PASS,
+pinky 2.12 off FAIL; 2 cm up: wrist 28.5 PASS, pinky 0.79 off FAIL. Lower (the gun lowered against the eye at the
+aim, new option aim_drop_cm, mine, told): 2 cm: wrist 35.7 FAIL, pinky 1.36 off; 4 cm: wrist 29.7 PASS, pinky 1.36
+off; 6.5 cm: wrist 28.9 PASS, pinky 1.69 off. Every pulled gate: wrist 17 to 25 PASS, the same pinky gap. None passes
+the gate; the pinky under the stock's short wrist is the one fault left. The owner decides.
