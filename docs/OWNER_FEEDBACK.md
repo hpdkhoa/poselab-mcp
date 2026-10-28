@@ -430,3 +430,14 @@ and moved the hand 7.9 cm) set on the left face just under the top edge behind A
 left face forward. The hand moved 4.65 cm over the top; wrist 63.7 at the aim (from 72.5), 54.6 pulled. All fingers
 touch (index -0.38, middle 0.12, ring 0.10, pinky 0.09); thumb 0.76 cm inside the face (FAIL); the web now 3.6 cm from
 A (over the top). Pictures report/tune/M24_plan8_grip_left.png, _right.png. Usage limit reached here.
+
+2026-10-28, the owner: "I see the palm is inside the gun but the gesture is correct so move the palm outside with A
+point move a little to the right side of the center line of the gun. Then continue the work to end so I can see the
+result".
+Result (plan9, plan10): A read 1 cm right of the centre line (overlay point_a.right_of_centre_cm); after the thumb's
+root is set, the hand slides toward the gun's right 0.25 cm a step until the palm's skin is outside (4.5 cm, least
+depth +0.04); then the index is aimed at the ring again and the thumb laid again (plan9 had lost both: index 2.16 off).
+plan10: all five digits touch (thumb -0.03, index -0.25 with the knuckle at 57.5 deg, middle 0.12, ring 0.13, pinky
+0.07); the palm outside; wrist 60.3 at the aim, 47.3 pulled (wall 30). The thumb's tip ends 1.4 cm right of the
+middle plane, on the top of the wrist, not down the left face: the 4.5 cm slide carried the thumb's root off the left
+face. The web is 4.2 cm from A. Pictures report/tune/M24_plan10_grip_left.png, _right.png.
