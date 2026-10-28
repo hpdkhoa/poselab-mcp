@@ -248,3 +248,63 @@ wrist, 36 with the shoulder 14.8 cm back, 28 only with the hand raised and its f
 a grip). The cause is measured: the hand is 30 cm from the shoulder and only 7.8 cm under the eye, so the forearm
 comes in 70 degrees off the shoulder-hand line; a wrapped hand within 30 needs about 45 cm. Stopped per the wall
 rule; the owner's choices in the report of 2026-10-27.
+
+### 2026-10-27, the owner (after the regression report)
+"then rework on the showcase for lab mcps evolution, I want to have some before and after stay in the same screen
+to have a compare feeling of animations, and M1911 need more compare of the blueprint and the real model screen"
+What it means: the labs video gets reworked. (1) Before and after on one screen, playing together, so the
+animations themselves compare (not still pictures one after another). (2) The M1911A1 section gets more
+blueprint-versus-model comparison screens (the drawing with the model laid over it, the sections, the photo
+overlay). The M24 grip decision stays open meanwhile.
+
+### 2026-10-27, result: the video reworked
+Scene 4a: five clip pairs on one screen, playing in step (the same clip, frame for frame; the dev side view of each
+run, so the framing differs and the screen says so): M16A2 charge, check chamber, reload empty (25 Oct showcase
+frames beside the current engine's), AR15 check chamber and idle (26 Oct frames beside the long arm's). The after
+frames were rendered on the current engine (four Blender runs, 169 to 294 s each). Scene 4b: the M1911A1 photo-guess
+model against the drawing model, then five blueprint-against-model screens (the manual photo with the parts drawn on
+it against the model; the side section traces against the model on the 1936 sheet; the top section; sheet 4 traces
+against the right side; the slide and receiver printed dims over the drawing), then the sheet beside the turning
+showcase. Captions carry the gate readings (first readings of 26 Oct for the before, the PASS numbers for the after).
+
+## 2026-10-27, the M24 grip choices (the owner's questions)
+
+The owner: "explains in short what is the 4 choices for M24" / "show me the picture of all 4" / "I don't see the real
+different in A, B and C, exclude option D" / "render the views with the shoulder and elbow in frame and place marker so
+I can see the different in your vision". D is excluded (the owner). Result: Gun Kit hands job option `arm_view` (a
+fixed side camera on the eye and the gun, joints to JSON); picture `report/tune/M24_grip_ABC_arm.png`. Finding: in the
+written fire clip A and C are the same arm (the shoulder-back of the hold never reaches the clip), and the clip's
+wrist is 29.2 where the hold's gate said 47.9 (A) and 35.2 (C): the gate at the hold and the clip disagree. Reported
+to the owner; waiting for the decision.
+
+2026-10-27, the owner: "find why the gate says 47.9 and the clip says 29.2 first". Found, measured (M24 grip, run
+"why"): the gate measures the hold with the gun at the aim place (gun bone [-5.8, -15.0, 152.7] cm, the sight line on
+the eye); every clip but "aim" plays with the gun pulled in by the rifle idle pull (3.8 right, 5.1 forward, 4.4 down:
+gun [-9.6, -20.1, 148.3]), the hand 7.8 cm from the hold's; the same ruler (the bones) reads 47.9 at the aim hold and
+29.2 in the pulled clip. The shoulder-back of the hold is reset each frame (_clavicle_rest) and the pulled grip needs
+none. My earlier answer "this is the aim pose" was wrong for the picture: the fire clip's frames are the pulled idle
+stance; corrected to the owner. Engine additions (mine, told): hands job options arm_view / arm_view_frame, the
+report's hold_arm_check, the gate's wrist_bones_deg / elbow_bones_deg / hand_cm / shoulder_cm readings.
+
+2026-10-27, the owner (a rule): "when report something failed, show me with the marker on it, and the success report
+need marker too, only showcase or real result don't need marker". Written into the global CLAUDE.md ("Every fail or
+pass report carries markers on its picture"). Ask with it: "give me the aim hold, and what is wrong gated".
+
+2026-10-27, result: picture `report/tune/M24_aim_vs_pulled.png` (the aim hold with its gate faults marked: ring 0.42
+off, pinky 1.59 off, wrist 47.9; the pulled hold below it, wrist 29.1, elbow 111, digits never gated). Two faults
+raised: the saved hold is turned 7.5 deg on its palm after the gate measured it (wrist 40.5 saved, 47.9 gated); the
+pulled hold the clips play is not gated.
+
+2026-10-28, the owner: "Yes gate must behind all changed. And gate the pulled hold too. Then I see in the picture is
+green, it is still failed? And the finger is not gated? And the picture with markers like that is a good showcase so
+continue the work".
+What it means: (1) the gate runs after the last change to the hand, so its numbers are the saved hold's; (2) the pulled
+hold (the idle-pull place the clips play) is gated as well, digits and joints; (3) the green marks in the picture were
+only the wrist and elbow of the pulled hold, its fingers had no verdict: answered; (4) keep the marked-picture style
+for every report.
+Result (2026-10-28): built. fakepose `gate_again(side, mark, kind, fix, tag)` (the hold's own rules, kept from its
+grasp); Gun Kit runs it twice: the final gate right before the hold snapshot (fix on; the clips take the hold as it
+leaves it; the grasp's gate kept as gate_at_solve) and the pulled gate before the clips (the gun at the idle pull, the
+hands re-placed as frame 0; measured, not mended; arm_pulled.png). Rule 11 counts both. M24 grip: final gate FAIL
+(pinky 1.36 off, wrist 40.5; the ring now closed to -0.28), pulled gate FAIL (pinky 1.36 off; wrist 29.1 PASS,
+elbow 111 PASS). Support passes both. Picture `report/tune/M24_gate_final_vs_pulled.png`.
