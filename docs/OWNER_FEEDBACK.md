@@ -523,3 +523,17 @@ and laid it on the top (touch -0.33, 5.9 cm above A, base spread 96 over the 80 
 sits inside the stock's top corner with the web on A 1 cm right of centre and the 1.07 cm slide; no turn of the
 thumb can take a root out. Fingers and wrist as plan18. Asked the owner: A 2 cm right of centre (the root clears
 the corner) or the hand 1 cm further right, both move the web off the top's middle by that much.
+
+2026-10-29, the owner: "ok I want you to make the hand free style your way to be the best result, then give me what
+you have done with least verbose as the end report".
+Done (runs free1 to free5): the thumb by a measured grid search (base about the bore and about the hand's line, -40
+to 40 by 10; bends 0 to 80 by 20; 405 poses; kept: no wrapping segment inside past the gate's threshold, the base
+segment allowed 1 cm where its skin runs into the web, the tip touching the left face below the top, farthest left);
+A tried at 6.5/2.0 (no left pose exists: every left-reaching pose has a segment inside) and 6.2/1.0 (a left pose
+found: tip 3.5 cm left, 0.7 under A, but its base segment 0.96 inside; the gate's fix then lifts it 30 deg onto the
+top). A cant of the hand on its palm (30 deg) cut the wrist to 69 but moved the web 3 cm off A: not kept (A is a
+wall). Final state = plan16's hold with the searched thumb: five digits touch (thumb -0.09 on the top after the
+gate's lift, index -0.25, middle 0.11, ring 0.10, pinky 0.10), web 1.13 from A (the slide), elbow 121.5 / 112.4
+PASS, butt 5 cm ahead of the shoulder, wrist 94.0 / 74.2 FAIL, index 49 deg to B's direction. Finding: with this hand
+model the thumb reaches the left face only with its base about 1 cm into the stock's top corner; a straight wrist
+needs the elbow 24 to 28 cm above the shoulder.
