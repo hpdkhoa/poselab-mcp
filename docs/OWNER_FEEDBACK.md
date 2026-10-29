@@ -568,3 +568,7 @@ best_elbow, every finger joint by pattern search, walls hard). Within 45 deg of 
 under the shoulder, web 0.00 on A, thumb 0.09 on the far face, no skin inside; index 2.58 from the trigger, palm 1.12
 off the near face (FAIL). Picture report/tune/M24_solve3_marked.png: the hand is upside down (fingers over the top to
 the left, thumb under). The four contacts do not say which way the hand wraps: a fifth definition is missing.
+
+2026-10-29, the owner (bad): "no more try in running, prove me that your just pushed is better than previous one because I see the hand missed and you gonna try again".
+What it means: no more runs. Prove a push is better with numbers before pushing it. Answer: it is not better as a hold. Solve3 is better on the wrist (13.3 vs 94.0) and the web (0.00 vs 1.13). It is worse on the index (2.58 off vs touching) and the hand is upside down. It should not have replaced the plan16 preset without a proof.
+Reverted: fakepose 40f33e7 and weaponlab 66d9e69. The M24 overlay is back to the market preset (6cb1ac4). Nothing else built.
