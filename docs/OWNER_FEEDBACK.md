@@ -515,3 +515,11 @@ Result (plan18): no bend was outside at all (the thumb's base segment starts ins
 laid it back: it ends touching (-0.15) but up and out of the close views, not on the left face. Fingers: index -0.27,
 middle 0.03, ring 0.17, pinky 0.11 touch. Wrist 91.3 aim / 71.1 pulled. Reported with the numbers; the thumb's base
 start place is the next thing to fix (its root sits inside the top corner after the 1.07 cm slide).
+
+2026-10-29, the owner: "try it" (the thumb's base swung clear first, then laid across and bent down the left face).
+Result (plan19): the thumb hinged up over the top edge about the bore's line, 2 deg a step to 60: its base segment
+never read outside (gap under -0.3 at every angle), so no bend was accepted and the gate's fix again swung it 60 deg
+and laid it on the top (touch -0.33, 5.9 cm above A, base spread 96 over the 80 limit). The thumb's root bone itself
+sits inside the stock's top corner with the web on A 1 cm right of centre and the 1.07 cm slide; no turn of the
+thumb can take a root out. Fingers and wrist as plan18. Asked the owner: A 2 cm right of centre (the root clears
+the corner) or the hand 1 cm further right, both move the web off the top's middle by that much.
