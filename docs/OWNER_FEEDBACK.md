@@ -547,3 +547,24 @@ curl_to_contact. Result market4: the hand wraps the vertical grip, the index in 
 middle 0.13, ring 0.09, pinky 0.01 touch; thumb 0.66 cm into the top; wrist 65.7 aim / 52.8 pulled; elbow 115 / 99.
 Picture report/tune/M24_market_showcase.png (unmarked, a showcase). The plan16 hold (the owner's points) stays in git
 history; the overlay now holds the market hold.
+
+2026-10-29, the owner (on the comparison): "how you see your picture that grip can fire the gun? and index is on the
+other side of the trigger ring so how it can pull the trigger?"
+What it means: bad: I called the freestyle index "in the guard, on the trigger" from the gate's 0.07 touch. That
+number is the gap to the nearest gun surface (the guard's bow), not to the trigger blade; the picture shows the index
+wrapped round the ring's outside. Neither line has the index on the trigger. Rule: a claim about a contact names the
+part it touches, measured against that part, and the picture is checked before saying it.
+
+2026-10-29, the owner (after my answer on why numbers failed): "build that two points, then tell me if I want to make a
+virtual world like matrix idea where every thing every poly control by numbers, start from the hand and the gun is
+possible or not?"
+What it means: build (1) every contact defined against a named part (index pad to the trigger blade, thumb pad to the
+left face under the top edge, palm to the right face, web to A) and (2) one solver over the hand's place, every finger
+joint and the elbow, the walls as hard limits, scored by the distance to those targets. Then answer the matrix question.
+Result (solve1 to solve3): built contact_readings (index pad to the trigger's own triangles inside the ring, thumb pad
+to the grip's far face, palm to the near face, web on A 7.1/1.0) and solve_hold (hand turned about A, elbow by
+best_elbow, every finger joint by pattern search, walls hard). Within 45 deg of the preset no turn holds the wrist wall
+(least 80.5). Over every turn (15 deg grid) 1712 of 15625 hold the arm walls; the solve: wrist 13.3, elbow 105, 8.9 cm
+under the shoulder, web 0.00 on A, thumb 0.09 on the far face, no skin inside; index 2.58 from the trigger, palm 1.12
+off the near face (FAIL). Picture report/tune/M24_solve3_marked.png: the hand is upside down (fingers over the top to
+the left, thumb under). The four contacts do not say which way the hand wraps: a fifth definition is missing.
