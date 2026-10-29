@@ -505,3 +505,13 @@ Result (plan17): A at 8.0 cm behind the ring (the saddle, 3.8 above the ring's c
 the aim (from 94.0), 69.0 pulled (from 74.2); web 1.05 from A (0.73 out); index -0.19, middle 0.11, ring 0.03, pinky
 0.04 touch; the thumb now 2.5 cm inside (the saddle's left edge is lower there; the wrap bent 0, the base spread 87
 over 80). Index 40 deg off B's direction. Pictures report/tune/M24_plan17_round.png, M24_plan17_grip_right.png.
+
+2026-10-29, the owner: "hey hey thumb missed again, get the gate in there and don't let the placement skip it. take
+the A slid back only 4.0 cm or half the distance you just moved".
+Built: the thumb wrap refuses any bend with a segment inside past 0.3 cm (the last outside bend kept; a thumb that
+starts inside is lifted at its base first, up to 40 deg). A at 7.1 cm behind the ring (half of the 1.8 cm slide).
+Result (plan18): no bend was outside at all (the thumb's base segment starts inside the stock's top corner and the
+40 deg lift did not clear it), so the placement set nothing; the gate's own fix then swung the thumb 60 deg clear and
+laid it back: it ends touching (-0.15) but up and out of the close views, not on the left face. Fingers: index -0.27,
+middle 0.03, ring 0.17, pinky 0.11 touch. Wrist 91.3 aim / 71.1 pulled. Reported with the numbers; the thumb's base
+start place is the next thing to fix (its root sits inside the top corner after the 1.07 cm slide).
