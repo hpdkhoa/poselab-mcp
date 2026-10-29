@@ -537,3 +537,13 @@ gate's lift, index -0.25, middle 0.11, ring 0.10, pinky 0.10), web 1.13 from A (
 PASS, butt 5 cm ahead of the shoulder, wrist 94.0 / 74.2 FAIL, index 49 deg to B's direction. Finding: with this hand
 model the thumb reaches the left face only with its base about 1 cm into the stock's top corner; a straight wrist
 needs the elbow 24 to 28 cm above the shoulder.
+
+2026-10-29, the owner: "I mean you do freestyle to render yourself, no need to goes through my points or gate, do it
+the standard game market way". Then (model switched to Opus 5.5) "Try again".
+Done (market1 to market4): the engine's own preset placement (fakepose hand_on + push_out + curl_to_contact), the
+template body, the aim at eye relief 6.35, no A, no line B, the gate reported only. M24 overlay r:grip: palm_into
+left, fingers_toward down the grip and back (up -1, forward -0.8), offset forward -2.0 up 3.0, every digit
+curl_to_contact. Result market4: the hand wraps the vertical grip, the index in the guard on the trigger (0.07),
+middle 0.13, ring 0.09, pinky 0.01 touch; thumb 0.66 cm into the top; wrist 65.7 aim / 52.8 pulled; elbow 115 / 99.
+Picture report/tune/M24_market_showcase.png (unmarked, a showcase). The plan16 hold (the owner's points) stays in git
+history; the overlay now holds the market hold.
