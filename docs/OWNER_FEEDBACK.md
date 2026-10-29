@@ -498,3 +498,10 @@ the shoulder joint), Gun Kit option gun_to_shoulder. With the blade kept (70 deg
 butt 5.0 cm ahead of the joint; eye relief now 19.33 cm (from 6.35). Wrist 94.0 at the aim, 74.2 pulled; elbow 121.5,
 2.2 cm under the shoulder; the hand's five digits unchanged. Pictures report/tune/M24_plan16_arm_left.png,
 M24_plan16_round.png.
+
+2026-10-29, the owner: "I see the gap in the web or the palm or the root of right hand, slide the A point backward in
+the same spot on the grip so the wrist can be straight back".
+Result (plan17): A at 8.0 cm behind the ring (the saddle, 3.8 above the ring's centre; was 6.2 / 4.5). Wrist 89.5 at
+the aim (from 94.0), 69.0 pulled (from 74.2); web 1.05 from A (0.73 out); index -0.19, middle 0.11, ring 0.03, pinky
+0.04 touch; the thumb now 2.5 cm inside (the saddle's left edge is lower there; the wrap bent 0, the base spread 87
+over 80). Index 40 deg off B's direction. Pictures report/tune/M24_plan17_round.png, M24_plan17_grip_right.png.
