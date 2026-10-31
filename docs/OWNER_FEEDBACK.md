@@ -575,3 +575,27 @@ Reverted: fakepose 40f33e7 and weaponlab 66d9e69. The M24 overlay is back to the
 
 2026-10-29, the owner: "revert til the grip correct but only the wrist failed".
 Done: fakepose src restored to 9a42a2b (plan16, the plan11 hand the owner called "hand look good"). weaponlab stays at 8285d65 code. Nothing run.
+
+2026-10-29, the owner (a photo of an M24 shooter): "my idea is off a bit, the web is down under the stock, the thumb press in the center of the gun near A point, look at the image and retru"; then "try with yout 1" (W = deepest point of the grip back curve).
+Run wt1: T measured right (top centre, 6.3 behind the ring, 1.05 from A). W measured WRONG: 2.0 behind the ring, 1.4 under its centre = the trigger guard rear bow (the ray method hit the guard; its own check passed falsely). Hand followed the wrong W: web 2.2 off, thumb 9.7 off T, index 89.5 deg off B, middle/ring/pinky off, wrist 23.3 PASS. Stopped, reported, code not committed.
+
+2026-10-29, the owner: "try with your 1" (W = deepest point of the curve under the stock behind the guard, guard left out).
+Measured on the stock middle-plane cut, no hand placed: two crooks. W1 front crook 5.0 behind the ring, 0.4 above its centre, depth 2.31: to B mid 5.0, to T 4.3 (index reach 9.84). W2 rear crook 14.1 behind, 2.9 under, depth 1.62: to B 14.4, to T 10.7, out of reach. Asked the owner which. Picture report/tune/M24_W_candidates.png.
+
+2026-10-31, the owner: "hang on about the M24, I want to improve the vision of machine by using numbers that have meaning to really appreciate physics in digital world so after the physics and object interact is correct I can start the creation automatically".
+What it means: M24 paused (W choice open). Goal: every number tied to a meaning (named part, contact kind, wall, source), physics of object interaction correct first, then automatic creation.
+
+2026-10-31, the owner: "write the plan document first with my sentence." and "I see these points sounds good but still don't see how you create, what it will behave and keep this design work correctly".
+What it means: write the plan before any build, with the owner's sentence. For each step, say how it is created, how it behaves and how it stays correct. Written: docs/MEANING_PLAN.md. Nothing built.
+
+2026-10-31, the owner: "do with these words" (the three sentences of 2026-10-19, 2026-10-29, 2026-10-31).
+What it means: those three sentences are the goal of MEANING_PLAN.md. Done: goal table G1 to G3 at the top, each mapped to the steps that build it; Step 1 adds "every poly belongs to a named part". Nothing else changed, nothing built.
+
+2026-10-31, the owner: "No I don't want this "Yes. Every new gun waits for you." I only need to review the final result."
+What it means: no per-gun label approval. Labels are accepted by their definition checks; the owner reviews only the final result. Done in MEANING_PLAN.md Step 1 and Step 6. Asked: is "maximum the potential of machine through numbers" a good starting point.
+
+2026-10-31, the owner: "so how can you prevent the conflict in taste and when scale up that multiple person use this and the data still can be reuse to get this tool better? and how to eval and create smarter gate with "each of your judgments turns into a number for next time"?" then "add it".
+What it means: add the answer as Step 7 of MEANING_PLAN.md: physics vs taste (styles), full judgment records, judgment to new check (owner approves each rule), gate eval (false pass 0). Done. Nothing built.
+
+2026-11-01, the owner: "how about I create all the new git repo and I also want the master README.md goes to my K:\Projects\gitHub\my-portfolio to showcase and I can review it? also least verbose rule apply to K:\Projects\gitHub\my-portfolio folder".
+Done: my-portfolio/labs/README.md, README.vi.md and labs-map.svg (plan status, the owner's goal words G1 to G3, 5 target labs, 7 steps, published labs). Not committed. Least verbose added for my-portfolio in memory. Open: repo names, Model Lab package question.
